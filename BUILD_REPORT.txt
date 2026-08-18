@@ -1,0 +1,100 @@
+EMERALD ROZALIA PROJECT 1 BUILD REPORT — v4
+
+Primary pages registered: 70
+Forms Master definitions: 650
+Unique form codes: 650
+Reference screenshots bundled: 34
+Python syntax compile: PASS
+Project 2 included: NO
+Project 3 included: NO
+
+v2 FUNCTIONAL UPGRADES
+- Mandatory STOCK IN SCAN / STOCK OUT SCAN engine: INCLUDED
+- Insufficient available-stock blocking: INCLUDED
+- Senior-approved manual stock override: INCLUDED
+- Approval request + decision workflow/API: INCLUDED
+- Bangladesh BDT > Tk 10 variance Red Alert engine: INCLUDED
+- Operator / Helper / Staff attendance daily calculation engine: INCLUDED
+- Device integration registry/API: INCLUDED
+- Existing scheduled reports 08:00 / 13:00 / 20:00: RETAINED
+- Existing barcode / QR generator: RETAINED
+- Existing audit middleware: RETAINED
+
+Runtime dependency installation was not executed in this build environment. Run the included Docker deployment, then `python manage.py makemigrations portal --noinput`, `python manage.py migrate --noinput`, `python manage.py seed_project1`, and `python manage.py test` on the server.
+
+PROJECT 1 V3 - STOCK & MATERIAL MASTER
+- Dedicated Stock & Material Master dashboard (#32)
+- Material master: code, category, composition, GSM, width, colour, UOM, cost, min/reorder/max
+- Fabric/accessory/raw material/packaging/label/thread/poly categories
+- Unique lot/roll barcode traceability
+- PO number + customer order number + supplier + receipt date
+- Roll length, quantity, reserved/available quantity and valuation
+- Stock statuses: Raw Material, Accessories, Wastage, Reject, Finished Product, Ready for Shipment, Return
+- QC statuses: Pending, Approved, Hold, Rejected
+- Mandatory barcode/reference for physical material movements
+- STOCK IN SCAN / STOCK OUT SCAN / Transfer / Reserve / Release / Wastage / Reject / Return / Adjustment
+- Manual adjustment requires approved senior ApprovalRequest plus reason
+- Location hierarchy via OrganizationNode
+- Reorder warnings
+- Movement audit/history and stock balance after each transaction
+- CSV export + print/preview + admin edit/remove controls
+- JSON stock API: /api/material-stock/
+
+
+PROJECT 1 V4 - ASSET & MACHINE MASTER
+- Dedicated Asset & Machine Master dashboard (#33)
+- Asset code + mandatory unique barcode/QR + serial/model/manufacturer identity
+- Asset types: Machine, Equipment, Tool, Vehicle, IT Equipment, Furniture, Other
+- Factory/location + department + employee assignment
+- Machine type, operation capabilities, standard speed and power rating
+- Available minutes/day + efficiency % + calculated effective production minutes
+- Purchase cost/current value, currency and depreciation metadata
+- Warranty expiry, maintenance interval and maintenance-due control
+- Preventive, Corrective, Breakdown, Calibration, Inspection and Service history
+- Parts + labour + other maintenance cost
+- Downtime reason, duration and production-impact quantity
+- Assignment / Transfer / Return / Relocate / Retire / Dispose movement history
+- RETIRE/DISPOSE requires approved senior ApprovalRequest
+- CSV export + print/preview + admin edit/remove controls
+- JSON API: /api/assets/
+- Python source compile: PASS
+- ZIP integrity: tested during packaging
+
+V5: Page #34 Buyer Enquiry / Order Opportunity Master implemented with pipeline, quotations, follow-ups, CSV/API, and Won→Order Master conversion.
+
+V6: Page #71 Communication Center Master implemented: Unified Inbox, Chat 24/7, thread routing, buyer/order links, attachments, read receipts, notice/broadcast/red-alert records, CSV/API, and external connector registry.
+V6 final communication core locked: Alert, Action, Chat 24/7, Email, WhatsApp, Log History, Communication History.
+
+V7: Page #72 Profit + Feasibility Gate implemented and enforced before Buyer Opportunity acceptance/WON and Order Master conversion.
+
+V8: Page #73 Free Capacity Opportunity / Quick Order implemented with protected machine/workforce/line minutes, reserved load, safety buffer, material/accessories readiness, rush risk, incremental margin and senior-approved decision.
+
+V9: Universal file policy enforced for all persisted Project 1 file stores: permitted DocumentRecord and CommunicationAttachment files expose VIEW / PREVIEW / DOWNLOAD / PRINT through one permission-controlled service with FileAccessLog audit history.
+
+V10: Page #75 Master Order → Buyer Address Delivery SLA implemented with mandatory 15-day deadline, dispatch target, tracking, staged delivery status, alerts/escalation, senior-approved exception, proof of delivery, and completion lock.
+
+V11: Page #76 Profit Before Spend Control implemented as the central pre-spend authorization guard for purchasing, material, production, freight, maintenance and other cost commitments.
+
+V12: Page #77 Staff Self-Service Portal implemented from the approved screenshot reference. Includes employee profile/ID, applications, staff documents, appointment/joining letters, handbook, payslip/payroll, attendance, schedule, notifications, document expiry, announcements/events, HR support/grievance, Communication Center/Chat 24/7/Email links, Action/Approval access, and universal VIEW/PREVIEW/DOWNLOAD/PRINT controls with file audit logging.
+
+V13: Page #78 HR Dashboard implemented from approved screenshot reference, including HR core modules, workforce analytics, employee/recruitment/leave/training/performance/cases/rewards/mobility/policy/survey/workforce planning, approvals, alerts, audit trail, Communication Center, and universal file controls.
+
+V14: Page #79 Attendance Dashboard implemented from approved screenshot reference. Includes live workforce attendance, category/department summaries, mandatory/done/due/late/gate-pass/NPT H/M and cost, Staff/Operator/Helper schedules, Friday weekly closure, approval-only OT, leave/gate pass/NPT, authorized manual entry, connected devices/CCTV, payroll integration, alerts, CSV/API and audit-ready controls.
+
+V15: Page #80 Cutting Dashboard added. Functional cutting plan, fabric roll STOCK OUT scan, lay/marker model, production target/actual, manpower/machine/process minutes/NPT/cost, bundle barcode/QR, cut-panel WIP scans, QC/reject/recut, variance/Red Alert data, sewing handover traceability, and 08:00/13:00/20:00 automatic report center.
+
+V16: Page #81 Embroidery Dashboard implemented with mandatory Cutting Bundle IN/OUT scan, barcode/quantity validation, machine/operator assignment, artwork/program files, sample/strike-off model, thread/material stock-out, production/stitch/machine-head costing, QC/reject/repair/rework, downstream release lock until QC PASS, variance alerts, and 08:00/13:00/20:00 auto-report center.
+
+V17: Page #82 Label Dashboard implemented with buyer/brand/style/version controls, label artwork/specification/proof files, material STOCK OUT, label production/QC, wrong-version HOLD + Red Alert, order/bundle allocation, mandatory LABEL IN scan, controlled LABEL OUT, issued/used/returned/rejected/balance reconciliation, costing, variance controls, and 08:00/13:00/20:00 auto reports.
+
+V18: Page #83 QC / Quality Control Dashboard implemented as a production-wide quality gate. Includes incoming, Cutting, Embroidery, Sewing Inline, Label/Accessory, Finishing, Final, Packing and Pre-Shipment QC; AQL/defect classification; mandatory QC Bundle IN/OUT scanning; critical-defect HOLD/Red Alert; rework/re-QC loop; CAPA/root cause; release gate; FPQ/DHU metrics; auto reports at 08:00/13:00/20:00; CSV/API; universal file controls.
+
+V19: Page #84 Hand Iron / Manual Ironing Dashboard implemented. Includes plan/fabric-temperature controls, mandatory Bundle IN/OUT scanning, operator/workstation assignment, process time/NPT, labour/utility/process costing, temperature-limit alerts, QC defects, reject/re-iron/re-QC, QC PASS release protection, variances, and 08:00/13:00/20:00 automatic reports.
+
+V20: Page #85 Poly / Polybag Dashboard implemented. Includes buyer packing specification, poly type/size/thickness/material controls, POLY STOCK OUT and return STOCK IN scans, garment/bundle IN/OUT scans, packing target/actual, poly usage/damage/reject/return, costing, QC for wrong poly/order/style/size/colour/barcode/warning/seal/quantity, downstream release blocking without QC PASS, variances, and 08:00/13:00/20:00 automatic reports.
+
+V21: Page #86 Iron / Industrial Ironing Dashboard implemented as a separate module from Hand Iron. Includes plan/fabric/temperature/steam controls, mandatory Bundle IN/OUT scans, operator/helper/machine assignment, machine maintenance and active-downtime blocks, electricity/steam usage, process/NPT/downtime tracking, labour/helper/machine/utility/process/downtime costing, QC defects, reject/re-iron/rework/re-QC, QC PASS release, downtime Red Alerts, and 08:00/13:00/20:00 automatic reports.
+
+V22: Page #87 Final QC / Final Inspection Dashboard implemented as the final Ready-for-Shipment release gate. Includes final IN/OUT scans, AQL, measurement/appearance/workmanship/label/barcode/poly/packing/carton/quantity checks, critical-major-minor defects, rework/re-Final-QC, CAPA, shipment readiness, pre-shipment sign-off, MasterOrder READY_TO_SHIP update only after valid Final QC release, 08:00/13:00/20:00 automatic report runner, CSV/API, and universal file controls.
+
+V30: Rebuilt Page #52 Report Master as central reporting dashboard; added prominent navigation, department catalog, aggregated automatic reports, alerts/actions/approvals, orders/documents/communications, snapshot history, CSV/API and 08:00/13:00/20:00 server-side Report Master snapshot scheduler.

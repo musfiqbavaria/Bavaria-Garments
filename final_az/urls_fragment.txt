@@ -1,0 +1,6 @@
+from django.urls import path
+from . import views
+urlpatterns = [
+    path("step-370/print-department-barcode-control/", views.step370, name="final_step370"),
+    path("final-manifest/", views.manifest, name="final_manifest"),
+]

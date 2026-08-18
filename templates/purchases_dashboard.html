@@ -1,0 +1,478 @@
+{% extends "base.html" %}{% block title %}Purchases Master{% endblock %}{% block
+content %}
+<style>
+  body {
+    background: #071921;
+    color: #eef8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .x {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    padding: 14px;
+  }
+  .side b,
+  .card h3 {
+    color: #45df83;
+  }
+  .side a {
+    display: block;
+    color: #eef8f4;
+    text-decoration: none;
+    padding: 8px;
+    border-bottom: 1px solid #174838;
+  }
+  .m {
+    padding: 9px;
+  }
+  .head {
+    background: #07362a;
+    padding: 14px;
+    font-size: 23px;
+  }
+  .k {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 5px;
+    margin: 7px 0;
+  }
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .card strong {
+    display: block;
+    font-size: 18px;
+    color: #49df7e;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    overflow: auto;
+  }
+  .st {
+    min-width: 110px;
+    background: #103642;
+    padding: 8px;
+    text-align: center;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .f {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .f input,
+  .f select,
+  .f textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    padding: 6px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .btn {
+    background: #0f7144;
+    color: white;
+    border: 1px solid #2c8a61;
+    padding: 7px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .red {
+    color: #ff5662 !important;
+  }
+  .orange {
+    color: #ff9b2f !important;
+  }
+  @media (max-width: 1000px) {
+    .k,
+    .forms {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .x {
+      display: block;
+    }
+    .k,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="x">
+  <aside class="side">
+    <h2><b>EMERALD</b> ROZALIA</h2>
+    <small>PURCHASES MASTER</small><a href="#register">Purchase Register</a
+    ><a href="#delivery">Delivery / GRN</a><a href="#match">3-Way Match</a
+    ><a href="#amend">PO Amendment</a
+    ><a href="#return">Purchase Return / Debit Note</a
+    ><a href="#close">Payment / Close</a
+    ><a href="{% url 'procurement_dashboard' %}">Procurement</a
+    ><a href="{% url 'supplier_dashboard' %}">Supplier Master</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a>
+  </aside>
+  <section>
+    <div class="head">
+      PURCHASES MASTER / PURCHASE DASHBOARD<br /><small
+        >Approved Procurement → PO → Supplier Delivery → STOCK IN / GRN → 3-Way
+        Match → Payment → Close</small
+      >
+    </div>
+    <div class="m">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="k">
+        <div class="card">Purchases<strong>{{payload.purchases}}</strong></div>
+        <div class="card">Open<strong>{{payload.open}}</strong></div>
+        <div class="card">Partial<strong>{{payload.partial}}</strong></div>
+        <div class="card">Delivered<strong>{{payload.delivered}}</strong></div>
+        <div class="card">
+          Match Pending<strong>{{payload.match_pending}}</strong>
+        </div>
+        <div class="card">
+          Payment Pending<strong>{{payload.payment_pending}}</strong>
+        </div>
+        <div class="card">Closed<strong>{{payload.closed}}</strong></div>
+        <div class="card">
+          Hold<strong class="red">{{payload.hold}}</strong>
+        </div>
+        <div class="card">PO Value<strong>{{payload.po_value}}</strong></div>
+        <div class="card">
+          Variance<strong class="orange">{{payload.variance}}</strong>
+        </div>
+      </div>
+      <div class="card">
+        <h3>CONTROLLED PURCHASE FLOW</h3>
+        <div class="flow">
+          <div class="st">Approved Procurement</div>
+          →
+          <div class="st">Profit Before Spend</div>
+          →
+          <div class="st">Approved PO</div>
+          →
+          <div class="st">Supplier Acknowledge</div>
+          →
+          <div class="st">Delivery Tracking</div>
+          →
+          <div class="st">STOCK IN SCAN</div>
+          →
+          <div class="st">GRN / Inspection</div>
+          →
+          <div class="st">Accepted / Reject / Short</div>
+          →
+          <div class="st">Supplier Invoice</div>
+          →
+          <div class="st">PO + GRN + Invoice</div>
+          →
+          <div class="st">Payment Approval</div>
+          →
+          <div class="st">Paid</div>
+          →
+          <div class="st">Purchase Closed</div>
+        </div>
+      </div>
+      <div class="forms" style="margin-top: 7px">
+        <div class="card" id="register">
+          <h3>OPEN PURCHASE FROM APPROVED PO</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="open"
+            /><select class="full" name="po_id" required>
+              <option value="">Approved PO</option>
+              {% for p in eligible_pos %}
+              <option value="{{p.id}}">
+                {{p.po_no}} · {{p.supplier.supplier_id}} · {{p.total_value}}
+              </option>
+              {% endfor %}</select
+            ><button class="btn full">Open Purchase Transaction</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>SUPPLIER ACKNOWLEDGEMENT</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="ack"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}}</option>
+              {% endfor %}</select
+            ><input class="full" type="date" name="promised_delivery" /><button
+              class="btn full"
+            >
+              Confirm Supplier Acknowledgement
+            </button>
+          </form>
+        </div>
+        <div class="card" id="delivery">
+          <h3>SYNC DELIVERY / GRN</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="sync_receipt"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Sync STOCK IN / GRN</button>
+          </form>
+          <p>
+            Pulls received, accepted, rejected and short quantities from
+            Supplier GRN records. Variance creates Red Alert.
+          </p>
+        </div>
+        <div class="card" id="match">
+          <h3>3-WAY MATCH</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="match"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="invoice_id">
+              {% for i in invoices %}
+              <option value="{{i.id}}">
+                {{i.invoice_no}} · {{i.po.po_no}} · {{i.amount}}
+              </option>
+              {% endfor %}</select
+            ><select class="full" name="exception_approval_id">
+              <option value="">Variance Exception Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Match PO + GRN + Invoice</button>
+          </form>
+        </div>
+        <div class="card" id="amend">
+          <h3>PO AMENDMENT</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="amend"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}}</option>
+              {% endfor %}</select
+            ><input
+              name="amendment_no"
+              placeholder="Amendment No."
+              required
+            /><select name="amendment_type">
+              <option>QUANTITY</option>
+              <option>PRICE</option>
+              <option>DELIVERY_DATE</option>
+              <option>TERMS</option>
+              <option>CANCEL</option>
+              <option>OTHER</option></select
+            ><input name="old_value" placeholder="Old Value" /><input
+              name="new_value"
+              placeholder="New Value"
+            /><textarea
+              class="full"
+              name="reason"
+              placeholder="Reason"
+              required
+            ></textarea
+            ><select class="full" name="approval_id" required>
+              <option value="">Mandatory Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><input class="full" type="file" name="document" /><button
+              class="btn full"
+            >
+              Create Approved Amendment
+            </button>
+          </form>
+        </div>
+        <div class="card" id="return">
+          <h3>PURCHASE RETURN / DEBIT NOTE</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="return"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}}</option>
+              {% endfor %}</select
+            ><input name="return_no" placeholder="Return No." required /><input
+              type="number"
+              step=".001"
+              name="quantity"
+              placeholder="Return Qty"
+            /><input
+              type="number"
+              step=".01"
+              name="value"
+              placeholder="Return Value"
+            /><input
+              name="debit_note_no"
+              placeholder="Debit Note No."
+            /><textarea
+              class="full"
+              name="reason"
+              placeholder="Return Reason"
+              required
+            ></textarea
+            ><select class="full" name="approval_id" required>
+              <option value="">Return Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><input class="full" type="file" name="return_document" /><button
+              class="btn full"
+            >
+              Approve Purchase Return
+            </button>
+          </form>
+        </div>
+        <div class="card" id="close">
+          <h3>PURCHASE CLOSE</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="close"
+            /><select class="full" name="purchase_id">
+              {% for p in purchases %}
+              <option value="{{p.id}}">{{p.po.po_no}} · {{p.status}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Validate Payment & Close</button>
+          </form>
+          <p>
+            Close is blocked until successful 3-way match and all supplier
+            invoices are PAID.
+          </p>
+        </div>
+        <div class="card">
+          <h3>AUTO REPORTS / EXPORT</h3>
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="report"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <a class="btn" href="{% url 'purchase_report_csv' %}">CSV</a>
+            <button type="button" class="btn" onclick="window.print()">
+              Print
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="card" style="margin-top: 7px">
+        <h3>PURCHASE REGISTER</h3>
+        <table class="tbl">
+          <tr>
+            <th>PO</th>
+            <th>Supplier</th>
+            <th>PO Qty</th>
+            <th>PO Value</th>
+            <th>Received</th>
+            <th>Accepted</th>
+            <th>Rejected</th>
+            <th>Short</th>
+            <th>Promised</th>
+            <th>Status</th>
+          </tr>
+          {% for p in purchases %}
+          <tr>
+            <td>{{p.po.po_no}}</td>
+            <td>{{p.po.supplier.supplier_id}}</td>
+            <td>{{p.po.quantity}}</td>
+            <td>{{p.po.total_value}}</td>
+            <td>{{p.actual_received_qty}}</td>
+            <td>{{p.accepted_qty}}</td>
+            <td>{{p.rejected_qty}}</td>
+            <td>{{p.short_qty}}</td>
+            <td>{{p.promised_delivery}}</td>
+            <td>{{p.status}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10">No purchases opened.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+      <div class="card" style="margin-top: 7px">
+        <h3>3-WAY MATCH HISTORY</h3>
+        <table class="tbl">
+          <tr>
+            <th>PO</th>
+            <th>Invoice</th>
+            <th>PO Value</th>
+            <th>GRN Value</th>
+            <th>Invoice Value</th>
+            <th>Qty Variance</th>
+            <th>Value Variance</th>
+            <th>Status</th>
+          </tr>
+          {% for m in matches %}
+          <tr>
+            <td>{{m.purchase.po.po_no}}</td>
+            <td>{{m.invoice.invoice_no}}</td>
+            <td>{{m.po_value}}</td>
+            <td>{{m.grn_value}}</td>
+            <td>{{m.invoice_value}}</td>
+            <td>{{m.quantity_variance}}</td>
+            <td>{{m.value_variance}}</td>
+            <td>{{m.status}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">No matches.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

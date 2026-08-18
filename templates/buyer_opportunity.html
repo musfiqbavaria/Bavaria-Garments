@@ -1,0 +1,347 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Buyer Enquiry / Order Opportunity Master</h1>
+    <p>
+      Page #34 · Enquiry → Opportunity → Quotation → Profit + Feasibility Gate →
+      Buyer Confirmation → Order Master
+    </p>
+  </div>
+  <div>
+    <a class="btn" href="{% url 'buyer_opportunity_export_csv' %}"
+      >Download CSV</a
+    >
+    <button class="btn" onclick="window.print()">Preview / Print</button>
+  </div>
+</div>
+{% for message in messages %}
+<div class="card"><b>{{ message }}</b></div>
+{% endfor %}
+<div class="kpis">
+  <div class="kpi">
+    <b>{{ active_count }}</b><span>Active Opportunities</span>
+  </div>
+  <div class="kpi"><b>{{ pipeline_value }}</b><span>Pipeline Value</span></div>
+  <div class="kpi">
+    <b>{{ weighted_value }}</b><span>Weighted Pipeline</span>
+  </div>
+  <div class="kpi">
+    <b>{{ overdue|length }}</b><span>Overdue Follow-ups</span>
+  </div>
+  <div class="kpi"><b>{{ won_count }}</b><span>Won</span></div>
+</div>
+<div class="card">
+  <h2>New Buyer Enquiry / Opportunity</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="create" />
+    <div class="form-grid">
+      <label>Buyer Company<input name="buyer_company" required /></label
+      ><label>Contact Person<input name="buyer_contact" /></label
+      ><label>Email<input type="email" name="buyer_email" /></label
+      ><label>Phone<input name="buyer_phone" /></label
+      ><label>Country<input name="buyer_country" /></label
+      ><label>Delivery Destination<input name="delivery_destination" /></label>
+      <label>Product / Item<input name="product" required /></label
+      ><label>Style No.<input name="style_no" /></label
+      ><label>Item No.<input name="item_no" /></label
+      ><label
+        >Target Quantity<input
+          type="number"
+          name="target_quantity"
+          min="0" /></label
+      ><label
+        >Target Unit Price<input
+          type="number"
+          step="0.0001"
+          name="target_unit_price" /></label
+      ><label>Currency<input name="currency" value="USD" /></label>
+      <label
+        >Expected Order Value<input
+          type="number"
+          step="0.01"
+          name="expected_order_value" /></label
+      ><label
+        >Probability %<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="probability_percent"
+          value="10" /></label
+      ><label
+        >Required Delivery<input
+          type="date"
+          name="required_delivery_date" /></label
+      ><label>Next Follow-up<input type="date" name="follow_up_date" /></label
+      ><label>Incoterms<input name="incoterms" /></label
+      ><label>Payment Terms<input name="payment_terms" /></label>
+      <label
+        >Priority<select name="priority">
+          {% for x in priorities %}
+          <option>{{ x }}</option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Merchandiser<select name="merchandiser_id">
+          <option value="">—</option>
+          {% for e in employees %}
+          <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Source<input
+          name="source"
+          placeholder="Website / Referral / Fair / Existing Buyer"
+      /></label>
+    </div>
+    <div class="form-grid">
+      <label
+        >Fabric Requirements<textarea
+          name="fabric_requirements"
+        ></textarea></label
+      ><label
+        >Accessory Requirements<textarea
+          name="accessory_requirements"
+        ></textarea></label
+      ><label
+        >Sample Requirements<textarea
+          name="sample_requirements"
+        ></textarea></label
+      ><label
+        >Competitor / Price Information<textarea
+          name="competitor_info"
+        ></textarea></label
+      ><label
+        >Buyer Requirements / Notes<textarea name="notes"></textarea>
+      </label>
+    </div>
+    <button class="btn primary">Create Enquiry</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Opportunity Pipeline</h2>
+  <form method="get">
+    <input
+      name="q"
+      value="{{request.GET.q}}"
+      placeholder="Search buyer / enquiry / opportunity / style"
+    />
+    <select name="stage">
+      <option value="">All stages</option>
+      {% for x in stages %}
+      <option {% if request.GET.stage="" ="x" %}selected{% endif %}>
+        {{x}}
+      </option>
+      {% endfor %}
+    </select>
+    <button class="btn">Filter</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Enquiry / Opportunity</th>
+          <th>Buyer</th>
+          <th>Product</th>
+          <th>Qty</th>
+          <th>Value</th>
+          <th>Probability</th>
+          <th>Weighted</th>
+          <th>Delivery / Follow-up</th>
+          <th>Stage</th>
+          <th>Order</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for x in opportunities %}
+        <tr>
+          <td><b>{{x.enquiry_no}}</b><br />{{x.opportunity_no}}</td>
+          <td>
+            {{x.buyer_company}}<br /><small
+              >{{x.buyer_country}} · {{x.buyer_contact}}</small
+            >
+          </td>
+          <td>{{x.product}}<br /><small>{{x.style_no}}</small></td>
+          <td>{{x.target_quantity}}</td>
+          <td>{{x.currency}} {{x.expected_order_value}}</td>
+          <td>{{x.probability_percent}}%</td>
+          <td>{{x.currency}} {{x.weighted_value}}</td>
+          <td>
+            {{x.required_delivery_date|default:"—"}}<br />{% if
+            x.follow_up_overdue %}<b>OVERDUE: {{x.follow_up_date}}</b>{% else
+            %}{{x.follow_up_date|default:"—"}}{% endif %}
+          </td>
+          <td>{{x.stage}}<br /><small>{{x.priority}}</small></td>
+          <td>
+            {% if x.converted_order
+            %}<b>{{x.converted_order.master_order_id}}</b>{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="10">No opportunities yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="grid-2">
+  <div class="card">
+    <h2>Quotation Version</h2>
+    <form method="post">
+      {% csrf_token %}<input
+        type="hidden"
+        name="action"
+        value="quotation"
+      /><label
+        >Opportunity<select name="opportunity_id" required>
+          {% for x in opportunities %}
+          <option value="{{x.id}}">
+            {{x.opportunity_no}} · {{x.buyer_company}}
+          </option>
+          {% endfor %}
+        </select></label
+      ><label>Quantity<input type="number" name="quantity" /></label
+      ><label
+        >Unit Price<input
+          type="number"
+          step="0.0001"
+          name="unit_price" /></label
+      ><label>Currency<input name="currency" value="USD" /></label
+      ><label>Valid Until<input type="date" name="valid_until" /></label
+      ><label
+        >Status<select name="quotation_status">
+          <option>DRAFT</option>
+          <option>PENDING_APPROVAL</option>
+          <option>APPROVED</option>
+          <option>SENT</option>
+          <option>ACCEPTED</option>
+        </select></label
+      ><label
+        >Approval Request ID<input
+          name="approval_id"
+          placeholder="Required for approve/send/accept" /></label
+      ><label>Terms<textarea name="terms"></textarea></label
+      ><button class="btn primary">Create Version</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Stage / Convert to Order Master</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="stage" /><label
+        >Opportunity<select name="opportunity_id" required>
+          {% for x in opportunities %}
+          <option value="{{x.id}}">
+            {{x.opportunity_no}} · {{x.buyer_company}}
+          </option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Stage<select name="stage">
+          {% for x in stages %}
+          <option>{{x}}</option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Probability %<input
+          type="number"
+          step="0.01"
+          name="probability_percent" /></label
+      ><label>Lost Reason<textarea name="lost_reason"></textarea></label
+      ><label>Details<textarea name="details"></textarea></label>
+      <p>
+        <b>WON:</b> requires an approved/accepted quotation
+        <b>and a passed Profit + Feasibility Gate</b>. Only then is the
+        confirmed Order Master created automatically.
+      </p>
+      <button class="btn primary">Update Stage</button>
+    </form>
+  </div>
+</div>
+<div class="grid-2">
+  <div class="card">
+    <h2>Buyer Communication / Follow-up</h2>
+    <form method="post">
+      {% csrf_token %}<input
+        type="hidden"
+        name="action"
+        value="activity"
+      /><label
+        >Opportunity<select name="opportunity_id" required>
+          {% for x in opportunities %}
+          <option value="{{x.id}}">
+            {{x.opportunity_no}} · {{x.buyer_company}}
+          </option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Type<select name="activity_type">
+          <option>CALL</option>
+          <option>EMAIL</option>
+          <option>WHATSAPP</option>
+          <option>MEETING</option>
+          <option>FOLLOW_UP</option>
+          <option>SAMPLE</option>
+          <option>NOTE</option>
+        </select></label
+      ><label>Subject<input name="subject" required /></label
+      ><label>Details<textarea name="details"></textarea></label
+      ><label>Next Follow-up<input type="date" name="next_follow_up" /></label
+      ><button class="btn primary">Record Activity</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Latest Activity</h2>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Opportunity</th>
+          <th>Type</th>
+          <th>Subject</th>
+          <th>Next</th>
+        </tr>
+        {% for a in activities %}
+        <tr>
+          <td>{{a.occurred_at}}</td>
+          <td>{{a.opportunity.opportunity_no}}</td>
+          <td>{{a.activity_type}}</td>
+          <td>{{a.subject}}</td>
+          <td>{{a.next_follow_up|default:"—"}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <h2>Quotation History</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Quotation</th>
+        <th>Opportunity</th>
+        <th>Version</th>
+        <th>Qty</th>
+        <th>Unit Price</th>
+        <th>Total</th>
+        <th>Status</th>
+        <th>Valid Until</th>
+      </tr>
+      {% for q in quotations %}
+      <tr>
+        <td>{{q.quotation_no}}</td>
+        <td>{{q.opportunity.opportunity_no}}</td>
+        <td>V{{q.version}}</td>
+        <td>{{q.quantity}}</td>
+        <td>{{q.currency}} {{q.unit_price}}</td>
+        <td>{{q.currency}} {{q.total_value}}</td>
+        <td>{{q.status}}</td>
+        <td>{{q.valid_until|default:"—"}}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

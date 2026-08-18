@@ -1,0 +1,516 @@
+{% extends 'base.html' %}{% block title %}Asset & Machine Master{% endblock %}{%
+block content %}
+<section class="wrap">
+  <div class="pagehead">
+    <div>
+      <small>PROJECT 1 / ASSET & CAPACITY CONTROL</small>
+      <h1>#33 Asset & Machine Master</h1>
+      <p>
+        Asset identity • machine capability • location & assignment •
+        maintenance • downtime • utilization • valuation • lifecycle audit
+      </p>
+    </div>
+    <div class="pill">LIVE CONTROL</div>
+  </div>
+  {% if messages %}{% for message in messages %}
+  <div class="notice {% if message.tags == 'error' %}danger{% endif %}">
+    <b>{{ message }}</b>
+  </div>
+  {% endfor %}{% endif %}
+  <div class="stats">
+    <article>
+      <small>Active Assets</small><strong>{{ active_count }}</strong>
+    </article>
+    <article>
+      <small>Breakdown</small><strong>{{ breakdown_count }}</strong>
+    </article>
+    <article>
+      <small>Maintenance Due</small><strong>{{ due_count }}</strong>
+    </article>
+    <article>
+      <small>Effective Min/Day</small><strong>{{ effective_minutes }}</strong>
+    </article>
+    <article>
+      <small>Current Asset Value</small
+      ><strong>{{ total_value|floatformat:2 }}</strong>
+    </article>
+  </div>
+  <div class="toolbar">
+    <a class="btn" href="?">View</a
+    ><button onclick="window.print()">Preview / Print</button
+    ><a class="btn" href="/asset-machine-master/export.csv">Download CSV</a
+    ><a class="btn" href="/admin/portal/assetmachine/">Edit Master</a
+    ><a class="btn" href="/admin/portal/assetmachine/">Remove / Admin</a>
+  </div>
+
+  <div class="split">
+    <section class="panel">
+      <h2>Asset / Machine Register</h2>
+      <form class="filter" method="get">
+        <input
+          name="q"
+          value="{{ request.GET.q }}"
+          placeholder="Asset code, name, serial or model"
+        /><select name="asset_type">
+          <option value="">All types</option>
+          {% for x in asset_types %}
+          <option {% if request.GET.asset_type="" ="x" %}selected{% endif %}>
+            {{ x }}
+          </option>
+          {% endfor %}</select
+        ><select name="status">
+          <option value="">All statuses</option>
+          {% for x in statuses %}
+          <option {% if request.GET.status="" ="x" %}selected{% endif %}>
+            {{ x }}
+          </option>
+          {% endfor %}</select
+        ><button>Search</button>
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>Asset / Barcode</th>
+            <th>Machine</th>
+            <th>Maker / Model / Serial</th>
+            <th>Department / Location</th>
+            <th>Assigned</th>
+            <th>Status</th>
+            <th>Condition</th>
+            <th>Capability</th>
+            <th>Speed</th>
+            <th>Efficiency</th>
+            <th>Effective Min</th>
+            <th>Value</th>
+            <th>Next Service</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in assets %}
+          <tr>
+            <td>
+              <b>{{ a.asset_code }}</b><br /><small>{{ a.barcode }}</small>
+            </td>
+            <td>
+              {{ a.name }}<br /><small
+                >{{ a.machine_type|default:a.asset_type }}</small
+              >
+            </td>
+            <td>
+              {{ a.manufacturer }} {{ a.model }}<br /><small
+                >{{ a.serial_number|default:'-' }}</small
+              >
+            </td>
+            <td>
+              {{ a.department|default:'-' }}<br /><small
+                >{{ a.location|default:'-' }}</small
+              >
+            </td>
+            <td>
+              {% if a.assigned_to %}{{ a.assigned_to.employee_id }}<br /><small
+                >{{ a.assigned_to.name }}</small
+              >{% else %}-{% endif %}
+            </td>
+            <td class="status">{{ a.status }}</td>
+            <td>{{ a.condition }}</td>
+            <td>{{ a.operation_capabilities|join:', ' }}</td>
+            <td>{{ a.standard_speed }} {{ a.speed_unit }}</td>
+            <td>{{ a.efficiency_percent }}%</td>
+            <td>{{ a.daily_effective_minutes }}</td>
+            <td>{{ a.currency }} {{ a.current_value }}</td>
+            <td>
+              {% if a.is_maintenance_due %}<b style="color: #b42318"
+                >DUE · {{ a.next_maintenance_date }}</b
+              >{% else %}{{ a.next_maintenance_date|default:'-' }}{% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="13">No assets registered yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Register Asset / Machine</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="create_asset"
+        /><label>Asset Code<input name="asset_code" required /></label
+        ><label>Barcode / QR<input name="barcode" required /></label
+        ><label>Name<input name="name" required /></label
+        ><label
+          >Asset Type<select name="asset_type">
+            {% for x in asset_types %}
+            <option>{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label>Category<input name="category" /></label
+        ><label
+          >Machine Type<input
+            name="machine_type"
+            placeholder="Lockstitch / Overlock / Cutting..." /></label
+        ><label>Manufacturer<input name="manufacturer" /></label
+        ><label>Model<input name="model" /></label
+        ><label>Serial Number<input name="serial_number" /></label
+        ><label>Supplier<input name="supplier" /></label
+        ><label
+          >Operation Capabilities<input
+            name="operation_capabilities"
+            placeholder="Sewing, Edge stitch, Top stitch" /></label
+        ><label
+          >Standard Speed<input
+            name="standard_speed"
+            type="number"
+            step="0.001" /></label
+        ><label
+          >Speed Unit<input
+            name="speed_unit"
+            placeholder="stitches/min" /></label
+        ><label
+          >Available Minutes / Day<input
+            name="available_minutes_per_day"
+            type="number"
+            value="480" /></label
+        ><label
+          >Efficiency %<input
+            name="efficiency_percent"
+            type="number"
+            step="0.01"
+            value="100" /></label
+        ><label
+          >Power Rating<input
+            name="power_rating"
+            type="number"
+            step="0.001" /></label
+        ><label>Power Unit<input name="power_unit" value="KW" /></label
+        ><label
+          >Department<select name="department_id">
+            <option value="">--</option>
+            {% for x in departments %}
+            <option value="{{ x.id }}">{{ x.name }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Location<select name="location_id">
+            <option value="">--</option>
+            {% for x in locations %}
+            <option value="{{ x.id }}">{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Assigned Employee<select name="assigned_to_id">
+            <option value="">--</option>
+            {% for x in employees %}
+            <option value="{{ x.id }}">
+              {{ x.employee_id }} · {{ x.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label>Purchase Date<input name="purchase_date" type="date" /></label
+        ><label
+          >Purchase Cost<input
+            name="purchase_cost"
+            type="number"
+            step="0.01" /></label
+        ><label
+          >Current Value<input
+            name="current_value"
+            type="number"
+            step="0.01" /></label
+        ><label>Currency<input name="currency" value="BDT" /></label
+        ><label
+          >Depreciation Rate %<input
+            name="depreciation_rate"
+            type="number"
+            step="0.001" /></label
+        ><label
+          >Warranty Expiry<input name="warranty_expiry" type="date" /></label
+        ><label
+          >Maintenance Interval Days<input
+            name="maintenance_interval_days"
+            type="number"
+            value="30" /></label
+        ><label
+          >Next Maintenance<input
+            name="next_maintenance_date"
+            type="date" /></label
+        ><label
+          >Condition<select name="condition">
+            {% for x in conditions %}
+            <option>{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><button>Register Asset</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="split" style="margin-top: 16px">
+    <section class="panel">
+      <h2>Maintenance History</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Asset</th>
+            <th>Type</th>
+            <th>Reference</th>
+            <th>Technician / Vendor</th>
+            <th>Status</th>
+            <th>Parts</th>
+            <th>Labour</th>
+            <th>Total Cost</th>
+            <th>Next Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in maintenance %}
+          <tr>
+            <td>{{ x.created_at|date:'Y-m-d H:i' }}</td>
+            <td>
+              <b>{{ x.asset.asset_code }}</b><br /><small
+                >{{ x.asset.name }}</small
+              >
+            </td>
+            <td>{{ x.maintenance_type }}</td>
+            <td>{{ x.reference }}</td>
+            <td>{{ x.technician }}<br /><small>{{ x.vendor }}</small></td>
+            <td class="status">{{ x.status }}</td>
+            <td>{{ x.currency }} {{ x.parts_cost }}</td>
+            <td>{{ x.currency }} {{ x.labour_cost }}</td>
+            <td>{{ x.currency }} {{ x.total_cost }}</td>
+            <td>{{ x.asset.next_maintenance_date|default:'-' }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10">No maintenance records yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Maintenance Entry</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="maintenance"
+        /><label
+          >Asset<select name="asset_id" required>
+            {% for a in assets %}
+            <option value="{{ a.id }}">
+              {{ a.asset_code }} · {{ a.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Type<select name="maintenance_type">
+            {% for x in maintenance_types %}
+            <option>{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label>Reference<input name="reference" required /></label
+        ><label>Scheduled Date<input name="scheduled_date" type="date" /></label
+        ><label
+          >Status<select name="maintenance_status">
+            <option>PLANNED</option>
+            <option>IN_PROGRESS</option>
+            <option>COMPLETED</option>
+            <option>CANCELLED</option>
+          </select></label
+        ><label>Technician<input name="technician" /></label
+        ><label>Vendor<input name="vendor" /></label
+        ><label>Description<textarea name="description"></textarea></label
+        ><label
+          >Parts Cost<input
+            name="parts_cost"
+            type="number"
+            step="0.01" /></label
+        ><label
+          >Labour Cost<input
+            name="labour_cost"
+            type="number"
+            step="0.01" /></label
+        ><label
+          >Other Cost<input
+            name="other_cost"
+            type="number"
+            step="0.01" /></label
+        ><label>Currency<input name="currency" value="BDT" /></label
+        ><label>Approval ID<input name="approval_id" /></label
+        ><button>Save Maintenance</button>
+      </form>
+      {% if due_assets %}
+      <h3>Maintenance Due</h3>
+      {% for a in due_assets %}
+      <div class="notice danger">
+        <b>{{ a.asset_code }} · {{ a.name }}</b
+        ><small
+          >Due {{ a.next_maintenance_date }} · {{ a.location|default:'No
+          location' }}</small
+        >
+      </div>
+      {% endfor %}{% endif %}
+    </aside>
+  </div>
+
+  <div class="split" style="margin-top: 16px">
+    <section class="panel">
+      <h2>Downtime / Breakdown History</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Asset</th>
+            <th>Reason</th>
+            <th>Reference</th>
+            <th>Duration Min</th>
+            <th>Impact Qty</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in downtime %}
+          <tr>
+            <td>{{ x.started_at|date:'Y-m-d H:i' }}</td>
+            <td>{{ x.asset.asset_code }} · {{ x.asset.name }}</td>
+            <td>{{ x.reason }}</td>
+            <td>{{ x.reference }}</td>
+            <td>{{ x.duration_minutes }}</td>
+            <td>{{ x.production_impact_qty }}</td>
+            <td>
+              {% if x.ended_at %}CLOSED {{ x.ended_at|date:'Y-m-d H:i' }}{% else
+              %}<b style="color: #b42318">OPEN</b>{% endif %}
+            </td>
+            <td>
+              {% if not x.ended_at %}
+              <form method="post">
+                {% csrf_token %}<input
+                  type="hidden"
+                  name="action"
+                  value="close_downtime"
+                /><input
+                  type="hidden"
+                  name="downtime_id"
+                  value="{{ x.id }}"
+                /><button>Close</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">No downtime records yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Start Downtime</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="downtime"
+        /><label
+          >Asset<select name="asset_id" required>
+            {% for a in assets %}
+            <option value="{{ a.id }}">
+              {{ a.asset_code }} · {{ a.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Reason<select name="reason">
+            {% for x in downtime_reasons %}
+            <option>{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label>Reference<input name="reference" required /></label
+        ><label
+          >Production Impact Qty<input
+            name="production_impact_qty"
+            type="number"
+            step="0.001" /></label
+        ><label>Description<textarea name="description"></textarea></label
+        ><button>Start Downtime</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="split" style="margin-top: 16px">
+    <section class="panel">
+      <h2>Asset Movement / Assignment Control</h2>
+      <p>
+        Every transfer or assignment records source, destination, employee,
+        barcode, reference, user and timestamp. Retirement and disposal require
+        an APPROVED senior approval ID.
+      </p>
+      <div class="notice">
+        <b>Lifecycle Controls</b
+        ><small>ASSIGN · TRANSFER · RETURN · RELOCATE · RETIRE · DISPOSE</small>
+      </div>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Post Asset Movement</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="movement"
+        /><label
+          >Asset<select name="asset_id" required>
+            {% for a in assets %}
+            <option value="{{ a.id }}">
+              {{ a.asset_code }} · {{ a.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Movement<select name="movement_type">
+            <option>ASSIGN</option>
+            <option>TRANSFER</option>
+            <option>RETURN</option>
+            <option>RELOCATE</option>
+            <option>RETIRE</option>
+            <option>DISPOSE</option>
+          </select></label
+        ><label
+          >Barcode / QR<input
+            name="barcode"
+            placeholder="Defaults to asset barcode" /></label
+        ><label>Reference<input name="reference" required /></label
+        ><label
+          >Destination<select name="destination_location_id">
+            <option value="">--</option>
+            {% for x in locations %}
+            <option value="{{ x.id }}">{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Assigned Employee<select name="assigned_to_id">
+            <option value="">--</option>
+            {% for x in employees %}
+            <option value="{{ x.id }}">
+              {{ x.employee_id }} · {{ x.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Approval ID<input
+            name="approval_id"
+            placeholder="Required for RETIRE / DISPOSE" /></label
+        ><label>Reason<textarea name="reason"></textarea></label
+        ><button>Post Movement</button>
+      </form>
+    </aside>
+  </div>
+</section>
+{% endblock %}

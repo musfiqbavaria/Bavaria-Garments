@@ -1,0 +1,62 @@
+{% extends 'base.html' %}{% block title %}Bundle Barcode Master{% endblock %}{%
+block content %}
+<section class="wrap">
+  <div class="pagehead">
+    <div>
+      <h1>#68 Bundle Barcode Generator Master</h1>
+      <p>
+        Unique QR/barcode references for bundles, stock, products, cartons,
+        employees, assets and documents.
+      </p>
+    </div>
+    <div class="pill">TRACEABILITY</div>
+  </div>
+  <div class="split">
+    <form method="post" class="panel formpanel">
+      {% csrf_token %}
+      <h2>Generate</h2>
+      <label
+        >Code<input name="code" placeholder="BUNDLE-MO-2026-0001-001" /></label
+      ><label
+        >Type<select name="asset_type">
+          <option>BUNDLE</option>
+          <option>MATERIAL</option>
+          <option>STOCK</option>
+          <option>PRODUCT</option>
+          <option>CARTON</option>
+          <option>EMPLOYEE</option>
+          <option>ASSET</option>
+          <option>DOCUMENT</option>
+        </select></label
+      ><label
+        >Reference<input name="reference" placeholder="MO-2026-0001" /></label
+      ><button>Generate QR</button>{% if created %}
+      <div class="qr">
+        <img src="/barcode/{{ created.code }}.png" /><b>{{ created.code }}</b>
+      </div>
+      {% endif %}
+    </form>
+    <section class="panel">
+      <h2>Recent Codes</h2>
+      <table>
+        <tr>
+          <th>Code</th>
+          <th>Type</th>
+          <th>Reference</th>
+          <th>QR</th>
+        </tr>
+        {% for a in assets %}
+        <tr>
+          <td>{{ a.code }}</td>
+          <td>{{ a.asset_type }}</td>
+          <td>{{ a.reference }}</td>
+          <td>
+            <a href="/barcode/{{ a.code }}.png" target="_blank">Preview</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </section>
+  </div>
+</section>
+{% endblock %}

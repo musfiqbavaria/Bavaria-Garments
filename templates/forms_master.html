@@ -1,0 +1,58 @@
+{% extends 'base.html' %}{% block title %}Forms Master{% endblock %}{% block
+content %}
+<section class="wrap">
+  <div class="pagehead">
+    <div>
+      <h1>#53 Forms Master Dashboard</h1>
+      <p>Central register of exactly 650 company forms.</p>
+    </div>
+    <div class="pill">{{ count }} FORMS</div>
+  </div>
+  <form class="filter">
+    <input
+      name="q"
+      value="{{ request.GET.q }}"
+      placeholder="Search form"
+    /><select name="department">
+      <option value="">All departments</option>
+      {% for d in departments %}
+      <option {% if request.GET.department="" ="d" %}selected{% endif %}>
+        {{ d }}
+      </option>
+      {% endfor %}</select
+    ><button>Filter</button>
+  </form>
+  <div class="panel">
+    <div class="toolbar">
+      <button type="button">View</button><button type="button">Preview</button
+      ><button type="button">Edit</button><button type="button">Remove</button
+      ><button type="button">Download</button
+      ><button type="button">Print</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Code</th>
+          <th>Form</th>
+          <th>Department</th>
+          <th>Category</th>
+          <th>Approval</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in forms %}
+        <tr>
+          <td>{{ f.form_id }}</td>
+          <td>{{ f.code }}</td>
+          <td>{{ f.name }}</td>
+          <td>{{ f.department }}</td>
+          <td>{{ f.category }}</td>
+          <td>{{ f.requires_approval|yesno:'Required,Standard' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

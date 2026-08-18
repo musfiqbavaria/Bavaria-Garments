@@ -1,0 +1,587 @@
+{% extends "base.html" %}{% block title %}Supplier Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .x {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    padding: 14px;
+  }
+  .side h2 {
+    font: 18px Georgia;
+  }
+  .side b,
+  .card h3 {
+    color: #45df83;
+  }
+  .side a {
+    display: block;
+    color: #eef8f4;
+    text-decoration: none;
+    padding: 8px;
+    border-bottom: 1px solid #174838;
+  }
+  .m {
+    padding: 9px;
+  }
+  .head {
+    background: #07362a;
+    padding: 14px;
+    font-size: 23px;
+  }
+  .k {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 5px;
+    margin: 7px 0;
+  }
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .card strong {
+    display: block;
+    font-size: 19px;
+    color: #49df7e;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    overflow: auto;
+  }
+  .st {
+    min-width: 105px;
+    background: #103642;
+    padding: 8px;
+    text-align: center;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .f {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .f input,
+  .f select,
+  .f textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e303b;
+    color: white;
+    border: 1px solid #2b5661;
+    padding: 6px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    padding: 7px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .red {
+    color: #ff5662 !important;
+  }
+  @media (max-width: 1000px) {
+    .k,
+    .forms {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .x {
+      display: block;
+    }
+    .k,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="x">
+  <aside class="side">
+    <h2><b>EMERALD</b> ROZALIA</h2>
+    <small>SUPPLIER MANAGEMENT</small><a href="#master">Supplier Master</a
+    ><a href="#docs">KYC / Documents</a><a href="#rfq">RFQ / Quotation</a
+    ><a href="#po">Purchase Order</a
+    ><a href="#receipt">Delivery / STOCK IN / GRN</a
+    ><a href="#invoice">Invoice / Payment</a
+    ><a href="#performance">Performance / Risk</a
+    ><a href="#bank">Bank Change Control</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a
+    ><a href="{% url 'universal_file_center' %}">File Center</a>
+  </aside>
+  <section>
+    <div class="head">
+      SUPPLIER MASTER & MANAGEMENT DASHBOARD<br /><small
+        >Registration → KYC → Approval → RFQ → PO → Delivery → STOCK IN → GRN →
+        Invoice → Performance</small
+      >
+    </div>
+    <div class="m">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="k">
+        <div class="card">Suppliers<strong>{{payload.suppliers}}</strong></div>
+        <div class="card">Approved<strong>{{payload.approved}}</strong></div>
+        <div class="card">Pending<strong>{{payload.pending}}</strong></div>
+        <div class="card">
+          Hold/Blocked<strong class="red">{{payload.hold_blocked}}</strong>
+        </div>
+        <div class="card">PO Count<strong>{{payload.po_count}}</strong></div>
+        <div class="card">PO Value<strong>{{payload.po_value}}</strong></div>
+        <div class="card">
+          Pending Invoice<strong>{{payload.pending_invoices}}</strong>
+        </div>
+        <div class="card">
+          Outstanding<strong>{{payload.outstanding}}</strong>
+        </div>
+        <div class="card">
+          Expired Docs<strong class="red">{{payload.expired_docs}}</strong>
+        </div>
+      </div>
+      <div class="card">
+        <h3>MANDATORY SUPPLIER FLOW</h3>
+        <div class="flow">
+          <div class="st">Register</div>
+          →
+          <div class="st">KYC/Documents</div>
+          →
+          <div class="st">Approval</div>
+          →
+          <div class="st">RFQ</div>
+          →
+          <div class="st">Quotation</div>
+          →
+          <div class="st">Sample + Quality</div>
+          →
+          <div class="st">Supplier Selection</div>
+          →
+          <div class="st">Profit Before Spend</div>
+          →
+          <div class="st">PO Approval</div>
+          →
+          <div class="st">Delivery</div>
+          →
+          <div class="st">STOCK IN SCAN</div>
+          →
+          <div class="st">GRN/Inspection</div>
+          →
+          <div class="st">Invoice</div>
+          →
+          <div class="st">Payment Approval</div>
+          →
+          <div class="st">Performance</div>
+        </div>
+      </div>
+      <div class="forms" style="margin-top: 7px">
+        <div class="card" id="master">
+          <h3>SUPPLIER MASTER</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="supplier"
+            /><input
+              name="supplier_id"
+              placeholder="Supplier ID"
+              required
+            /><input name="company_name" placeholder="Company" required /><input
+              name="contact_person"
+              placeholder="Contact Person"
+            /><input name="email" placeholder="Email" /><input
+              name="phone"
+              placeholder="Phone"
+            /><input name="country" placeholder="Country" /><textarea
+              class="full"
+              name="address"
+              placeholder="Address"
+            ></textarea
+            ><input name="vat_tax_tin" placeholder="VAT/Tax/TIN" /><input
+              name="registration_no"
+              placeholder="Registration No"
+            /><input name="categories" placeholder="Categories" /><input
+              name="materials"
+              placeholder="Materials"
+            /><input name="moq" placeholder="MOQ" /><input
+              type="number"
+              name="lead_time_days"
+              placeholder="Lead Days"
+            /><input name="currency" value="BDT" /><input
+              name="payment_terms"
+              placeholder="Payment Terms"
+            /><input name="bank_name" placeholder="Bank" /><input
+              name="bank_account_name"
+              placeholder="Account Name"
+            /><input name="bank_account_no" placeholder="Account No" /><input
+              name="bank_swift"
+              placeholder="SWIFT"
+            /><textarea name="capacity_notes" placeholder="Capacity"></textarea
+            ><textarea
+              name="certifications"
+              placeholder="Certifications"
+            ></textarea
+            ><select class="full" name="approval_id">
+              <option value="">Supplier Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Create Supplier</button>
+          </form>
+        </div>
+        <div class="card" id="docs">
+          <h3>KYC / COMPLIANCE DOCUMENT</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="document"
+            /><select class="full" name="supplier_id" required>
+              <option value="">Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">
+                {{s.supplier_id}} · {{s.company_name}}
+              </option>
+              {% endfor %}</select
+            ><select name="document_type">
+              {% for d in doc_types %}
+              <option>{{d}}</option>
+              {% endfor %}</select
+            ><input name="document_no" placeholder="Document No" /><input
+              type="date"
+              name="expiry_date"
+            /><input type="file" name="file" required /><label class="full"
+              ><input type="checkbox" name="verified" /> Verified</label
+            ><button class="btn full">Upload</button>
+          </form>
+        </div>
+        <div class="card" id="rfq">
+          <h3>RFQ / QUOTATION</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="rfq"
+            /><input name="rfq_no" placeholder="RFQ No" required /><select
+              name="supplier_id"
+              required
+            >
+              <option value="">Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">{{s.supplier_id}}</option>
+              {% endfor %}</select
+            ><select name="order_id">
+              <option value="">Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select name="material_id">
+              <option value="">Material</option>
+              {% for m in materials %}
+              <option value="{{m.id}}">{{m.item_name}}</option>
+              {% endfor %}</select
+            ><input
+              class="full"
+              name="item_description"
+              placeholder="Item Description"
+            /><input
+              type="number"
+              step=".001"
+              name="quantity"
+              placeholder="Qty"
+            /><input name="unit" placeholder="Unit" /><input
+              type="number"
+              step=".0001"
+              name="quoted_unit_price"
+              placeholder="Unit Price"
+            /><input name="currency" value="BDT" /><input
+              type="number"
+              name="quoted_lead_days"
+              placeholder="Lead Days"
+            /><input type="date" name="valid_until" /><select name="status">
+              <option>QUOTED</option>
+              <option>SENT</option>
+              <option>SELECTED</option></select
+            ><label
+              ><input type="checkbox" name="sample_approved" /> Sample
+              Approved</label
+            ><label
+              ><input type="checkbox" name="quality_approved" /> Quality
+              Approved</label
+            ><input class="full" type="file" name="quotation_file" /><button
+              class="btn full"
+            >
+              Save RFQ
+            </button>
+          </form>
+        </div>
+        <div class="card" id="po">
+          <h3>PURCHASE ORDER</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="po"
+            /><input name="po_no" placeholder="PO No" required /><select
+              name="supplier_id"
+              required
+            >
+              <option value="">Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">{{s.supplier_id}}</option>
+              {% endfor %}</select
+            ><select name="rfq_id">
+              <option value="">RFQ</option>
+              {% for r in rfqs %}
+              <option value="{{r.id}}">{{r.rfq_no}}</option>
+              {% endfor %}</select
+            ><select name="order_id">
+              <option value="">Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select name="material_id">
+              <option value="">Material</option>
+              {% for m in materials %}
+              <option value="{{m.id}}">{{m.item_name}}</option>
+              {% endfor %}</select
+            ><input name="description" placeholder="Description" /><input
+              type="number"
+              step=".001"
+              name="quantity"
+              placeholder="Qty"
+            /><input name="unit" placeholder="Unit" /><input
+              type="number"
+              step=".0001"
+              name="unit_price"
+              placeholder="Unit Price"
+            /><input name="currency" value="BDT" /><input
+              type="date"
+              name="expected_delivery"
+            /><select class="full" name="approval_id" required>
+              <option value="">Profit-before-spend / Senior Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><input class="full" type="file" name="po_file" /><button
+              class="btn full"
+            >
+              Create Approved PO
+            </button>
+          </form>
+        </div>
+        <div class="card" id="receipt">
+          <h3>DELIVERY / STOCK IN / GRN</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="receipt"
+            /><select class="full" name="po_id" required>
+              <option value="">PO</option>
+              {% for p in pos %}
+              <option value="{{p.id}}">
+                {{p.po_no}} · {{p.supplier.supplier_id}}
+              </option>
+              {% endfor %}</select
+            ><input name="grn_no" placeholder="GRN No" required /><input
+              name="delivery_note_no"
+              placeholder="Delivery Note"
+            /><input
+              type="number"
+              step=".001"
+              name="received_qty"
+              placeholder="Received Qty"
+            /><input
+              type="number"
+              step=".001"
+              name="accepted_qty"
+              placeholder="Accepted Qty"
+            /><input
+              type="number"
+              step=".001"
+              name="rejected_qty"
+              placeholder="Rejected Qty"
+            /><input
+              name="stock_in_barcode"
+              placeholder="MANDATORY STOCK IN SCAN Barcode"
+              required
+            /><label class="full"
+              ><input type="checkbox" name="inspection_pass" /> Inspection
+              PASS</label
+            ><label
+              >Delivery Note<input type="file" name="delivery_note" /></label
+            ><label>GRN<input type="file" name="grn_file" /></label
+            ><button class="btn full">Receive / GRN</button>
+          </form>
+        </div>
+        <div class="card" id="invoice">
+          <h3>SUPPLIER INVOICE</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="invoice"
+            /><select class="full" name="po_id" required>
+              <option value="">PO</option>
+              {% for p in pos %}
+              <option value="{{p.id}}">{{p.po_no}}</option>
+              {% endfor %}</select
+            ><input name="invoice_no" placeholder="Invoice No" required /><input
+              type="date"
+              name="invoice_date"
+            /><input
+              type="number"
+              step=".01"
+              name="amount"
+              placeholder="Amount"
+            /><input name="currency" value="BDT" /><select
+              class="full"
+              name="approval_id"
+            >
+              <option value="">Payment Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><input class="full" type="file" name="invoice_file" /><button
+              class="btn full"
+            >
+              Save Invoice
+            </button>
+          </form>
+        </div>
+        <div class="card" id="bank">
+          <h3>SECURE BANK DETAIL CHANGE</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="bank_change"
+            /><select class="full" name="supplier_id" required>
+              <option value="">Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">{{s.supplier_id}}</option>
+              {% endfor %}</select
+            ><input name="bank_name" placeholder="Bank" /><input
+              name="bank_account_name"
+              placeholder="Account Name"
+            /><input name="bank_account_no" placeholder="Account No" /><input
+              name="bank_swift"
+              placeholder="SWIFT"
+            /><select class="full" name="approval_id" required>
+              <option value="">MANDATORY Senior Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Authorized Change</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>SUPPLIER STATUS</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="status"
+            /><select class="full" name="supplier_id">
+              {% for s in suppliers %}
+              <option value="{{s.id}}">{{s.supplier_id}}</option>
+              {% endfor %}</select
+            ><select class="full" name="status">
+              {% for s in supplier_statuses %}
+              <option>{{s}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Update Status</button>
+          </form>
+          <hr />
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <a class="btn" href="{% url 'supplier_report_csv' %}">CSV</a>
+            <button type="button" class="btn" onclick="window.print()">
+              Print
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="card" id="performance" style="margin-top: 7px">
+        <h3>SUPPLIER PERFORMANCE / RISK</h3>
+        <table class="tbl">
+          <tr>
+            <th>Supplier</th>
+            <th>On-Time</th>
+            <th>Quality Pass</th>
+            <th>Reject</th>
+            <th>Short</th>
+            <th>Lead Variance</th>
+            <th>Purchase</th>
+            <th>Outstanding</th>
+            <th>Score</th>
+            <th>Risk</th>
+          </tr>
+          {% for p in performances %}
+          <tr>
+            <td>{{p.supplier.supplier_id}} · {{p.supplier.company_name}}</td>
+            <td>{{p.on_time_delivery_pct}}%</td>
+            <td>{{p.quality_pass_pct}}%</td>
+            <td>{{p.reject_pct}}%</td>
+            <td>{{p.short_delivery_pct}}%</td>
+            <td>{{p.lead_time_variance_days}}</td>
+            <td>{{p.total_purchase_value}}</td>
+            <td>{{p.outstanding_payable}}</td>
+            <td>{{p.supplier_score}}</td>
+            <td>{{p.risk_level}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10">No performance data.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

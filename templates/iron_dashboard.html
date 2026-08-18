@@ -1,0 +1,877 @@
+{% extends "base.html" %}{% block title %}Industrial Iron Dashboard{% endblock
+%}{% block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .i {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    border-right: 1px solid #1d5c46;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #28614d;
+  }
+  .brand b {
+    color: #1fc46a;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #41dd83;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eaf5f1;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d713f;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07362a;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #bed8ce;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b80e1b;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #46df7b;
+  }
+  .red {
+    color: #ff4a56 !important;
+  }
+  .orange {
+    color: #ff9a24 !important;
+  }
+  .blue {
+    color: #4abaff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #57e08d;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 112px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235664;
+  }
+  .arrow {
+    color: #40e37d;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252f;
+    border: 1px solid #1c4b55;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #52de88;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #3bd670;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e303a;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c2b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .i {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="i">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>INDUSTRIAL IRONING</small>
+    </div>
+    <div class="navh">IRON CONTROL</div>
+    <a class="on" href="{% url 'iron_dashboard' %}">⌂ Iron Dashboard</a
+    ><a href="#plans">▤ Iron Plan</a><a href="#scan">▦ Bundle IN / OUT Scan</a
+    ><a href="#production">◉ Industrial Iron Production</a
+    ><a href="#machine">⚙ Machine / Maintenance</a
+    ><a href="#temperature">♨ Temperature / Steam</a><a href="#qc">✓ Iron QC</a
+    ><a href="#rework">↻ Re-Iron / Rework</a><a href="#cost">৳ Iron Costing</a
+    ><a href="#downtime">◷ Downtime / NPT</a
+    ><a href="#variance">⚠ Variance / Damage</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'communication_center' %}">◯ Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">◉ WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a
+    ><a href="{% url 'universal_file_center' %}">▤ File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>IRON / INDUSTRIAL IRONING DASHBOARD</h1>
+        <small
+          >Bundle Scan → Machine Setup → Temperature/Steam → Ironing → QC →
+          Rework → Bundle Out</small
+        >
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#variance">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="{% url 'communication_center' %}">Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >Email</a
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+
+      <div class="kpis">
+        <div class="kpi"><span>Active Plans</span><b>{{payload.plans}}</b></div>
+        <div class="kpi">
+          <span>Planned Qty</span><b>{{payload.planned_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Target</span><b>{{payload.target_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Actual</span><b>{{payload.actual_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Efficiency</span
+          ><b class="blue">{{payload.efficiency_percent}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Bundle IN / OUT</span
+          ><b>{{payload.bundle_in_scans}} / {{payload.bundle_out_scans}}</b>
+        </div>
+        <div class="kpi">
+          <span>Reject / Re-Iron</span
+          ><b class="red">{{payload.qc_reject_qty}} / {{payload.reiron_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Total Cost BDT</span
+          ><b class="orange">{{payload.total_cost}}</b>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY INDUSTRIAL IRON FLOW</h2>
+        <div class="flow">
+          <div class="step">Approved Order</div>
+          <b class="arrow">→</b>
+          <div class="step">Iron Plan</div>
+          <b class="arrow">→</b>
+          <div class="step">BUNDLE IN SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Machine / Operator</div>
+          <b class="arrow">→</b>
+          <div class="step">Maintenance Check</div>
+          <b class="arrow">→</b>
+          <div class="step">Temperature / Steam</div>
+          <b class="arrow">→</b>
+          <div class="step">Industrial Ironing</div>
+          <b class="arrow">→</b>
+          <div class="step">QC</div>
+          <b class="arrow">→</b>
+          <div class="step">Re-Iron / Re-QC</div>
+          <b class="arrow">→</b>
+          <div class="step">QC PASS</div>
+          <b class="arrow">→</b>
+          <div class="step">BUNDLE OUT SCAN</div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>BUNDLE / RELEASE CONTROL</h2>
+          <div class="kpi">
+            <span>Valid IN</span><b>{{payload.bundle_in_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Valid OUT</span><b>{{payload.bundle_out_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Blocked</span><b class="red">{{payload.blocked_scans}}</b>
+          </div>
+          <p>
+            Duplicate, barcode mismatch, quantity mismatch, machine hold,
+            missing IN or missing QC PASS blocks release.
+          </p>
+        </div>
+        <div class="card" id="temperature">
+          <h2>TEMPERATURE / STEAM CONTROL</h2>
+          <p>
+            Plan-specific min/max temperature and steam pressure are enforced.
+            Over-limit temperature or pressure blocks production and raises a
+            Red Alert.
+          </p>
+          <div class="kpi">
+            <span>Electricity / Steam</span
+            ><b>{{payload.electricity_kwh}} kWh / {{payload.steam_kg}} kg</b>
+          </div>
+        </div>
+        <div class="card" id="cost">
+          <h2>TIME / COST</h2>
+          <div class="kpi">
+            <span>Process / NPT / Downtime</span
+            ><b
+              >{{payload.process_minutes}} / {{payload.npt_minutes}} /
+              {{payload.downtime_minutes}}</b
+            >
+          </div>
+          <div class="kpi">
+            <span>Labour + Helper</span
+            ><b>{{payload.labour_cost}} + {{payload.helper_cost}}</b>
+          </div>
+          <div class="kpi">
+            <span>Machine + Utility</span
+            ><b>{{payload.machine_cost}} + {{payload.utility_cost}}</b>
+          </div>
+          <div class="kpi">
+            <span>Downtime Cost</span
+            ><b class="orange">{{payload.downtime_cost}}</b>
+          </div>
+        </div>
+        <div class="card" id="variance">
+          <h2>VARIANCE / DAMAGE ALERT</h2>
+          <div class="kpi">
+            <span>Outstanding</span
+            ><b class="red">{{payload.unactioned_variances}}</b>
+          </div>
+          {% for v in variances|slice:":5" %}
+          <div class="report">
+            {{v.plan.plan_no}} · {{v.variance_type}} · {{v.variance}} · BDT
+            {{v.value_variance_bdt}}
+          </div>
+          {% empty %}
+          <p>No open Industrial Iron variances.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>INDUSTRIAL IRON PLAN / ORDER</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Fabric</th>
+              <th>Temp °C</th>
+              <th>Steam Bar</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+            {% for p in plans|slice:":14" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.fabric_type}}</td>
+              <td>{{p.min_temperature_c}}–{{p.max_temperature_c}}</td>
+              <td>{{p.min_steam_pressure_bar}}–{{p.max_steam_pressure_bar}}</td>
+              <td>{{p.planned_qty}}</td>
+              <td>{{p.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7">No Industrial Iron plans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="machine">
+          <h2>MACHINE / MAINTENANCE STATUS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Machine</th>
+              <th>Status</th>
+              <th>Condition</th>
+            </tr>
+            {% for m in machines|slice:":15" %}
+            <tr>
+              <td>{{m.asset_code}} · {{m.name}}</td>
+              <td>{{m.status}}</td>
+              <td>{{m.condition}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3">No machine records.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC IRON REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button
+            ><button class="btn" name="slot" value="13:00">13:00</button
+            ><button class="btn" name="slot" value="20:00">20:00</button>
+          </form>
+          <br /><a class="btn" href="{% url 'iron_report_csv' %}"
+            >Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE INDUSTRIAL IRON PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input name="product" placeholder="Product" /><input
+              name="style_no"
+              placeholder="Style No."
+            /><input name="colour" placeholder="Colour" /><input
+              name="size_range"
+              placeholder="Size Range"
+            /><input name="fabric_type" placeholder="Fabric Type" /><input
+              type="number"
+              step="0.01"
+              name="min_temperature_c"
+              placeholder="Min °C"
+            /><input
+              type="number"
+              step="0.01"
+              name="max_temperature_c"
+              placeholder="Max °C"
+            /><input
+              type="number"
+              step="0.01"
+              name="min_steam_pressure_bar"
+              placeholder="Min Steam Bar"
+            /><input
+              type="number"
+              step="0.01"
+              name="max_steam_pressure_bar"
+              placeholder="Max Steam Bar"
+            /><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+              required
+            /><input type="date" name="target_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><label class="full"
+              >Industrial Iron Instruction<input
+                type="file"
+                name="instruction_file" /></label
+            ><button class="btn full">Create Plan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="scan">
+          <h3>MANDATORY BUNDLE IN / OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="bundle_scan"
+            /><select class="full" name="plan_id" required>
+              <option value="">Iron Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">
+                {{b.bundle_no}} · {{b.barcode}} · {{b.quantity}}
+              </option>
+              {% endfor %}</select
+            ><select name="direction">
+              <option value="IN">BUNDLE IN SCAN</option>
+              <option value="OUT">BUNDLE OUT SCAN</option></select
+            ><input name="barcode" placeholder="Scan Barcode / QR" /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><input
+              name="source_department"
+              placeholder="Source Department"
+            /><input
+              name="destination_department"
+              placeholder="Destination Department"
+            /><select name="operator_id">
+              <option value="">Operator</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="machine_id">
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">
+                {{m.asset_code}} · {{m.name}} · {{m.status}}
+              </option>
+              {% endfor %}</select
+            ><button class="btn full">Validate & Scan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="production">
+          <h3>INDUSTRIAL IRON PRODUCTION / COST</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="production"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="operator_id">
+              <option value="">Operator</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="helper_id">
+              <option value="">Helper</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="machine_id" required>
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">
+                {{m.asset_code}} · {{m.name}} · {{m.status}}
+              </option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="target_qty"
+              placeholder="Target"
+            /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual"
+            /><input type="datetime-local" name="start_at" /><input
+              type="datetime-local"
+              name="end_at"
+            /><input
+              type="number"
+              name="process_minutes"
+              placeholder="Process Minutes"
+            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+              type="number"
+              name="downtime_minutes"
+              placeholder="Downtime"
+            /><input
+              type="number"
+              step="0.01"
+              name="actual_temperature_c"
+              placeholder="Actual °C"
+            /><input
+              type="number"
+              step="0.01"
+              name="steam_pressure_bar"
+              placeholder="Steam Pressure Bar"
+            /><input
+              type="number"
+              step="0.001"
+              name="electricity_kwh"
+              placeholder="Electricity kWh"
+            /><input
+              type="number"
+              step="0.001"
+              name="steam_kg"
+              placeholder="Steam kg"
+            /><input
+              type="number"
+              step="0.0001"
+              name="cost_per_minute"
+              placeholder="Cost/Minute"
+            /><input
+              type="number"
+              step="0.01"
+              name="labour_cost"
+              placeholder="Labour Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="helper_cost"
+              placeholder="Helper Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="machine_cost"
+              placeholder="Machine Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="utility_cost"
+              placeholder="Utility Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="downtime_cost"
+              placeholder="Downtime Cost"
+            /><label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Approval if manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Production</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="qc">
+          <h3>INDUSTRIAL IRON QC / REWORK</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="qc"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected"
+            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><input
+              type="number"
+              name="reiron_qty"
+              placeholder="Re-Iron"
+            /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><select name="defect_type">
+              <option value="">No Defect</option>
+              {% for d in defect_types %}
+              <option>{{d}}</option>
+              {% endfor %}</select
+            ><select name="result">
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REIRON</option>
+              <option>REWORK</option>
+              <option>REJECT</option></select
+            ><textarea
+              name="defect_reason"
+              placeholder="Defect / Reason"
+            ></textarea
+            ><label class="full"
+              >QC Photo<input type="file" name="qc_photo" /></label
+            ><button class="btn full">Record QC</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="forms" style="grid-template-columns: 1fr 2fr 1fr">
+        <div class="formbox" id="downtime">
+          <h3>MACHINE DOWNTIME / BREAKDOWN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="downtime"
+            /><select class="full" name="machine_id" required>
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">{{m.asset_code}} · {{m.name}}</option>
+              {% endfor %}</select
+            ><input
+              name="reference"
+              placeholder="Reference (auto if blank)"
+            /><select name="reason">
+              {% for r in downtime_reasons %}
+              <option>{{r}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              step="0.001"
+              name="production_impact_qty"
+              placeholder="Production Impact Qty"
+            /><textarea name="description" placeholder="Description"></textarea
+            ><button class="btn full">Open Downtime & Hold Machine</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>TODAY'S INDUSTRIAL IRON PRODUCTION</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Bundle</th>
+              <th>Machine</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>Temp</th>
+              <th>Steam</th>
+              <th>Minutes</th>
+              <th>NPT</th>
+              <th>Downtime</th>
+              <th>Total Cost</th>
+            </tr>
+            {% for x in prod|slice:":20" %}
+            <tr>
+              <td>{{x.plan.plan_no}}</td>
+              <td>
+                {% if x.bundle %}{{x.bundle.bundle_no}}{% else %}—{% endif %}
+              </td>
+              <td>
+                {% if x.machine %}{{x.machine.asset_code}}{% else %}—{% endif %}
+              </td>
+              <td>{{x.target_qty}}</td>
+              <td>{{x.actual_qty}}</td>
+              <td>{{x.actual_temperature_c}}°C</td>
+              <td>{{x.steam_pressure_bar}} bar</td>
+              <td>{{x.process_minutes}}</td>
+              <td>{{x.npt_minutes}}</td>
+              <td>{{x.downtime_minutes}}</td>
+              <td>{{x.total_cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="11">No production entries.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>QC / MACHINE PROTECTION</h2>
+          <div class="kpi">
+            <span>QC Pass</span><b>{{payload.qc_pass_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Reject / Re-Iron / Rework</span
+            ><b class="red"
+              >{{payload.qc_reject_qty}} / {{payload.reiron_qty}} /
+              {{payload.rework_qty}}</b
+            >
+          </div>
+          <p>
+            Machine under maintenance, breakdown, hold or active downtime cannot
+            be used for production.
+          </p>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 Industrial Ironing</span
+      ><span>MACHINE HEALTH + BUNDLE SCAN + QC PASS MANDATORY</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

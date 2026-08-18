@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+    <title>Login — Emerald Rozalia</title>
+  </head>
+  <body class="loginbody">
+    <form method="post" class="loginbox">
+      {% csrf_token %}
+      <div class="erlogo">ER</div>
+      <h1>Emerald Rozalia</h1>
+      <p>Unified Project 1 Platform</p>
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}<input name="username" placeholder="Username" required /><input
+        name="password"
+        type="password"
+        placeholder="Password"
+        required
+      /><button>Secure Login</button>
+    </form>
+  </body>
+</html>

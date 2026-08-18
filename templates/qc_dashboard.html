@@ -1,0 +1,824 @@
+{% extends "base.html" %}{% block title %}QC Dashboard{% endblock %}{% block
+content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .q {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    border-right: 1px solid #1d5c46;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #28614d;
+  }
+  .brand b {
+    color: #1fc46a;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #41dd83;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eaf5f1;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d713f;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07362a;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #bed8ce;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b80e1b;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #46df7b;
+  }
+  .red {
+    color: #ff4a56 !important;
+  }
+  .orange {
+    color: #ff9a24 !important;
+  }
+  .blue {
+    color: #4abaff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #57e08d;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 108px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235664;
+  }
+  .arrow {
+    color: #40e37d;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252f;
+    border: 1px solid #1c4b55;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #52de88;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #3bd670;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e303a;
+  }
+  .hold {
+    border-left-color: #ff4a56;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c2b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .q {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="q">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>QUALITY CONTROL</small>
+    </div>
+    <div class="navh">QC CONTROL</div>
+    <a class="on" href="{% url 'qc_dashboard' %}">⌂ QC Dashboard</a
+    ><a href="#plans">▤ Inspection Plan</a
+    ><a href="#scan">▦ Bundle IN / OUT Scan</a
+    ><a href="#inspection">✓ AQL Inspection</a
+    ><a href="#defects">⚠ Defect Register</a
+    ><a href="#capa">▣ CAPA / Root Cause</a><a href="#release">⇄ Release Gate</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">QC STAGES</div>
+    <a href="#plans">Incoming Material</a><a href="#plans">Cutting</a
+    ><a href="#plans">Embroidery</a><a href="#plans">Sewing Inline</a
+    ><a href="#plans">Label / Accessory</a><a href="#plans">Finishing</a
+    ><a href="#plans">Final Inspection</a><a href="#plans">Packing</a
+    ><a href="#plans">Pre-Shipment</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'communication_center' %}">◯ Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">◉ WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a
+    ><a href="{% url 'universal_file_center' %}">▤ File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>QC / QUALITY CONTROL DASHBOARD</h1>
+        <small
+          >Incoming → Production QC → Final → Packing → Pre-Shipment
+          Release</small
+        >
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#defects">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="{% url 'communication_center' %}">Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >Email</a
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+
+      <div class="kpis">
+        <div class="kpi"><span>QC Plans</span><b>{{payload.plans}}</b></div>
+        <div class="kpi">
+          <span>Inspections Today</span><b>{{payload.inspections}}</b>
+        </div>
+        <div class="kpi">
+          <span>Inspected Qty</span><b>{{payload.inspected_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>First Pass Quality</span
+          ><b class="blue">{{payload.fpq_percent}}%</b>
+        </div>
+        <div class="kpi">
+          <span>DHU</span><b class="orange">{{payload.dhu}}</b>
+        </div>
+        <div class="kpi">
+          <span>Critical / Major / Minor</span
+          ><b class="red"
+            >{{payload.critical_defects}} / {{payload.major_defects}} /
+            {{payload.minor_defects}}</b
+          >
+        </div>
+        <div class="kpi">
+          <span>Rework / Reject</span
+          ><b>{{payload.rework_qty}} / {{payload.reject_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Open CAPA</span><b>{{payload.open_capa}}</b>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY QC FLOW</h2>
+        <div class="flow">
+          <div class="step">Order / Specification</div>
+          <b class="arrow">→</b>
+          <div class="step">QC BUNDLE IN SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">AQL / Measurement</div>
+          <b class="arrow">→</b>
+          <div class="step">Critical / Major / Minor</div>
+          <b class="arrow">→</b>
+          <div class="step">PASS / HOLD / REWORK / REJECT</div>
+          <b class="arrow">→</b>
+          <div class="step">Root Cause / CAPA</div>
+          <b class="arrow">→</b>
+          <div class="step">RE-QC</div>
+          <b class="arrow">→</b>
+          <div class="step">Release Gate</div>
+          <b class="arrow">→</b>
+          <div class="step">QC BUNDLE OUT SCAN</div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>QUALITY RESULT</h2>
+          <div class="kpi">
+            <span>Pass Qty</span><b>{{payload.pass_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Measurement Fail</span
+            ><b class="orange">{{payload.measurement_fail_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Label Fail</span><b class="red">{{payload.label_fail_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Packing Fail</span><b>{{payload.packing_fail_qty}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>BUNDLE SCAN CONTROL</h2>
+          <div class="kpi">
+            <span>Valid IN</span><b>{{payload.bundle_in_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Valid OUT</span><b>{{payload.bundle_out_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Blocked</span><b class="red">{{payload.blocked_scans}}</b>
+          </div>
+          <p>OUT is blocked until Release Gate passes.</p>
+        </div>
+        <div class="card">
+          <h2>CAPA / ACTION CONTROL</h2>
+          <div class="kpi">
+            <span>Open CAPA</span><b>{{payload.open_capa}}</b>
+          </div>
+          <div class="kpi">
+            <span>Closed CAPA</span><b>{{payload.closed_capa}}</b>
+          </div>
+          <div class="kpi">
+            <span>Unactioned Defects</span
+            ><b class="orange">{{payload.unactioned_defects}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>RED ALERT RULES</h2>
+          <p>
+            Critical defect · Wrong label/style · Measurement failure · Quantity
+            mismatch · Duplicate scan · Unauthorized bypass · Repeated defect ·
+            Pre-shipment failure.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>QC INSPECTION PLANS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Stage</th>
+              <th>AQL</th>
+              <th>Lot</th>
+              <th>Sample</th>
+              <th>Status</th>
+            </tr>
+            {% for p in plans|slice:":14" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.stage}}</td>
+              <td>{{p.aql_level}}</td>
+              <td>{{p.lot_size}}</td>
+              <td>{{p.sample_size}}</td>
+              <td>{{p.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7">No QC plans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>LATEST INSPECTIONS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Qty</th>
+              <th>Defects</th>
+              <th>DHU</th>
+              <th>Result</th>
+            </tr>
+            {% for i in inspections|slice:":14" %}
+            <tr>
+              <td>{{i.plan.plan_no}}</td>
+              <td>{{i.inspected_qty}}</td>
+              <td>
+                {{i.critical_defects}}/{{i.major_defects}}/{{i.minor_defects}}
+              </td>
+              <td>{{i.dhu}}</td>
+              <td>{{i.result}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5">No inspections.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC QC REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button
+            ><button class="btn" name="slot" value="13:00">13:00</button
+            ><button class="btn" name="slot" value="20:00">20:00</button>
+          </form>
+          <br /><a class="btn" href="{% url 'qc_report_csv' %}">Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE QC INSPECTION PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select name="stage">
+              {% for s in stages %}
+              <option>{{s}}</option>
+              {% endfor %}</select
+            ><input name="buyer" placeholder="Buyer" /><input
+              name="style_no"
+              placeholder="Style No."
+            /><input name="product" placeholder="Product" /><input
+              name="colour"
+              placeholder="Colour"
+            /><input name="size_range" placeholder="Size Range" /><input
+              name="specification_version"
+              value="1.0"
+            /><input name="aql_level" value="2.5" /><input
+              type="number"
+              name="lot_size"
+              placeholder="Lot Size"
+            /><input
+              type="number"
+              name="sample_size"
+              placeholder="Sample Size"
+            /><input type="date" name="planned_inspection_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><label
+              >Specification<input
+                type="file"
+                name="specification_file" /></label
+            ><label
+              >Approved Sample<input
+                type="file"
+                name="approved_sample_file" /></label
+            ><button class="btn full">Create QC Plan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="scan">
+          <h3>QC BUNDLE IN / OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="bundle_scan"
+            /><select class="full" name="plan_id" required>
+              <option value="">QC Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Optional Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}} · {{b.barcode}}</option>
+              {% endfor %}</select
+            ><select name="direction">
+              <option value="IN">QC BUNDLE IN SCAN</option>
+              <option value="OUT">QC BUNDLE OUT SCAN</option></select
+            ><input name="barcode" placeholder="Barcode / QR" /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><input
+              name="source_department"
+              placeholder="Source Department"
+            /><input
+              name="destination_department"
+              placeholder="Destination Department"
+            /><button class="btn full">Validate & Scan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="inspection">
+          <h3>AQL / QUALITY INSPECTION</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="inspection"
+            /><select class="full" name="plan_id" required>
+              <option value="">QC Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Optional Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected Qty"
+            /><input
+              type="number"
+              name="pass_qty"
+              placeholder="Pass Qty"
+            /><input
+              type="number"
+              name="critical_defects"
+              placeholder="Critical"
+            /><input
+              type="number"
+              name="major_defects"
+              placeholder="Major"
+            /><input
+              type="number"
+              name="minor_defects"
+              placeholder="Minor"
+            /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><input
+              type="number"
+              name="measurement_fail_qty"
+              placeholder="Measurement Fail"
+            /><input
+              type="number"
+              name="shade_fail_qty"
+              placeholder="Shade Fail"
+            /><input
+              type="number"
+              name="label_fail_qty"
+              placeholder="Label Fail"
+            /><input
+              type="number"
+              name="workmanship_fail_qty"
+              placeholder="Workmanship Fail"
+            /><input
+              type="number"
+              name="packing_fail_qty"
+              placeholder="Packing Fail"
+            /><select name="result">
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REWORK</option>
+              <option>REJECT</option>
+              <option>CONDITIONAL_PASS</option></select
+            ><textarea name="comments" placeholder="Comments"></textarea
+            ><label>Inspection Photo<input type="file" name="photo" /></label
+            ><label
+              >Inspection Sheet<input
+                type="file"
+                name="inspection_sheet" /></label
+            ><button class="btn full">Record Inspection</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="release">
+          <h3>QC RELEASE GATE</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="release"
+            /><select class="full" name="gate_id" required>
+              <option value="">Release Gate</option>
+              {% for g in gates %}
+              <option value="{{g.id}}">
+                {{g.plan.plan_no}} · System {{g.system_decision}} · Final
+                {{g.final_decision}}
+              </option>
+              {% endfor %}</select
+            ><select name="final_decision">
+              <option>PENDING</option>
+              <option>RELEASE</option>
+              <option>RELEASE_WITH_APPROVAL</option>
+              <option>HOLD</option>
+              <option>REWORK</option>
+              <option>REJECT</option></select
+            ><select name="approval_id">
+              <option value="">Approval if conditional</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><textarea
+              name="decision_reason"
+              placeholder="Decision reason"
+            ></textarea
+            ><button class="btn full">Save Release Decision</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="forms" style="grid-template-columns: 1fr 1fr 2fr">
+        <div class="formbox" id="defects">
+          <h3>DEFECT REGISTER</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="defect"
+            /><select class="full" name="inspection_id" required>
+              <option value="">Inspection</option>
+              {% for i in inspections %}
+              <option value="{{i.id}}">
+                {{i.plan.plan_no}} · {{i.result}}
+              </option>
+              {% endfor %}</select
+            ><input name="defect_code" placeholder="Defect Code" /><select
+              name="category"
+            >
+              {% for c in defect_categories %}
+              <option>{{c}}</option>
+              {% endfor %}</select
+            ><select name="severity">
+              <option>CRITICAL</option>
+              <option>MAJOR</option>
+              <option>MINOR</option></select
+            ><input type="number" name="quantity" value="1" /><textarea
+              name="description"
+              placeholder="Description"
+              required
+            ></textarea
+            ><textarea name="root_cause" placeholder="Root Cause"></textarea
+            ><textarea
+              name="corrective_action"
+              placeholder="Corrective Action"
+            ></textarea
+            ><select class="full" name="responsible_user_id">
+              <option value="">Responsible User</option>
+              {% for u in users %}
+              <option value="{{u.id}}">{{u.username}}</option>
+              {% endfor %}</select
+            ><input class="full" type="datetime-local" name="due_at" /><button
+              class="btn full"
+            >
+              Add Defect
+            </button>
+          </form>
+        </div>
+
+        <div class="formbox" id="capa">
+          <h3>CAPA / ROOT CAUSE</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="capa"
+            /><select class="full" name="inspection_id" required>
+              <option value="">Inspection</option>
+              {% for i in inspections %}
+              <option value="{{i.id}}">{{i.plan.plan_no}}</option>
+              {% endfor %}</select
+            ><textarea
+              name="root_cause"
+              placeholder="Root Cause"
+              required
+            ></textarea
+            ><textarea
+              name="corrective_action"
+              placeholder="Corrective Action"
+              required
+            ></textarea
+            ><textarea
+              name="preventive_action"
+              placeholder="Preventive Action"
+            ></textarea
+            ><select class="full" name="responsible_user_id">
+              <option value="">Responsible User</option>
+              {% for u in users %}
+              <option value="{{u.id}}">{{u.username}}</option>
+              {% endfor %}</select
+            ><input class="full" type="datetime-local" name="due_at" /><button
+              class="btn full"
+            >
+              Open CAPA
+            </button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>OPEN DEFECT / CAPA HISTORY</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Severity / Status</th>
+              <th>Issue</th>
+              <th>Responsible</th>
+              <th>Due</th>
+            </tr>
+            {% for d in defects|slice:":12" %}
+            <tr>
+              <td>{{d.inspection.plan.plan_no}}</td>
+              <td>{{d.severity}}</td>
+              <td>{{d.description|truncatechars:80}}</td>
+              <td>{{d.responsible_user|default:"—"}}</td>
+              <td>{{d.due_at|default:"—"}}</td>
+            </tr>
+            {% endfor %}{% for c in capas|slice:":8" %}
+            <tr>
+              <td>{{c.inspection.plan.plan_no}}</td>
+              <td>CAPA · {{c.status}}</td>
+              <td>{{c.corrective_action|truncatechars:80}}</td>
+              <td>{{c.responsible_user|default:"—"}}</td>
+              <td>{{c.due_at|default:"—"}}</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 QC</span
+      ><span>Critical Defect = HOLD + RED ALERT</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

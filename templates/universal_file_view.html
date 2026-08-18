@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{file_name}}</h1>
+    <p>Reference: {{reference|default:"—"}}</p>
+  </div>
+  <div>
+    <a class="btn" href="{{preview_url}}" target="_blank">PREVIEW</a>
+    <a class="btn" href="{{download_url}}">DOWNLOAD</a>
+    <a class="btn" href="{{print_url}}" target="_blank">PRINT</a>
+  </div>
+</div>
+<div class="card">
+  <h2>File Viewer</h2>
+  <iframe
+    src="{{preview_url}}"
+    style="
+      width: 100%;
+      height: 72vh;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    "
+  ></iframe>
+</div>
+{% endblock %}

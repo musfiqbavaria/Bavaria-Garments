@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Print {{file_name}}</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      iframe {
+        width: 100%;
+        height: 94vh;
+        border: 0;
+      }
+      .bar {
+        padding: 8px;
+        font-family: Arial;
+      }
+      .bar button {
+        padding: 8px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <b>{{file_name}}</b> · {{reference}}
+      <button onclick="window.print()">PRINT</button>
+    </div>
+    <iframe src="{{preview_url}}"></iframe>
+  </body>
+</html>

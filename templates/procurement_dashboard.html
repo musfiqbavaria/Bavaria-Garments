@@ -1,0 +1,493 @@
+{% extends "base.html" %}{% block title %}Procurement Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .x {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    padding: 14px;
+  }
+  .side h2 {
+    font: 18px Georgia;
+  }
+  .side b,
+  .card h3 {
+    color: #45df83;
+  }
+  .side a {
+    display: block;
+    color: #eef8f4;
+    text-decoration: none;
+    padding: 8px;
+    border-bottom: 1px solid #174838;
+  }
+  .m {
+    padding: 9px;
+  }
+  .head {
+    background: #07362a;
+    padding: 14px;
+    font-size: 23px;
+  }
+  .k {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 5px;
+    margin: 7px 0;
+  }
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .card strong {
+    display: block;
+    font-size: 19px;
+    color: #49df7e;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    overflow: auto;
+  }
+  .st {
+    min-width: 105px;
+    background: #103642;
+    padding: 8px;
+    text-align: center;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .f {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .f input,
+  .f select,
+  .f textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e303b;
+    color: white;
+    border: 1px solid #2b5661;
+    padding: 6px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    padding: 7px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .red {
+    color: #ff5662 !important;
+  }
+  .orange {
+    color: #ff9b2f !important;
+  }
+  @media (max-width: 1000px) {
+    .k,
+    .forms {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .x {
+      display: block;
+    }
+    .k,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="x">
+  <aside class="side">
+    <h2><b>EMERALD</b> ROZALIA</h2>
+    <small>PURCHASE / PROCUREMENT</small> <a href="#request">Purchase Request</a
+    ><a href="#compare">Supplier Comparison</a
+    ><a href="#select">Supplier Selection</a
+    ><a href="#commit">Profit Before Spend</a><a href="#po">Purchase Order</a
+    ><a href="#delivery">Delivery Tracking</a
+    ><a href="{% url 'supplier_dashboard' %}">Supplier Master</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a>
+  </aside>
+  <section>
+    <div class="head">
+      PURCHASE / PROCUREMENT DEPARTMENT DASHBOARD<br /><small
+        >Stock Check → RFQ → Compare → Approve → Profit Before Spend → PO →
+        Delivery → GRN</small
+      >
+    </div>
+    <div class="m">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="k">
+        <div class="card">Requests<strong>{{payload.requests}}</strong></div>
+        <div class="card">
+          Shortage<strong class="orange">{{payload.shortage_requests}}</strong>
+        </div>
+        <div class="card">
+          Pending Approval<strong>{{payload.pending_approval}}</strong>
+        </div>
+        <div class="card">Approved<strong>{{payload.approved}}</strong></div>
+        <div class="card">Ordered<strong>{{payload.ordered}}</strong></div>
+        <div class="card">Received<strong>{{payload.received}}</strong></div>
+        <div class="card">Budget<strong>{{payload.budget_value}}</strong></div>
+        <div class="card">
+          Committed<strong>{{payload.committed_value}}</strong>
+        </div>
+        <div class="card">PO Value<strong>{{payload.po_value}}</strong></div>
+        <div class="card">
+          Received Qty<strong>{{payload.received_qty}}</strong>
+        </div>
+      </div>
+      <div class="card">
+        <h3>MANDATORY PROCUREMENT FLOW</h3>
+        <div class="flow">
+          <div class="st">Order / Requirement</div>
+          →
+          <div class="st">Stock Check</div>
+          →
+          <div class="st">Shortage</div>
+          →
+          <div class="st">RFQ</div>
+          →
+          <div class="st">Quotation Comparison</div>
+          →
+          <div class="st">Supplier Performance</div>
+          →
+          <div class="st">Supplier Selection</div>
+          →
+          <div class="st">Profit Before Spend</div>
+          →
+          <div class="st">Approval</div>
+          →
+          <div class="st">PO</div>
+          →
+          <div class="st">Supplier Delivery</div>
+          →
+          <div class="st">STOCK IN / GRN</div>
+          →
+          <div class="st">Invoice / Payment</div>
+        </div>
+      </div>
+
+      <div class="forms" style="margin-top: 7px">
+        <div class="card" id="request">
+          <h3>PURCHASE / PROCUREMENT REQUEST</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="request"
+            /><input
+              name="request_no"
+              placeholder="Request No."
+              required
+            /><select name="order_id">
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select name="material_id">
+              <option value="">Material</option>
+              {% for m in materials %}
+              <option value="{{m.id}}">{{m.material_code}} · {{m.name}}</option>
+              {% endfor %}</select
+            ><input name="description" placeholder="Description" /><input
+              type="number"
+              step=".001"
+              name="required_qty"
+              placeholder="Required Qty"
+            /><input name="uom" placeholder="UOM" /><input
+              type="date"
+              name="required_date"
+            /><input
+              type="number"
+              step=".01"
+              name="budget_value"
+              placeholder="Approved Budget Value"
+            /><button class="btn full">Run Stock Check & Create Request</button>
+          </form>
+        </div>
+
+        <div class="card" id="compare">
+          <h3>SUPPLIER / QUOTATION COMPARISON</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="comparison"
+            /><select class="full" name="request_id" required>
+              <option value="">Procurement Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">
+                {{r.request_no}} · Shortage {{r.shortage_qty}}
+              </option>
+              {% endfor %}</select
+            ><select name="supplier_id" required>
+              <option value="">Approved Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">
+                {{s.supplier_id}} · {{s.company_name}}
+              </option>
+              {% endfor %}</select
+            ><select name="rfq_id">
+              <option value="">RFQ</option>
+              {% for r in rfqs %}
+              <option value="{{r.id}}">{{r.rfq_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              step=".0001"
+              name="unit_price"
+              placeholder="Unit Price"
+            /><input
+              type="number"
+              step=".01"
+              name="freight_cost"
+              placeholder="Freight"
+            /><input
+              type="number"
+              step=".01"
+              name="tax_duty_cost"
+              placeholder="Tax/Duty"
+            /><input
+              type="number"
+              step=".01"
+              name="other_cost"
+              placeholder="Other Cost"
+            /><input
+              type="number"
+              name="lead_time_days"
+              placeholder="Lead Days"
+            /><input
+              name="payment_terms"
+              placeholder="Payment Terms"
+            /><textarea
+              class="full"
+              name="reason"
+              placeholder="Comparison Notes"
+            ></textarea
+            ><button class="btn full">Add Comparison</button>
+          </form>
+        </div>
+
+        <div class="card" id="select">
+          <h3>SUPPLIER SELECTION</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="select"
+            /><select class="full" name="comparison_id" required>
+              <option value="">Comparison</option>
+              {% for c in comparisons %}
+              <option value="{{c.id}}">
+                {{c.request.request_no}} · {{c.supplier.supplier_id}} · Landed
+                {{c.landed_unit_cost}} · Score {{c.total_score}}
+              </option>
+              {% endfor %}</select
+            ><select class="full" name="approval_id" required>
+              <option value="">Selection Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Select Supplier</button>
+          </form>
+        </div>
+
+        <div class="card" id="commit">
+          <h3>PROFIT BEFORE SPEND / COMMITMENT</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="commit"
+            /><select class="full" name="request_id" required>
+              <option value="">Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">
+                {{r.request_no}} · Budget {{r.budget_value}}
+              </option>
+              {% endfor %}</select
+            ><input
+              class="full"
+              type="number"
+              step=".01"
+              name="committed_value"
+              placeholder="Committed Value (blank = landed cost × qty)"
+            /><select class="full" name="approval_id" required>
+              <option value="">MANDATORY Profit-Before-Spend Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Approve Commitment</button>
+          </form>
+        </div>
+
+        <div class="card" id="po">
+          <h3>CREATE PURCHASE ORDER</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="create_po"
+            /><select class="full" name="request_id" required>
+              <option value="">Approved Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">{{r.request_no}} · {{r.status}}</option>
+              {% endfor %}</select
+            ><input name="po_no" placeholder="PO No." required /><input
+              type="date"
+              name="expected_delivery"
+            /><input class="full" type="file" name="po_file" /><button
+              class="btn full"
+            >
+              Create PO
+            </button>
+          </form>
+        </div>
+
+        <div class="card" id="delivery">
+          <h3>DELIVERY / RECEIPT STATUS</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="delivery_status"
+            /><select class="full" name="po_id" required>
+              <option value="">Purchase Order</option>
+              {% for p in pos %}
+              <option value="{{p.id}}">
+                {{p.po_no}} · {{p.supplier.supplier_id}} · {{p.status}}
+              </option>
+              {% endfor %}</select
+            ><button class="btn full">Recalculate Delivery Status</button>
+          </form>
+          <p>
+            Actual STOCK IN / GRN remains controlled in Supplier Management and
+            feeds this procurement status.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>AUTOMATIC REPORTS</h3>
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <a class="btn" href="{% url 'procurement_report_csv' %}">CSV</a>
+            <button type="button" class="btn" onclick="window.print()">
+              Print
+            </button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>PROCUREMENT CONTROL</h3>
+          <p>
+            Supplier must be approved. Stock shortage is recorded before buying.
+            Supplier selection requires approval. PO creation requires selected
+            supplier + Profit-Before-Spend approval. Budget overrun raises Red
+            Alert.
+          </p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 7px">
+        <h3>REQUEST / COMMITMENT STATUS</h3>
+        <table class="tbl">
+          <tr>
+            <th>Request</th>
+            <th>Order</th>
+            <th>Material</th>
+            <th>Required</th>
+            <th>Stock</th>
+            <th>Reserved</th>
+            <th>Shortage</th>
+            <th>Budget</th>
+            <th>Status</th>
+            <th>Supplier</th>
+            <th>Committed</th>
+            <th>PO</th>
+          </tr>
+          {% for r in requests %}
+          <tr>
+            <td>{{r.request_no}}</td>
+            <td>{% if r.order %}{{r.order.master_order_id}}{% endif %}</td>
+            <td>{% if r.material %}{{r.material.material_code}}{% endif %}</td>
+            <td>{{r.required_qty}}</td>
+            <td>{{r.stock_available}}</td>
+            <td>{{r.reserved_qty}}</td>
+            <td class="{% if r.shortage_qty > 0 %}orange{% endif %}">
+              {{r.shortage_qty}}
+            </td>
+            <td>{{r.budget_value}}</td>
+            <td>{{r.status}}</td>
+            <td>
+              {% for c in commitments %}{% if c.request_id == r.id
+              %}{{c.supplier.supplier_id}}{% endif %}{% endfor %}
+            </td>
+            <td>
+              {% for c in commitments %}{% if c.request_id == r.id
+              %}{{c.committed_value}}{% endif %}{% endfor %}
+            </td>
+            <td>
+              {% for c in commitments %}{% if c.request_id == r.id and c.po
+              %}{{c.po.po_no}}{% endif %}{% endfor %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="12">No procurement requests.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

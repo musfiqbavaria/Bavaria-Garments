@@ -1,0 +1,333 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Universal File Center</h1>
+    <p>
+      Project 1 rule: every permitted file/document/attachment → VIEW · PREVIEW
+      · DOWNLOAD · PRINT
+    </p>
+  </div>
+  <div>
+    <button class="btn" onclick="window.print()">Print File Register</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Documents</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Document</th>
+        <th>Category</th>
+        <th>Department</th>
+        <th>Reference</th>
+        <th>Version</th>
+        <th>Uploaded By</th>
+        <th>Access</th>
+      </tr>
+      {% for d in documents %}
+      <tr>
+        <td><b>{{d.document_id}}</b><br />{{d.title}}</td>
+        <td>{{d.category}}</td>
+        <td>{{d.department}}</td>
+        <td>{{d.reference}}</td>
+        <td>{{d.version}}</td>
+        <td>{{d.uploaded_by|default:"—"}}</td>
+        <td>
+          {% if d.file %}
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'document' d.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'document' d.id 'preview' %}"
+            target="_blank"
+            >PREVIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'document' d.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'document' d.id 'print' %}"
+            target="_blank"
+            >PRINT</a
+          >
+          {% else %}No file{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="7">No permitted documents.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Communication Attachments</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Date</th>
+        <th>Thread</th>
+        <th>File</th>
+        <th>Type / Size</th>
+        <th>Uploaded By</th>
+        <th>Access</th>
+      </tr>
+      {% for a in attachments %}
+      <tr>
+        <td>{{a.created_at}}</td>
+        <td>
+          {{a.message.thread.thread_no}}<br />{{a.message.thread.subject}}
+        </td>
+        <td><b>{{a.original_name}}</b></td>
+        <td>{{a.mime_type}}<br />{{a.file_size}} bytes</td>
+        <td>{{a.uploaded_by|default:"—"}}</td>
+        <td>
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' a.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' a.id 'preview' %}"
+            target="_blank"
+            >PREVIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' a.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' a.id 'print' %}"
+            target="_blank"
+            >PRINT</a
+          >
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6">No permitted attachments.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Staff Self-Service Documents</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Employee</th>
+        <th>Type</th>
+        <th>Document</th>
+        <th>Reference</th>
+        <th>Access</th>
+      </tr>
+      {% for d in staff_documents %}
+      <tr>
+        <td>{{d.employee.employee_id}} · {{d.employee.name}}</td>
+        <td>{{d.document_type}}</td>
+        <td><b>{{d.title}}</b></td>
+        <td>{{d.reference}}</td>
+        <td>
+          {% if d.file %}<a
+            class="btn"
+            href="{% url 'universal_file_action' 'staff_document' d.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'staff_document' d.id 'preview' %}"
+            >PREVIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'staff_document' d.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'staff_document' d.id 'print' %}"
+            >PRINT</a
+          >{% else %}No file{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="5">No permitted staff documents.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Staff Application Attachments</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Employee</th>
+        <th>Application</th>
+        <th>Type</th>
+        <th>Access</th>
+      </tr>
+      {% for a in staff_applications %}
+      <tr>
+        <td>{{a.employee.employee_id}} · {{a.employee.name}}</td>
+        <td>{{a.application_no}} · {{a.subject}}</td>
+        <td>{{a.application_type}}</td>
+        <td>
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'staff_application_attachment' a.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'staff_application_attachment' a.id 'preview' %}"
+            >PREVIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'staff_application_attachment' a.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'staff_application_attachment' a.id 'print' %}"
+            >PRINT</a
+          >
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4">No permitted staff application attachments.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+{% if delivery_files %}
+<div class="card">
+  <h2>Delivery Evidence</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Order</th>
+        <th>Buyer</th>
+        <th>Proof of Delivery</th>
+        <th>Signature</th>
+        <th>Delivery Photo</th>
+      </tr>
+      {% for d in delivery_files %}
+      <tr>
+        <td>{{d.order.master_order_id}}</td>
+        <td>{{d.buyer_name}}</td>
+        <td>
+          {% if d.proof_of_delivery %}<a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_pod' d.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_pod' d.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'delivery_pod' d.id 'print' %}"
+            >PRINT</a
+          >{% else %}—{% endif %}
+        </td>
+        <td>
+          {% if d.buyer_signature %}<a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_signature' d.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_signature' d.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'delivery_signature' d.id 'print' %}"
+            >PRINT</a
+          >{% else %}—{% endif %}
+        </td>
+        <td>
+          {% if d.delivery_photo %}<a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_photo' d.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'delivery_photo' d.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'delivery_photo' d.id 'print' %}"
+            >PRINT</a
+          >{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>File Access History</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Date / Time</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>File</th>
+        <th>Reference</th>
+        <th>IP</th>
+      </tr>
+      {% for l in access_logs %}
+      <tr>
+        <td>{{l.created_at}}</td>
+        <td>{{l.user|default:"—"}}</td>
+        <td><b>{{l.action}}</b></td>
+        <td>{{l.file_name}}</td>
+        <td>{{l.reference}}</td>
+        <td>{{l.ip|default:"—"}}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="6">No file access history yet.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endblock %}

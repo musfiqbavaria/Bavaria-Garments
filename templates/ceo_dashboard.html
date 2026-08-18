@@ -1,0 +1,569 @@
+{% extends "base.html" %}{% block title %}CEO Executive Command Center{%
+endblock %}{% block content %}
+<style>
+  body {
+    background: #061820;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .c {
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #06291f;
+    border-right: 1px solid #1e6048;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 16px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #256048;
+  }
+  .brand b {
+    color: #38df7f;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #3cdc80;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eff9f5;
+    text-decoration: none;
+    padding: 8px 14px;
+    border-bottom: 1px solid #103f32;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0c6d42;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07392c;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 24px;
+  }
+  .head p {
+    margin: 3px 0;
+    color: #bad8cc;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: #0e7144;
+    color: white;
+    border: 1px solid #2d8f65;
+    border-radius: 5px;
+    padding: 7px 9px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .btn.red {
+    background: #a60f1c;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0a2832;
+    border: 1px solid #1e4a55;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b3cdc3;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #47df7f;
+  }
+  .red {
+    color: #ff5664 !important;
+  }
+  .orange {
+    color: #ffa12f !important;
+  }
+  .blue {
+    color: #50baff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #55e18d;
+    margin: 0 0 8px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl th,
+  .tbl td {
+    padding: 5px;
+    border-bottom: 1px solid #1c434c;
+    text-align: left;
+    vertical-align: top;
+  }
+  .report {
+    background: #0d303a;
+    border-left: 3px solid #39db79;
+    padding: 6px;
+    margin: 4px 0;
+  }
+  .report.redline {
+    border-left-color: #ff5360;
+  }
+  .scroll {
+    max-height: 300px;
+    overflow: auto;
+  }
+  .foot {
+    padding: 10px 15px;
+    border-top: 1px solid #1d424b;
+    color: #abc6bb;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1150px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 720px) {
+    .c {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3 {
+      grid-template-columns: 1fr;
+    }
+    .head {
+      display: block;
+    }
+    .tools {
+      margin-top: 8px;
+    }
+  }
+</style>
+<div class="c">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>CEO EXECUTIVE COMMAND CENTER</small>
+    </div>
+    <div class="navh">EXECUTIVE</div>
+    <a class="on" href="{% url 'ceo_dashboard' %}">⌂ CEO Dashboard</a
+    ><a href="{% url 'report_master' %}">▤ Report Master</a
+    ><a href="#finance">৳ Finance / Profit</a
+    ><a href="#production">⚙ Production</a
+    ><a href="#orders">▣ Orders / Shipping</a><a href="#people">◉ Workforce</a
+    ><a href="#supplier">◇ Supplier / Purchase</a
+    ><a href="#alerts">⚠ Red Alerts</a><a href="#approvals">✓ CEO Approvals</a
+    ><a href="#reports">◷ CEO Auto Reports</a>
+    <div class="navh">COMMUNICATION</div>
+    <a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp CEO</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a
+    ><a href="{% url 'universal_file_center' %}">Documents / Files</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>CEO EXECUTIVE COMMAND & REPORT CENTER</h1>
+        <p>Company-wide decision dashboard · {{today}}</p>
+      </div>
+      <div class="tools">
+        <a class="btn" href="{% url 'report_master' %}">REPORT MASTER</a
+        ><a class="btn" href="{% url 'ceo_report_csv' %}">DOWNLOAD CSV</a
+        ><button class="btn" onclick="window.print()">PRINT</button
+        ><a class="btn red" href="#alerts">RED ALERT {{summary.red_alerts}}</a>
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+
+      <div class="kpis">
+        <div class="kpi">
+          <span>Orders / Order Value</span
+          ><b>{{summary.orders}} / {{summary.order_value}}</b>
+        </div>
+        <div class="kpi">
+          <span>Production Actual / Target</span
+          ><b>{{summary.production_actual}} / {{summary.production_target}}</b>
+        </div>
+        <div class="kpi">
+          <span>Production Efficiency</span
+          ><b class="blue">{{summary.production_efficiency}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Production Cost</span
+          ><b class="orange">{{summary.production_cost}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today Income / Expense</span
+          ><b>{{summary.income_today}} / {{summary.expense_today}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today Profit</span><b>{{summary.profit_today}}</b>
+        </div>
+        <div class="kpi">
+          <span>Present Staff / Staff Cost</span
+          ><b>{{summary.present_staff}} / {{summary.staff_cost}}</b>
+        </div>
+        <div class="kpi">
+          <span>Alerts / Red / Approval</span
+          ><b class="red"
+            >{{summary.alerts}} / {{summary.red_alerts}} /
+            {{summary.pending_approvals}}</b
+          >
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card" id="finance">
+          <h2>FINANCE / PROFIT / CASH CONTROL</h2>
+          <div class="kpi">
+            <span>Receivable</span><b>{{summary.receivable}}</b>
+          </div>
+          <div class="kpi"><span>Payable</span><b>{{summary.payable}}</b></div>
+          <div class="kpi">
+            <span>Stock Value</span><b>{{summary.stock_value}}</b>
+          </div>
+          <div class="kpi">
+            <span>PO Value / Supplier Outstanding</span
+            ><b>{{summary.po_value}} / {{summary.purchase_outstanding}}</b>
+          </div>
+        </div>
+        <div class="card" id="orders">
+          <h2>ORDER / SHIPPING CONTROL</h2>
+          <div class="kpi">
+            <span>Ready to Ship</span><b>{{summary.ready_to_ship}}</b>
+          </div>
+          <div class="kpi">
+            <span>Shipped / Delivered</span
+            ><b>{{summary.shipped}} / {{summary.delivered}}</b>
+          </div>
+          <div class="kpi">
+            <span>Shipping Holds</span
+            ><b class="red">{{summary.shipping_holds}}</b>
+          </div>
+        </div>
+        <div class="card" id="people">
+          <h2>WORKFORCE</h2>
+          <div class="kpi">
+            <span>Today Present</span><b>{{summary.present_staff}}</b>
+          </div>
+          <div class="kpi">
+            <span>Today Staff Cost</span><b>{{summary.staff_cost}}</b>
+          </div>
+          <div class="kpi">
+            <span>OT Minutes</span><b>{{summary.overtime_minutes}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>SOURCING / PROCUREMENT</h2>
+          <div class="kpi">
+            <span>Open Sourcing</span><b>{{summary.sourcing_open}}</b>
+          </div>
+          <div class="kpi">
+            <span>Open Procurement</span><b>{{summary.procurement_open}}</b>
+          </div>
+          <div class="kpi">
+            <span>Pending Actions</span
+            ><b class="orange">{{summary.pending_actions}}</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="production">
+          <h2>PRODUCTION DEPARTMENT PERFORMANCE</h2>
+          <table class="tbl">
+            <tr>
+              <th>Department</th>
+              <th>Actual</th>
+              <th>Target</th>
+              <th>Efficiency</th>
+              <th>Cost</th>
+            </tr>
+            {% for r in summary.production_rows %}
+            <tr>
+              <td>{{r.name}}</td>
+              <td>{{r.actual}}</td>
+              <td>{{r.target}}</td>
+              <td>{{r.efficiency}}%</td>
+              <td>{{r.cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5">No production data today.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="supplier">
+          <h2>SUPPLIER RISK / PERFORMANCE</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Supplier</th>
+                <th>Score</th>
+                <th>Risk</th>
+                <th>Quality</th>
+                <th>On-Time</th>
+              </tr>
+              {% for s in supplier_perf %}
+              <tr>
+                <td>{{s.supplier.supplier_id}}</td>
+                <td>{{s.supplier_score}}</td>
+                <td>{{s.risk_level}}</td>
+                <td>{{s.quality_pass_pct}}%</td>
+                <td>{{s.on_time_delivery_pct}}%</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="5">No supplier performance.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        <div class="card" id="reports">
+          <h2>CEO AUTO REPORT CENTER</h2>
+          <p>Bangladesh local schedule: <b>08:00 · 13:00 · 20:00</b></p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Actions
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No CEO reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="report"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <button class="btn" name="slot" value="MANUAL">MANUAL</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="alerts">
+          <h2>RED ALERT / CEO ATTENTION</h2>
+          <div class="scroll">
+            {% for a in alerts %}
+            <div class="report {% if a.level == 'RED' %}redline{% endif %}">
+              <b>{{a.level}} · {{a.title}}</b
+              ><br />{{a.message|truncatechars:130}}<br /><small
+                >{{a.department}} · {{a.reference}} · {{a.created_at}}</small
+              >
+              <form method="post" style="margin-top: 4px">
+                {% csrf_token %}<input
+                  type="hidden"
+                  name="action"
+                  value="action_alert"
+                /><input
+                  type="hidden"
+                  name="alert_id"
+                  value="{{a.id}}"
+                /><button class="btn">MARK ACTIONED</button>
+              </form>
+            </div>
+            {% empty %}
+            <p>No open alerts.</p>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card" id="approvals">
+          <h2>PENDING CEO / MANAGEMENT APPROVALS</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Type</th>
+                <th>Reference</th>
+                <th>By</th>
+                <th>Requested</th>
+              </tr>
+              {% for a in approvals %}
+              <tr>
+                <td>{{a.approval_type}}</td>
+                <td>{{a.reference}}</td>
+                <td>{{a.requested_by}}</td>
+                <td>{{a.requested_at}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="4">No pending approvals.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2>ACTION REQUIRED</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Action</th>
+                <th>Dept.</th>
+                <th>Priority</th>
+                <th>Due</th>
+              </tr>
+              {% for a in actions %}
+              <tr>
+                <td>{{a.title}}</td>
+                <td>{{a.department}}</td>
+                <td>{{a.priority}}</td>
+                <td>{{a.due_at}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="4">No open actions.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card">
+          <h2>MASTER ORDER EXECUTIVE VIEW</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Order</th>
+                <th>Buyer</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Value</th>
+                <th>Status</th>
+              </tr>
+              {% for o in orders %}
+              <tr>
+                <td>{{o.master_order_id}}</td>
+                <td>{{o.buyer}}</td>
+                <td>{{o.product}}</td>
+                <td>{{o.quantity}}</td>
+                <td>{{o.order_value}}</td>
+                <td>{{o.status}}</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2>SHIPPING EXECUTIVE VIEW</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Shipment</th>
+                <th>Order</th>
+                <th>Carrier</th>
+                <th>ETA</th>
+                <th>Status</th>
+              </tr>
+              {% for s in shipping %}
+              <tr>
+                <td>{{s.plan_no}}</td>
+                <td>{{s.order.master_order_id}}</td>
+                <td>{{s.carrier}}</td>
+                <td>{{s.eta}}</td>
+                <td>{{s.status}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="5">No shipment plans.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2>REPORT MASTER / COMMUNICATION</h2>
+          <p>
+            CEO Report Center is connected to the central Report Master for full
+            departmental drill-down.
+          </p>
+          <a class="btn" href="{% url 'report_master' %}">OPEN REPORT MASTER</a
+          ><br /><br /><a class="btn" href="{% url 'communication_center' %}"
+            >CHAT 24/7</a
+          >
+          <a
+            class="btn"
+            href="{% url 'communication_center' %}?channel=WHATSAPP"
+            >WHATSAPP</a
+          >
+          <a class="btn" href="{% url 'communication_center' %}?channel=EMAIL"
+            >EMAIL</a
+          >
+        </div>
+      </div>
+    </div>
+    <footer class="foot">
+      <span>Emerald Rozalia Limited — CEO Executive Command Center</span
+      ><span>REPORT MASTER → CEO DECISION CENTER</span
+      ><span>08:00 · 13:00 · 20:00</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

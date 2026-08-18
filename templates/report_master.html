@@ -1,0 +1,607 @@
+{% extends "base.html" %}{% block title %}Report Master{% endblock %}{% block
+content %}
+<style>
+  body {
+    background: #061820;
+    color: #edf8f3;
+  }
+  .topbar {
+    background: #052b21 !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .rm {
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #07291f;
+    border-right: 1px solid #1b5c45;
+    padding-bottom: 30px;
+  }
+  .brand2 {
+    padding: 17px 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #225c48;
+  }
+  .brand2 b {
+    color: #31da78;
+  }
+  .side h4 {
+    color: #39d87b;
+    font-size: 9px;
+    margin: 14px 14px 5px;
+  }
+  .side a {
+    display: block;
+    color: #eaf7f2;
+    text-decoration: none;
+    padding: 8px 14px;
+    border-bottom: 1px solid #103c30;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d6e42;
+  }
+  .main2 {
+    min-width: 0;
+  }
+  .hero {
+    background: #06382b;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #176146;
+  }
+  .hero h1 {
+    margin: 0;
+    font-size: 24px;
+  }
+  .hero p {
+    margin: 3px 0 0;
+    color: #b9d7ca;
+  }
+  .hero .actions {
+    margin-left: auto;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2b8a60;
+    border-radius: 5px;
+    padding: 7px 9px;
+    text-decoration: none;
+    font-size: 9px;
+    cursor: pointer;
+  }
+  .btn.red {
+    background: #a8101d;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .card,
+  .kpi {
+    background: #0a2731;
+    border: 1px solid #1d4a55;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #45df7d;
+  }
+  .redtxt {
+    color: #ff5260 !important;
+  }
+  .orangetxt {
+    color: #ffa02d !important;
+  }
+  .bluetxt {
+    color: #50baff !important;
+  }
+  .card h2 {
+    margin: 0 0 8px;
+    color: #50df8a;
+    font-size: 11px;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .catalog {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+  }
+  .mod {
+    background: #0d303a;
+    border: 1px solid #245462;
+    border-radius: 5px;
+    padding: 8px;
+    min-height: 74px;
+  }
+  .mod strong {
+    display: block;
+    color: #63e493;
+  }
+  .mod small {
+    display: block;
+    color: #a9c3b9;
+    margin: 3px 0 6px;
+  }
+  .mod a {
+    color: #fff;
+    text-decoration: none;
+    background: #0c6b40;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-size: 8px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl th,
+  .tbl td {
+    padding: 5px;
+    border-bottom: 1px solid #1a424b;
+    text-align: left;
+    vertical-align: top;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 5px;
+    border-radius: 3px;
+    background: #124354;
+    margin: 1px;
+    font-size: 7px;
+  }
+  .report {
+    background: #0d3039;
+    border-left: 3px solid #35d875;
+    padding: 7px;
+    margin: 4px 0;
+  }
+  .report.red {
+    border-left-color: #ff4e5b;
+  }
+  .scroll {
+    max-height: 310px;
+    overflow: auto;
+  }
+  .toolbar {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 7px;
+  }
+  .foot {
+    padding: 10px 15px;
+    border-top: 1px solid #1b414a;
+    color: #aac5ba;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1200px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .catalog {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .grid4 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 750px) {
+    .rm {
+      display: block;
+    }
+    .kpis,
+    .catalog,
+    .grid4,
+    .grid3 {
+      grid-template-columns: 1fr;
+    }
+    .hero {
+      display: block;
+    }
+    .hero .actions {
+      margin-top: 8px;
+    }
+  }
+</style>
+
+<div class="rm">
+  <aside class="side">
+    <div class="brand2">
+      <b>EMERALD</b> ROZALIA<br /><small>REPORT MASTER</small>
+    </div>
+    <h4>REPORT CENTER</h4>
+    <a class="on" href="{% url 'report_master' %}">⌂ Report Master Home</a>
+    <a href="#departments">▦ Department Reports</a>
+    <a href="#scheduled">◷ 08:00 / 13:00 / 20:00 Reports</a>
+    <a href="#alerts">⚠ Alerts / Actioned</a>
+    <a href="#approvals">✓ Pending Approvals</a>
+    <a href="#orders">▤ Order Reports</a>
+    <a href="#documents">▣ Documents</a>
+    <a href="#communications">◯ Communication History</a>
+    <a href="#history">↺ Report History</a>
+    <h4>EXECUTIVE</h4>
+    <a href="/page/ceo-dashboard/">CEO Report Center</a>
+    <a href="{% url 'communication_center' %}">Chat 24/7</a>
+    <a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a>
+    <a href="{% url 'communication_center' %}?channel=EMAIL">Email</a>
+    <a href="{% url 'universal_file_center' %}">Universal File Center</a>
+  </aside>
+
+  <section class="main2">
+    <header class="hero">
+      <div>
+        <h1>#52 REPORT MASTER — REBUILT</h1>
+        <p>
+          Central reporting control for all Project 1 departments · {{today}}
+        </p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="{% url 'report_master_csv' %}">DOWNLOAD CSV</a>
+        <button class="btn" onclick="window.print()">PRINT</button>
+        <a class="btn" href="{% url 'universal_file_center' %}">FILE CENTER</a>
+        <a class="btn red" href="#alerts">RED ALERTS {{summary.red_alerts}}</a>
+      </div>
+    </header>
+
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+
+      <div class="toolbar">
+        <span class="btn">VIEW</span><span class="btn">PREVIEW</span
+        ><span class="btn">EDIT — permission controlled</span
+        ><span class="btn">REMOVE — permission controlled</span
+        ><a class="btn" href="{% url 'report_master_csv' %}">DOWNLOAD</a
+        ><button class="btn" onclick="window.print()">PRINT</button>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi">
+          <span>Registered Pages</span><b>{{summary.registered_pages}}</b>
+        </div>
+        <div class="kpi">
+          <span>Master Orders</span><b>{{summary.orders}}</b>
+        </div>
+        <div class="kpi">
+          <span>Order Value</span><b>{{summary.order_value}}</b>
+        </div>
+        <div class="kpi">
+          <span>Ready / Shipped</span
+          ><b>{{summary.ready_to_ship}} / {{summary.shipped}}</b>
+        </div>
+        <div class="kpi">
+          <span>Delivered</span><b>{{summary.delivered}}</b>
+        </div>
+        <div class="kpi">
+          <span>Open Alerts / Red</span
+          ><b class="redtxt">{{summary.alerts}} / {{summary.red_alerts}}</b>
+        </div>
+        <div class="kpi">
+          <span>Pending Actions / Approvals</span
+          ><b class="orangetxt"
+            >{{summary.pending_actions}} / {{summary.pending_approvals}}</b
+          >
+        </div>
+        <div class="kpi">
+          <span>Auto Reports Today</span
+          ><b class="bluetxt">{{summary.auto_reports_today}}</b>
+        </div>
+      </div>
+
+      <div class="card" id="departments" style="margin-bottom: 7px">
+        <h2>ALL DEPARTMENT REPORT DASHBOARDS</h2>
+        <div class="catalog">
+          {% for r in catalog %}
+          <div class="mod">
+            <strong
+              >{% if r.page_id %}#{{r.page_id}} · {% endif %}{{r.group}}</strong
+            >
+            <small>{{r.title}}</small>
+            {% for a in r.actions|slice:":4" %}<span class="badge">{{a}}</span
+            >{% endfor %} <br /><br /><a href="/page/{{r.slug}}/"
+              >OPEN / DRILL DOWN</a
+            >
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>ORDER / PRODUCTION STATUS</h2>
+          <div class="kpi">
+            <span>Production Orders</span><b>{{summary.production_orders}}</b>
+          </div>
+          <div class="kpi">
+            <span>Ready to Ship</span><b>{{summary.ready_to_ship}}</b>
+          </div>
+          <div class="kpi"><span>Shipped</span><b>{{summary.shipped}}</b></div>
+          <div class="kpi">
+            <span>Delivered</span><b>{{summary.delivered}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>CONTROL CENTER</h2>
+          <div class="kpi">
+            <span>Open Alerts</span><b class="redtxt">{{summary.alerts}}</b>
+          </div>
+          <div class="kpi">
+            <span>Pending Actions</span><b>{{summary.pending_actions}}</b>
+          </div>
+          <div class="kpi">
+            <span>Pending Approvals</span
+            ><b class="orangetxt">{{summary.pending_approvals}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>DOCUMENT / COMMUNICATION</h2>
+          <div class="kpi">
+            <span>Documents</span><b>{{summary.documents}}</b>
+          </div>
+          <div class="kpi">
+            <span>Communications Today</span
+            ><b>{{summary.communications_today}}</b>
+          </div>
+          <p>
+            Company files remain under permission-controlled Universal File
+            Center.
+          </p>
+        </div>
+        <div class="card">
+          <h2>REPORT SNAPSHOT GENERATOR</h2>
+          <p>
+            Create a consolidated Report Master snapshot for the scheduled slots
+            or on demand.
+          </p>
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_snapshot"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <button class="btn" name="slot" value="MANUAL">MANUAL</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="scheduled">
+          <h2>DEPARTMENT AUTOMATIC REPORTS — TODAY</h2>
+          <table class="tbl">
+            <tr>
+              <th>Department</th>
+              <th>Slot</th>
+              <th>Alerts</th>
+              <th>Pending</th>
+              <th>Escalated</th>
+              <th>Generated</th>
+            </tr>
+            {% for r in auto_reports %}
+            <tr>
+              <td>{{r.department}}</td>
+              <td>{{r.slot}}</td>
+              <td>{{r.alerts}}</td>
+              <td>{{r.pending}}</td>
+              <td class="{% if r.escalated %}redtxt{% endif %}">
+                {{r.escalated}}
+              </td>
+              <td>{{r.generated_at}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">
+                No department automatic reports generated today yet.
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+
+        <div class="card" id="alerts">
+          <h2>RED ALERT / ALERT CONTROL</h2>
+          <div class="scroll">
+            {% for a in alerts %}
+            <div class="report {% if a.level == 'RED' %}red{% endif %}">
+              <b>{{a.level}} · {{a.title}}</b
+              ><br />{{a.message|truncatechars:120}}<br /><small
+                >{{a.department}} · {{a.reference}} · {{a.created_at}}</small
+              >
+              <form method="post" style="margin-top: 4px">
+                {% csrf_token %}<input
+                  type="hidden"
+                  name="action"
+                  value="action_alert"
+                /><input
+                  type="hidden"
+                  name="alert_id"
+                  value="{{a.id}}"
+                /><button class="btn">MARK ACTIONED</button>
+              </form>
+            </div>
+            {% empty %}
+            <p>No open alerts.</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="card" id="approvals">
+          <h2>PENDING APPROVALS</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Type</th>
+                <th>Reference</th>
+                <th>Requested</th>
+                <th>By</th>
+              </tr>
+              {% for a in approvals %}
+              <tr>
+                <td>{{a.approval_type}}</td>
+                <td>{{a.reference}}</td>
+                <td>{{a.requested_at}}</td>
+                <td>{{a.requested_by}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="4">No pending approvals.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="orders">
+          <h2>MASTER ORDER REPORT</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Order</th>
+                <th>Buyer</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Value</th>
+                <th>Status</th>
+              </tr>
+              {% for o in orders %}
+              <tr>
+                <td>{{o.master_order_id}}</td>
+                <td>{{o.buyer}}</td>
+                <td>{{o.product}}</td>
+                <td>{{o.quantity}}</td>
+                <td>{{o.order_value}}</td>
+                <td>{{o.status}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6">No orders.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        <div class="card" id="documents">
+          <h2>LATEST DOCUMENTS</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Dept.</th>
+                <th>Ref.</th>
+              </tr>
+              {% for d in documents %}
+              <tr>
+                <td>{{d.document_id}}</td>
+                <td>{{d.title}}</td>
+                <td>{{d.department}}</td>
+                <td>{{d.reference}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="4">No documents.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+          <br /><a class="btn" href="{% url 'universal_file_center' %}"
+            >VIEW / PREVIEW / DOWNLOAD / PRINT</a
+          >
+        </div>
+        <div class="card" id="communications">
+          <h2>COMMUNICATION HISTORY</h2>
+          <div class="scroll">
+            <table class="tbl">
+              <tr>
+                <th>Channel</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Reference</th>
+              </tr>
+              {% for c in communications %}
+              <tr>
+                <td>{{c.channel}}</td>
+                <td>{{c.sender}}</td>
+                <td>{{c.recipient}}</td>
+                <td>{{c.reference}}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="4">No communications.</td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="history">
+        <h2>REPORT MASTER SNAPSHOT HISTORY</h2>
+        <table class="tbl">
+          <tr>
+            <th>Generated</th>
+            <th>Type</th>
+            <th>Data</th>
+          </tr>
+          {% for s in snapshots %}
+          <tr>
+            <td>{{s.generated_at}}</td>
+            <td>{{s.snapshot_type}}</td>
+            <td>{{s.data|truncatechars:300}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="3">No Report Master snapshots yet.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    <footer class="foot">
+      <span>Emerald Rozalia Limited — Project 1 Report Master</span
+      ><span>ALL DEPARTMENTS → REPORT MASTER → CEO REPORT CENTER</span
+      ><span>08:00 · 13:00 · 20:00</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

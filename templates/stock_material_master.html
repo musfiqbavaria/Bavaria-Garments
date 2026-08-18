@@ -1,0 +1,361 @@
+{% extends 'base.html' %}{% block title %}Stock & Material Master{% endblock
+%}{% block content %}
+<section class="wrap">
+  <div class="pagehead">
+    <div>
+      <small>PROJECT 1 / STOCK CONTROL</small>
+      <h1>#32 Stock & Material Master</h1>
+      <p>
+        Material master • roll/lot traceability • mandatory stock scan •
+        reservation • valuation • QC • audit history
+      </p>
+    </div>
+    <div class="pill">LIVE CONTROL</div>
+  </div>
+  {% if messages %}{% for message in messages %}
+  <div class="notice {% if message.tags == 'error' %}danger{% endif %}">
+    <b>{{ message }}</b>
+  </div>
+  {% endfor %}{% endif %}
+  <div class="stats">
+    <article>
+      <small>Total Physical Qty</small><strong>{{ total_qty }}</strong>
+    </article>
+    <article>
+      <small>Reserved</small><strong>{{ reserved_qty }}</strong>
+    </article>
+    <article>
+      <small>Available</small><strong>{{ available_qty }}</strong>
+    </article>
+    <article>
+      <small>Stock Value</small><strong>{{ total_value|floatformat:2 }}</strong>
+    </article>
+  </div>
+  <div class="toolbar">
+    <a class="btn" href="?">View</a
+    ><button onclick="window.print()">Preview / Print</button
+    ><a class="btn" href="/stock-material-master/export.csv">Download CSV</a
+    ><a class="btn" href="/admin/portal/materialmaster/">Edit Master</a
+    ><a class="btn" href="/admin/portal/materiallot/">Remove / Admin</a>
+  </div>
+  <div class="split">
+    <section class="panel">
+      <h2>Material Master</h2>
+      <form class="filter" method="get">
+        <input
+          name="q"
+          value="{{ request.GET.q }}"
+          placeholder="Material code, name or colour"
+        /><select name="category">
+          <option value="">All categories</option>
+          {% for c in categories %}
+          <option {% if request.GET.category="" ="c" %}selected{% endif %}>
+            {{ c }}
+          </option>
+          {% endfor %}</select
+        ><button>Search</button>
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Material</th>
+            <th>Category</th>
+            <th>Composition</th>
+            <th>GSM</th>
+            <th>Width</th>
+            <th>Colour</th>
+            <th>UOM</th>
+            <th>Std Cost</th>
+            <th>Reorder</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in materials %}
+          <tr>
+            <td><b>{{ m.material_code }}</b></td>
+            <td>{{ m.name }}</td>
+            <td>{{ m.category }}</td>
+            <td>{{ m.composition }}</td>
+            <td>{{ m.gsm|default:'-' }}</td>
+            <td>{{ m.width|default:'-' }} {{ m.width_unit }}</td>
+            <td>{{ m.colour|default:'-' }}</td>
+            <td>{{ m.uom }}</td>
+            <td>{{ m.currency }} {{ m.standard_cost }}</td>
+            <td>{{ m.reorder_level }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10">No materials yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Add Material</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="create_material"
+        /><label>Material Code<input name="material_code" required /></label
+        ><label>Name<input name="name" required /></label
+        ><label
+          >Category<select name="category">
+            {% for c in categories %}
+            <option>{{ c }}</option>
+            {% endfor %}
+          </select></label
+        ><label>Subcategory<input name="subcategory" /></label
+        ><label
+          >Composition
+          <input name="composition" placeholder="Cotton:95, Spandex:5" /></label
+        ><label>GSM<input name="gsm" type="number" step="0.01" /></label
+        ><label>Width<input name="width" type="number" step="0.001" /></label
+        ><label>Colour<input name="colour" /></label
+        ><label
+          >UOM<select name="uom">
+            <option>PCS</option>
+            <option>METRE</option>
+            <option>YARD</option>
+            <option>KG</option>
+            <option>ROLL</option>
+            <option>SET</option>
+          </select></label
+        ><label
+          >Standard Cost<input
+            name="standard_cost"
+            type="number"
+            step="0.0001" /></label
+        ><label
+          >Reorder Level<input
+            name="reorder_level"
+            type="number"
+            step="0.001" /></label
+        ><button>Create Material</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="split" style="margin-top: 16px">
+    <section class="panel">
+      <h2>Roll / Lot Stock</h2>
+      <form class="filter" method="get">
+        <select name="status">
+          <option value="">All statuses</option>
+          {% for s in stock_statuses %}
+          <option {% if request.GET.status="" ="s" %}selected{% endif %}>
+            {{ s }}
+          </option>
+          {% endfor %}</select
+        ><button>Filter</button>
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>Barcode</th>
+            <th>Material</th>
+            <th>Lot</th>
+            <th>PO / Order</th>
+            <th>Supplier</th>
+            <th>Qty</th>
+            <th>Reserved</th>
+            <th>Available</th>
+            <th>Value</th>
+            <th>Status</th>
+            <th>QC</th>
+            <th>Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in lots %}
+          <tr>
+            <td><b>{{ l.roll_barcode }}</b></td>
+            <td>{{ l.material.material_code }} · {{ l.material.name }}</td>
+            <td>{{ l.lot_no }}</td>
+            <td>
+              {{ l.purchase_order_no }}<br /><small
+                >{{ l.customer_order_no }}</small
+              >
+            </td>
+            <td>{{ l.supplier }}</td>
+            <td>{{ l.current_qty }}</td>
+            <td>{{ l.reserved_qty }}</td>
+            <td class="status">{{ l.available_qty }}</td>
+            <td>{{ l.total_value|floatformat:2 }}</td>
+            <td>{{ l.stock_status }}</td>
+            <td>{{ l.qc_status }}</td>
+            <td>{{ l.location|default:'-' }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="12">No stock lots yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Receive New Roll / Lot</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="create_lot"
+        /><label
+          >Material<select name="material_id" required>
+            {% for m in materials %}
+            <option value="{{ m.id }}">
+              {{ m.material_code }} · {{ m.name }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label>Lot No.<input name="lot_no" required /></label
+        ><label>Roll Barcode / QR<input name="roll_barcode" required /></label
+        ><label>Purchase Order No.<input name="purchase_order_no" /></label
+        ><label>Customer Order No.<input name="customer_order_no" /></label
+        ><label>Supplier<input name="supplier" /></label
+        ><label
+          >Quantity<input
+            name="original_qty"
+            type="number"
+            step="0.001"
+            required /></label
+        ><label>Length<input name="length" type="number" step="0.001" /></label
+        ><label
+          >Unit Cost<input
+            name="unit_cost"
+            type="number"
+            step="0.0001" /></label
+        ><label
+          >Location<select name="location_id">
+            <option value="">--</option>
+            {% for x in locations %}
+            <option value="{{ x.id }}">{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          >QC Status<select name="qc_status">
+            <option>PENDING</option>
+            <option>APPROVED</option>
+            <option>HOLD</option>
+            <option>REJECTED</option>
+          </select></label
+        ><button>STOCK IN SCAN</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="split" style="margin-top: 16px">
+    <section class="panel">
+      <h2>Movement / Scan History</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Type</th>
+            <th>Barcode</th>
+            <th>Material</th>
+            <th>Qty</th>
+            <th>Balance</th>
+            <th>Reference</th>
+            <th>Order</th>
+            <th>User</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in movements %}
+          <tr>
+            <td>{{ x.performed_at|date:'Y-m-d H:i' }}</td>
+            <td class="status">{{ x.movement_type }}</td>
+            <td>{{ x.barcode }}</td>
+            <td>{{ x.material.material_code }}</td>
+            <td>{{ x.quantity }}</td>
+            <td>{{ x.balance_after }}</td>
+            <td>{{ x.reference }}</td>
+            <td>{{ x.order_reference }}</td>
+            <td>{{ x.performed_by|default:'System' }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9">No movements yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <aside class="panel formpanel">
+      <h2>Post Stock Movement</h2>
+      <form method="post">
+        {% csrf_token %}<input
+          type="hidden"
+          name="action"
+          value="movement"
+        /><label
+          >Roll / Lot<select name="lot_id" required>
+            {% for l in lots %}
+            <option value="{{ l.id }}">
+              {{ l.roll_barcode }} · {{ l.material.material_code }} · Avail {{
+              l.available_qty }}
+            </option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Movement<select name="movement_type">
+            <option>STOCK_OUT_SCAN</option>
+            <option>STOCK_IN_SCAN</option>
+            <option>TRANSFER</option>
+            <option>RESERVE</option>
+            <option>RELEASE</option>
+            <option>WASTAGE</option>
+            <option>REJECT</option>
+            <option>RETURN</option>
+            <option>ADJUSTMENT</option>
+          </select></label
+        ><label
+          >Quantity<input
+            name="quantity"
+            type="number"
+            step="0.001"
+            required /></label
+        ><label
+          >Barcode / QR<input
+            name="barcode"
+            placeholder="Defaults to roll barcode" /></label
+        ><label>Reference No.<input name="reference" required /></label
+        ><label>Order Reference<input name="order_reference" /></label
+        ><label>PO No.<input name="purchase_order_no" /></label
+        ><label
+          >Source<select name="source_location_id">
+            <option value="">--</option>
+            {% for x in locations %}
+            <option value="{{ x.id }}">{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          >Destination<select name="destination_location_id">
+            <option value="">--</option>
+            {% for x in locations %}
+            <option value="{{ x.id }}">{{ x }}</option>
+            {% endfor %}
+          </select></label
+        ><label
+          ><input style="width: auto" type="checkbox" name="manual_entry" />
+          Manual Entry (senior approval required)</label
+        ><label>Approval ID<input name="approval_id" /></label
+        ><label>Reason<input name="reason" /></label
+        ><button>Post Movement</button>
+      </form>
+      {% if low_materials %}
+      <h3>Low / Reorder Alerts</h3>
+      {% for m,b in low_materials %}
+      <div class="notice danger">
+        <b>{{ m.material_code }} · {{ m.name }}</b
+        ><small>Balance {{ b }} / Reorder {{ m.reorder_level }}</small>
+      </div>
+      {% endfor %}{% endif %}
+    </aside>
+  </div>
+</section>
+{% endblock %}

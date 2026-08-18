@@ -1,0 +1,30 @@
+{% extends 'base.html' %}{% block title %}Project 1 Dashboard{% endblock %}{%
+block content %}
+<section class="wrap">
+  <div class="pagehead">
+    <div>
+      <h1>Unified Project 1 Dashboard</h1>
+      <p>70 controlled primary pages • 650 Forms Master definitions</p>
+    </div>
+    <div class="pill">LIVE CORE</div>
+  </div>
+  <div class="stats">
+    <article><small>Primary Pages</small><strong>70</strong></article>
+    <article><small>Forms Master</small><strong>650</strong></article>
+    <article>
+      <small>Open Orders</small><strong>{{ orders|length }}</strong>
+    </article>
+    <article><small>Delivery Target</small><strong>≤30d</strong></article>
+  </div>
+  <h2>All Modules</h2>
+  <div class="grid">
+    {% for p in pages %}<a
+      class="card"
+      href="{% if p.slug == 'forms-master' %}/forms-master/{% elif p.slug == 'report-master' %}/report-master/{% elif p.slug == 'bundle-barcode' %}/bundle-barcode/{% elif p.slug == 'stock-material-master' %}/stock-material-master/{% else %}/p/{{ p.slug }}/{% endif %}"
+      ><span>#{{ p.page_id }}</span>
+      <h3>{{ p.title }}</h3>
+      <small>{{ p.group|upper }}</small></a
+    >{% endfor %}
+  </div>
+</section>
+{% endblock %}

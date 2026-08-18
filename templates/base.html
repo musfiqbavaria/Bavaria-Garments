@@ -1,0 +1,40 @@
+{% load static %} <!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}Emerald Rozalia{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    {% if user.is_authenticated %}
+    <header class="topbar">
+      <a class="brand" href="/dashboard/">ER <span>EMERALD ROZALIA</span></a>
+      <nav>
+        <a href="/dashboard/">Dashboard</a
+        ><a href="/account-master/"><b>ACCOUNT MASTER</b></a
+        ><a href="/report-master/"><b>REPORT MASTER</b></a
+        ><a href="/ceo-dashboard/"><b>CEO REPORT</b></a
+        ><a href="/staff-self-service/">Staff Self-Service</a
+        ><a href="/stock-material-master/">Stock & Material</a
+        ><a href="/forms-master/">Forms Master</a
+        ><a href="/bundle-barcode/">Barcode</a><a href="/admin/">Admin</a
+        ><a href="/logout/">Logout</a
+        ><a href="{% url 'universal_file_center' %}">Universal File Center</a>
+      </nav>
+    </header>
+    <div class="controlbar">
+      <span>⚠ Alerts <b>{{ global_alerts }}</b></span
+      ><span>✓ Action Required <b>{{ global_actions }}</b></span
+      ><span class="red">● Red Alert <b>{{ global_red_alerts }}</b></span
+      ><span>💬 Chat 24/7</span><span>◉ WhatsApp</span><span>✉ Email</span
+      ><span>▣ Company Forms</span><span>▤ Documents</span
+      ><span>▥ Reporting</span><span>Login No. <b>{{ login_no }}</b></span
+      ><span>Present <b>{{ today_present_staff }}</b></span
+      ><span>Staff Cost <b>{{ today_staff_cost }}</b></span>
+    </div>
+    {% endif %}
+    <main>{% block content %}{% endblock %}</main>
+    <script src="{% static 'js/app.js' %}"></script>
+  </body>
+</html>

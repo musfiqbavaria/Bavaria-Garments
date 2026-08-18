@@ -1,0 +1,1 @@
+document.addEventListener('click',e=>{if(e.target.matches('button')&&['View','Preview','Edit','Remove','Download','Print'].includes(e.target.textContent.trim())&&e.target.textContent.trim()!=='Print'){console.log('Project 1 action:',e.target.textContent.trim())}})

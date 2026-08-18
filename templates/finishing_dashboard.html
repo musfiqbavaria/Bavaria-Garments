@@ -1,0 +1,436 @@
+{% extends "base.html" %}{% block title %}Finishing Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071921;
+    color: #eef8f4;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .x {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .s {
+    background: #08291f;
+    padding: 14px;
+  }
+  .s h2 {
+    font: 18px Georgia;
+  }
+  .s b,
+  .c h3 {
+    color: #45df83;
+  }
+  .s a {
+    display: block;
+    color: #eef8f4;
+    text-decoration: none;
+    padding: 8px;
+    border-bottom: 1px solid #174838;
+  }
+  .m {
+    padding: 10px;
+  }
+  .h {
+    background: #07362a;
+    padding: 14px;
+    font-size: 23px;
+  }
+  .k {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+    margin: 8px 0;
+  }
+  .c {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .c strong {
+    display: block;
+    font-size: 20px;
+    color: #49df7e;
+  }
+  .flow {
+    display: flex;
+    gap: 5px;
+    overflow: auto;
+  }
+  .st {
+    min-width: 110px;
+    background: #103642;
+    padding: 8px;
+    text-align: center;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .f {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .f input,
+  .f select,
+  .f textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e303b;
+    color: white;
+    border: 1px solid #2b5661;
+    padding: 6px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    padding: 7px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  @media (max-width: 900px) {
+    .x {
+      display: block;
+    }
+    .k,
+    .forms {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 600px) {
+    .k,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="x">
+  <aside class="s">
+    <h2><b>EMERALD</b> ROZALIA</h2>
+    <small>FINISHING DEPARTMENT</small><a href="#plan">Finishing Plan</a
+    ><a href="#scan">FINISHING IN / OUT SCAN</a
+    ><a href="#production">Production / WIP</a><a href="#qc">Finishing QC</a
+    ><a href="#cost">Costing</a><a href="#reports">Automatic Reports</a
+    ><a href="{% url 'final_qc_dashboard' %}">Final QC Handover</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a
+    ><a href="{% url 'universal_file_center' %}">File Center</a>
+  </aside>
+  <section>
+    <div class="h">
+      FINISHING DEPARTMENT DASHBOARD<br /><small
+        >Production Complete → Finishing → QC → Final QC</small
+      >
+    </div>
+    <div class="m">
+      {% for message in messages %}
+      <div class="c">{{message}}</div>
+      {% endfor %}
+      <div class="k">
+        <div class="c">Plans<strong>{{payload.plans}}</strong></div>
+        <div class="c">Target<strong>{{payload.target}}</strong></div>
+        <div class="c">Actual<strong>{{payload.actual}}</strong></div>
+        <div class="c">WIP<strong>{{payload.wip}}</strong></div>
+        <div class="c">Efficiency<strong>{{payload.efficiency}}%</strong></div>
+        <div class="c">
+          Pass / Rework<strong
+            >{{payload.pass_qty}} / {{payload.rework_qty}}</strong
+          >
+        </div>
+        <div class="c">
+          IN / OUT<strong>{{payload.in_scans}} / {{payload.out_scans}}</strong>
+        </div>
+        <div class="c">
+          Total Cost BDT<strong>{{payload.total_cost}}</strong>
+        </div>
+      </div>
+      <div class="c">
+        <h3>MANDATORY FINISHING FLOW</h3>
+        <div class="flow">
+          {% for s in "Production Complete|FINISHING IN SCAN|Thread
+          Trimming|Spot / Stain Check|Cleaning|Measurement|Button / Snap /
+          Zip|Shape / Appearance|Iron / Press|Label Verify|Folding
+          Prep|Finishing QC|Rework / Re-QC|PASS|FINISHING OUT SCAN|Final
+          QC"|cut:" "|slice:":0" %}{% endfor %}
+          <div class="st">Production Complete</div>
+          →
+          <div class="st">FINISHING IN SCAN</div>
+          →
+          <div class="st">Thread Trimming</div>
+          →
+          <div class="st">Spot/Stain + Cleaning</div>
+          →
+          <div class="st">Measurement</div>
+          →
+          <div class="st">Accessories</div>
+          →
+          <div class="st">Appearance</div>
+          →
+          <div class="st">Iron/Press</div>
+          →
+          <div class="st">Label</div>
+          →
+          <div class="st">Folding Prep</div>
+          →
+          <div class="st">Finishing QC</div>
+          →
+          <div class="st">Rework/Re-QC</div>
+          →
+          <div class="st">PASS</div>
+          →
+          <div class="st">FINISHING OUT SCAN</div>
+          →
+          <div class="st">Final QC</div>
+        </div>
+      </div>
+      <div class="forms" style="margin-top: 7px">
+        <div class="c" id="plan">
+          <h3>FINISHING PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No" required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+            /><input type="date" name="target_date" /><select
+              class="full"
+              name="approval_id"
+            >
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><input class="full" type="file" name="instruction_file" /><button
+              class="btn full"
+            >
+              Create Plan
+            </button>
+          </form>
+        </div>
+        <div class="c" id="scan">
+          <h3>FINISHING IN / OUT SCAN</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="scan"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}} · {{b.barcode}}</option>
+              {% endfor %}</select
+            ><select name="direction">
+              <option value="IN">FINISHING IN SCAN</option>
+              <option value="OUT">FINISHING OUT SCAN</option></select
+            ><input name="barcode" placeholder="Barcode / QR" /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><button class="btn full">Validate & Scan</button>
+          </form>
+        </div>
+        <div class="c" id="production">
+          <h3>PRODUCTION / WIP / COST</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="production"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="operator_id">
+              <option value="">Operator</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="helper_id">
+              <option value="">Helper</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="machine_id">
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">{{m.asset_code}}</option>
+              {% endfor %}</select
+            >{% for n in "target_qty actual_qty wip_qty process_minutes
+            npt_minutes downtime_minutes trimmed_qty stain_checked_qty
+            cleaned_qty measurement_checked_qty accessory_checked_qty
+            appearance_checked_qty label_checked_qty folding_ready_qty
+            labour_cost process_cost utility_cost rework_cost".split %}<input
+              type="number"
+              step="0.01"
+              name="{{n}}"
+              placeholder="{{n|title}}"
+            />{% endfor %}<label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Senior Approval if Manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Production</button>
+          </form>
+        </div>
+        <div class="c" id="qc">
+          <h3>FINISHING QC / REWORK</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="qc"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected"
+            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><select name="defect_type">
+              <option value="">Defect</option>
+              {% for d in defect_types %}
+              <option>{{d}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="defect_qty"
+              placeholder="Defect Qty"
+            /><select name="result">
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REWORK</option>
+              <option>REJECT</option></select
+            ><textarea name="comments" placeholder="Comments"></textarea
+            ><input class="full" type="file" name="qc_photo" /><button
+              class="btn full"
+            >
+              Record QC
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="c" id="reports" style="margin-top: 7px">
+        <h3>AUTOMATIC FINISHING REPORTS — BANGLADESH LOCAL TIME</h3>
+        <form method="post">
+          {% csrf_token %}<input
+            type="hidden"
+            name="action"
+            value="generate_report"
+          /><button class="btn" name="slot" value="08:00">08:00</button>
+          <button class="btn" name="slot" value="13:00">13:00</button>
+          <button class="btn" name="slot" value="20:00">20:00</button>
+          <a class="btn" href="{% url 'finishing_report_csv' %}"
+            >Download CSV</a
+          >
+          <button type="button" class="btn" onclick="window.print()">
+            Print
+          </button>
+        </form>
+      </div>
+      <div class="c" style="margin-top: 7px">
+        <h3>TODAY'S FINISHING PRODUCTION</h3>
+        <table class="tbl">
+          <tr>
+            <th>Plan</th>
+            <th>Bundle</th>
+            <th>Target</th>
+            <th>Actual</th>
+            <th>WIP</th>
+            <th>Minutes</th>
+            <th>NPT</th>
+            <th>Downtime</th>
+            <th>Total Cost</th>
+          </tr>
+          {% for x in production %}
+          <tr>
+            <td>{{x.plan.plan_no}}</td>
+            <td>{% if x.bundle %}{{x.bundle.bundle_no}}{% endif %}</td>
+            <td>{{x.target_qty}}</td>
+            <td>{{x.actual_qty}}</td>
+            <td>{{x.wip_qty}}</td>
+            <td>{{x.process_minutes}}</td>
+            <td>{{x.npt_minutes}}</td>
+            <td>{{x.downtime_minutes}}</td>
+            <td>{{x.total_cost}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9">No entries today.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+# Project 1 Final QC automatic reports — Bangladesh local time.
+# Set the server/user TZ to Asia/Dhaka or prefix each command with CRON_TZ=Asia/Dhaka where supported.
+0 8 * * * cd /path/to/Emerald_Rozalia_Project1_Python_Server_Ready && /path/to/venv/bin/python manage.py run_final_qc_auto_report --slot 08:00
+0 13 * * * cd /path/to/Emerald_Rozalia_Project1_Python_Server_Ready && /path/to/venv/bin/python manage.py run_final_qc_auto_report --slot 13:00
+0 20 * * * cd /path/to/Emerald_Rozalia_Project1_Python_Server_Ready && /path/to/venv/bin/python manage.py run_final_qc_auto_report --slot 20:00

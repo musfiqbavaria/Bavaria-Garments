@@ -1,0 +1,653 @@
+{% extends "base.html" %}{% block title %}Cutting Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071a21;
+    color: #edf7f2;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .c {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #05251d;
+    border-right: 1px solid #176042;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #27604c;
+  }
+  .brand b {
+    color: #18bd61;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #37dc7c;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #e9f5f0;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d6c3b;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #063427;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #b9d4c9;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0d7041;
+    color: #fff;
+    border: 1px solid #26855a;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b90c18;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2630;
+    border: 1px solid #1d4953;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b5ccc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #45dc77;
+  }
+  .orange {
+    color: #ff9b28 !important;
+  }
+  .red {
+    color: #ff4852 !important;
+  }
+  .blue {
+    color: #48b9ff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #54df88;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 95px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235564;
+  }
+  .arrow {
+    color: #3fe37a;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .bar {
+    height: 8px;
+    background: #173640;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .bar i {
+    height: 100%;
+    display: block;
+    background: #36bd64;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252e;
+    border: 1px solid #1c4a54;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #50dd84;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303a;
+    color: #fff;
+    border: 1px solid #2b5660;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #39d46e;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e3039;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c1b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .c {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="c">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>CUTTING DEPARTMENT</small>
+    </div>
+    <div class="navh">CUTTING CONTROL</div>
+    <a class="on" href="{% url 'cutting_dashboard' %}">⌂ Cutting Dashboard</a
+    ><a href="#plans">▤ Cutting Plan</a
+    ><a href="#fabric">▣ Fabric Issue / Roll Scan</a
+    ><a href="#lays">▧ Lay / Marker / Pattern</a
+    ><a href="#production">✂ Cutting Production</a
+    ><a href="#bundles">▦ Bundle Barcode / QR</a><a href="#qc">✓ Cutting QC</a
+    ><a href="#variance">⚠ Wastage / Reject / Recut</a
+    ><a href="#wip">▤ Cut Panel WIP</a><a href="#handover">⇄ Sewing Handover</a
+    ><a href="#cost">৳ Cutting Costing</a
+    ><a href="#capacity">◷ Capacity & Efficiency</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'communication_center' %}">◯ Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">◉ WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a
+    ><a href="{% url 'universal_file_center' %}">▤ File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>CUTTING DASHBOARD</h1>
+        <small>Fabric → Cutting → Bundle → QC → Sewing Handover</small>
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#variance">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="#actions">✓ Actioned</a
+        ><a class="tool" href="{% url 'communication_center' %}">Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >Email</a
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="kpis">
+        <div class="kpi">
+          <span>Active Cutting Plans</span><b>{{payload.plans}}</b>
+        </div>
+        <div class="kpi">
+          <span>Planned Quantity</span><b>{{payload.planned_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Target</span><b>{{payload.target_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Actual</span><b>{{payload.actual_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Efficiency</span><b class="blue">{{efficiency}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Marker Efficiency</span
+          ><b>{{marker_efficiency|floatformat:1}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Reject / Recut</span
+          ><b class="red">{{payload.reject_qty}} / {{payload.recut_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Process Cost BDT</span
+          ><b class="orange">{{payload.process_cost}}</b>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY CUTTING FLOW</h2>
+        <div class="flow">
+          <div class="step">Approved Order</div>
+          <b class="arrow">→</b>
+          <div class="step">Cutting Plan</div>
+          <b class="arrow">→</b>
+          <div class="step">Fabric STOCK OUT SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Lay / Marker</div>
+          <b class="arrow">→</b>
+          <div class="step">Cutting</div>
+          <b class="arrow">→</b>
+          <div class="step">Cutting QC</div>
+          <b class="arrow">→</b>
+          <div class="step">Bundle Barcode/QR</div>
+          <b class="arrow">→</b>
+          <div class="step">WIP STOCK IN</div>
+          <b class="arrow">→</b>
+          <div class="step">Sewing OUT SCAN</div>
+        </div>
+      </div>
+      <div class="grid4">
+        <div class="card">
+          <h2>FABRIC CONTROL</h2>
+          <div class="kpi">
+            <span>Issued</span><b>{{payload.fabric_issued}}</b>
+          </div>
+          <div class="kpi">
+            <span>Consumed</span><b>{{payload.fabric_consumed}}</b>
+          </div>
+          <p>Roll · Lot · Shade · Stock Item · STOCK OUT SCAN</p>
+        </div>
+        <div class="card" id="bundles">
+          <h2>BUNDLE CONTROL</h2>
+          <div class="kpi">
+            <span>Bundle Pieces</span><b>{{payload.bundle_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>QC Passed</span><b>{{payload.qc_pass_qty}}</b>
+          </div>
+          <p>Unique bundle number + barcode/QR + size/colour traceability.</p>
+        </div>
+        <div class="card" id="capacity">
+          <h2>TIME / CAPACITY</h2>
+          <div class="kpi">
+            <span>Process Minutes</span><b>{{payload.process_minutes}}</b>
+          </div>
+          <div class="kpi">
+            <span>NPT Minutes</span
+            ><b class="orange">{{payload.npt_minutes}}</b>
+          </div>
+          <p>Employee + machine + process + target/actual + cost/minute.</p>
+        </div>
+        <div class="card" id="variance">
+          <h2>VARIANCE / RED ALERT</h2>
+          <div class="kpi">
+            <span>Outstanding Variances</span
+            ><b class="red">{{payload.unactioned_variances}}</b>
+          </div>
+          {% for v in variances|slice:":5" %}
+          <div class="report">
+            {{v.plan.plan_no}} · {{v.variance_type}} · {{v.variance}} · BDT
+            {{v.value_variance_bdt}}
+          </div>
+          {% empty %}
+          <p>No open cutting variances.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>CUTTING PLAN / ORDER PROGRESS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Status</th>
+              <th>Target Date</th>
+            </tr>
+            {% for p in plans|slice:":12" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.product}}</td>
+              <td>{{p.planned_qty}}</td>
+              <td>{{p.status}}</td>
+              <td>{{p.target_date}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">No cutting plans yet.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="production">
+          <h2>TODAY'S CUTTING PRODUCTION</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>Minutes</th>
+              <th>Cost</th>
+            </tr>
+            {% for x in prod|slice:":12" %}
+            <tr>
+              <td>{{x.plan.plan_no}}</td>
+              <td>{{x.target_qty}}</td>
+              <td>{{x.actual_qty}}</td>
+              <td>{{x.process_minutes}}</td>
+              <td>{{x.process_cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5">No production entries.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today yet.</p>
+          {% endfor %}
+          <div style="display: flex; gap: 4px">
+            {% for s in "08:00,13:00,20:00"|cut:" " %}{% endfor %}
+            <form method="post">
+              {% csrf_token %}<input
+                type="hidden"
+                name="action"
+                value="generate_report"
+              /><button class="btn" name="slot" value="08:00">08:00</button
+              ><button class="btn" name="slot" value="13:00">13:00</button
+              ><button class="btn" name="slot" value="20:00">20:00</button>
+            </form>
+          </div>
+          <br /><a class="btn" href="{% url 'cutting_report_csv' %}"
+            >Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE CUTTING PLAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input name="product" placeholder="Product" required /><input
+              name="colour"
+              placeholder="Colour"
+            /><input name="size_range" placeholder="Size Range" /><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+              required
+            /><input type="date" name="target_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select class="full" name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Create Plan</button>
+          </form>
+        </div>
+        <div class="formbox" id="fabric">
+          <h3>FABRIC STOCK OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="fabric"
+            /><select class="full" name="plan_id" required>
+              <option value="">Cutting Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select name="stock_item_id">
+              <option value="">Stock Item</option>
+              {% for s in stock_items %}
+              <option value="{{s.id}}">{{s.name}}</option>
+              {% endfor %}</select
+            ><input name="roll_no" placeholder="Roll No." required /><input
+              name="lot_no"
+              placeholder="Lot No."
+            /><input name="shade" placeholder="Shade" /><input
+              name="issued_qty"
+              type="number"
+              step="0.001"
+              placeholder="Issued Qty"
+              required
+            /><select name="unit">
+              <option>METRE</option>
+              <option>YARD</option></select
+            ><input
+              class="full"
+              name="stock_out_scan"
+              placeholder="Mandatory STOCK OUT SCAN"
+              required
+            /><button class="btn full">Issue Fabric</button>
+          </form>
+        </div>
+        <div class="formbox">
+          <h3>PRODUCTION / COST ENTRY</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="production"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="machine_id">
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">{{m.name}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="target_qty"
+              placeholder="Target Qty"
+            /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><input
+              type="number"
+              name="process_minutes"
+              placeholder="Process Minutes"
+            /><input
+              type="number"
+              name="npt_minutes"
+              placeholder="NPT Minutes"
+            /><input
+              type="number"
+              step="0.0001"
+              name="cost_per_minute"
+              placeholder="Cost/Minute"
+            /><label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Approval if manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Production</button>
+          </form>
+        </div>
+        <div class="formbox">
+          <h3>BUNDLE BARCODE / QR</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="bundle"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><input name="bundle_no" placeholder="Bundle No." required /><input
+              name="barcode"
+              placeholder="Unique Barcode / QR"
+              required
+            /><input name="size" placeholder="Size" /><input
+              name="colour"
+              placeholder="Colour"
+            /><input
+              type="number"
+              name="quantity"
+              placeholder="Quantity"
+              required
+            /><input
+              class="full"
+              name="stock_in_scan"
+              placeholder="Cut Panel WIP STOCK IN SCAN"
+            /><button class="btn full">Create Bundle</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 Cutting</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span
+      ><span>VIEW · PREVIEW · DOWNLOAD · PRINT</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

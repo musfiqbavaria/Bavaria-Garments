@@ -1,0 +1,673 @@
+{% extends "base.html" %}{% block title %}Sourcing Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .x {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    padding: 14px;
+  }
+  .side h2 {
+    font: 18px Georgia;
+  }
+  .side b,
+  .card h3 {
+    color: #45df83;
+  }
+  .side a {
+    display: block;
+    color: #eef8f4;
+    text-decoration: none;
+    padding: 8px;
+    border-bottom: 1px solid #174838;
+  }
+  .m {
+    padding: 9px;
+  }
+  .head {
+    background: #07362a;
+    padding: 14px;
+    font-size: 23px;
+  }
+  .k {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: 5px;
+    margin: 7px 0;
+  }
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .card strong {
+    display: block;
+    font-size: 18px;
+    color: #49df7e;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    overflow: auto;
+  }
+  .st {
+    min-width: 110px;
+    background: #103642;
+    padding: 8px;
+    text-align: center;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .f {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .f input,
+  .f select,
+  .f textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e303b;
+    color: white;
+    border: 1px solid #2b5661;
+    padding: 6px;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    padding: 7px;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .red {
+    color: #ff5662 !important;
+  }
+  .orange {
+    color: #ff9b2f !important;
+  }
+  @media (max-width: 1100px) {
+    .k,
+    .forms {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 650px) {
+    .x {
+      display: block;
+    }
+    .k,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="x">
+  <aside class="side">
+    <h2><b>EMERALD</b> ROZALIA</h2>
+    <small>SOURCING DEPARTMENT</small>
+    <a href="#request">Sourcing Requirement</a
+    ><a href="#candidate">Supplier Search</a><a href="#quote">RFQ / Quotation</a
+    ><a href="#sample">Sample Evaluation</a
+    ><a href="#evaluate">Supplier Evaluation</a
+    ><a href="#nominate">Nomination</a><a href="#handoff">Procurement Handoff</a
+    ><a href="{% url 'supplier_dashboard' %}">Supplier Master</a
+    ><a href="{% url 'procurement_dashboard' %}">Procurement</a
+    ><a href="{% url 'purchases_dashboard' %}">Purchases</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a>
+  </aside>
+  <section>
+    <div class="head">
+      SOURCING MASTER / SOURCING DEPARTMENT DASHBOARD<br /><small
+        >Requirement → Stock Check → Supplier Search → RFQ → Sample → Evaluation
+        → Nomination → Procurement</small
+      >
+    </div>
+    <div class="m">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="k">
+        <div class="card">Requests<strong>{{payload.requests}}</strong></div>
+        <div class="card">
+          Shortages<strong class="orange">{{payload.shortages}}</strong>
+        </div>
+        <div class="card">
+          Supplier Search<strong>{{payload.supplier_search}}</strong>
+        </div>
+        <div class="card">RFQ<strong>{{payload.rfq}}</strong></div>
+        <div class="card">Sample<strong>{{payload.sample}}</strong></div>
+        <div class="card">
+          Evaluation<strong>{{payload.evaluation}}</strong>
+        </div>
+        <div class="card">Nominated<strong>{{payload.nominated}}</strong></div>
+        <div class="card">
+          Procurement Handoff<strong>{{payload.handoff}}</strong>
+        </div>
+        <div class="card">Quotes<strong>{{payload.quote_count}}</strong></div>
+        <div class="card">
+          Landed Total<strong>{{payload.avg_landed}}</strong>
+        </div>
+        <div class="card">
+          High Price Variance<strong class="red"
+            >{{payload.high_price_variance}}</strong
+          >
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>MANDATORY SOURCING FLOW</h3>
+        <div class="flow">
+          <div class="st">Buyer / Order Requirement</div>
+          →
+          <div class="st">Stock Check</div>
+          →
+          <div class="st">Shortage</div>
+          →
+          <div class="st">Approved Supplier Search</div>
+          →
+          <div class="st">New Supplier Search</div>
+          →
+          <div class="st">RFQ / Quotation</div>
+          →
+          <div class="st">Sample</div>
+          →
+          <div class="st">Quality + Compliance</div>
+          →
+          <div class="st">MOQ / Lead / Capacity</div>
+          →
+          <div class="st">Landed Cost</div>
+          →
+          <div class="st">Price History</div>
+          →
+          <div class="st">Supplier Score</div>
+          →
+          <div class="st">Nomination Approval</div>
+          →
+          <div class="st">Procurement Handoff</div>
+        </div>
+      </div>
+
+      <div class="forms" style="margin-top: 7px">
+        <div class="card" id="request">
+          <h3>SOURCING REQUIREMENT / STOCK CHECK</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="request"
+            /><input
+              name="request_no"
+              placeholder="Sourcing Request No."
+              required
+            /><select name="order_id">
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select name="material_id">
+              <option value="">Material</option>
+              {% for m in materials %}
+              <option value="{{m.id}}">{{m.material_code}} · {{m.name}}</option>
+              {% endfor %}</select
+            ><select name="category">
+              {% for c in categories %}
+              <option>{{c}}</option>
+              {% endfor %}</select
+            ><input
+              class="full"
+              name="description"
+              placeholder="Item / Service Description"
+            /><textarea
+              class="full"
+              name="specification"
+              placeholder="Specification: composition/GSM/width/colour/technical requirements"
+            ></textarea
+            ><input
+              type="number"
+              step=".001"
+              name="required_qty"
+              placeholder="Required Qty"
+            /><input name="uom" placeholder="UOM" /><input
+              type="date"
+              name="required_date"
+            /><input
+              type="number"
+              step=".0001"
+              name="target_price"
+              placeholder="Target Unit Price"
+            /><input name="target_currency" value="BDT" /><label class="full"
+              >Specification File<input
+                type="file"
+                name="specification_file" /></label
+            ><button class="btn full">
+              Run Stock Check & Create Sourcing Request
+            </button>
+          </form>
+        </div>
+
+        <div class="card" id="candidate">
+          <h3>SUPPLIER SEARCH / CANDIDATE</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="candidate"
+            /><select class="full" name="request_id" required>
+              <option value="">Sourcing Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">
+                {{r.request_no}} · Shortage {{r.shortage_qty}}
+              </option>
+              {% endfor %}</select
+            ><select name="source_type">
+              <option value="EXISTING">Existing Approved Supplier</option>
+              <option value="NEW">New Supplier</option></select
+            ><select name="supplier_id">
+              <option value="">Approved Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{s.id}}">
+                {{s.supplier_id}} · {{s.company_name}}
+              </option>
+              {% endfor %}</select
+            ><input
+              name="supplier_name"
+              placeholder="New Supplier Name"
+            /><input
+              name="supplier_country"
+              placeholder="Country / Origin"
+            /><input
+              name="contact_details"
+              placeholder="Contact Details"
+            /><input
+              name="compliance_status"
+              value="PENDING"
+              placeholder="Compliance Status"
+            /><input
+              type="number"
+              step=".001"
+              name="capacity_per_month"
+              placeholder="Monthly Capacity"
+            /><input
+              type="number"
+              step=".001"
+              name="moq"
+              placeholder="MOQ"
+            /><input
+              type="number"
+              name="lead_time_days"
+              placeholder="Lead Time Days"
+            /><input
+              name="payment_terms"
+              placeholder="Payment Terms"
+            /><textarea
+              class="full"
+              name="notes"
+              placeholder="Supplier Search Notes"
+            ></textarea
+            ><button class="btn full">Add Candidate</button>
+          </form>
+        </div>
+
+        <div class="card" id="quote">
+          <h3>RFQ / QUOTATION / LANDED COST</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="quotation"
+            /><select class="full" name="request_id" required>
+              <option value="">Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">{{r.request_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="candidate_id" required>
+              <option value="">Candidate</option>
+              {% for c in candidates %}
+              <option value="{{c.id}}">
+                {{c.request.request_no}} · {{c.supplier_name}}
+              </option>
+              {% endfor %}</select
+            ><select name="rfq_id">
+              <option value="">Linked RFQ</option>
+              {% for r in rfqs %}
+              <option value="{{r.id}}">{{r.rfq_no}}</option>
+              {% endfor %}</select
+            ><input name="quote_no" placeholder="Quote No." required /><input
+              type="number"
+              step=".0001"
+              name="unit_price"
+              placeholder="Unit Price"
+            /><input name="currency" value="BDT" /><input
+              type="number"
+              step=".01"
+              name="freight"
+              placeholder="Freight"
+            /><input
+              type="number"
+              step=".01"
+              name="duty_tax"
+              placeholder="Duty / Tax"
+            /><input
+              type="number"
+              step=".01"
+              name="other_cost"
+              placeholder="Other Cost"
+            /><input
+              type="number"
+              name="quoted_lead_days"
+              placeholder="Lead Days"
+            /><input
+              type="number"
+              step=".001"
+              name="moq"
+              placeholder="MOQ"
+            /><input name="payment_terms" placeholder="Payment Terms" /><input
+              type="date"
+              name="valid_until"
+            /><label class="full"
+              >Quotation File<input type="file" name="quotation_file" /></label
+            ><button class="btn full">Save Quotation</button>
+          </form>
+        </div>
+
+        <div class="card" id="sample">
+          <h3>SAMPLE / QUALITY / COMPLIANCE</h3>
+          <form method="post" enctype="multipart/form-data" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="sample"
+            /><select class="full" name="quotation_id" required>
+              <option value="">Quotation</option>
+              {% for q in quotations %}
+              <option value="{{q.id}}">
+                {{q.request.request_no}} · {{q.quote_no}}
+              </option>
+              {% endfor %}</select
+            ><input name="sample_no" placeholder="Sample No." required /><input
+              type="datetime-local"
+              name="received_at"
+            /><select name="quality_result">
+              <option>PENDING</option>
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REJECT</option></select
+            ><select name="compliance_result">
+              <option>PENDING</option>
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REJECT</option></select
+            ><select name="lab_test_result">
+              <option>PENDING</option>
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REJECT</option></select
+            ><textarea
+              class="full"
+              name="comments"
+              placeholder="Sample / Lab Comments"
+            ></textarea
+            ><label class="full"
+              >Sample / Test File<input type="file" name="sample_file" /></label
+            ><button class="btn full">Save Sample Evaluation</button>
+          </form>
+        </div>
+
+        <div class="card" id="evaluate">
+          <h3>SUPPLIER EVALUATION / PRICE HISTORY</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="evaluate"
+            /><select class="full" name="quotation_id" required>
+              <option value="">Quotation</option>
+              {% for q in quotations %}
+              <option value="{{q.id}}">
+                {{q.request.request_no}} · {{q.quote_no}} · Landed
+                {{q.landed_unit_cost}}
+              </option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              step=".01"
+              name="price_score"
+              placeholder="Price Score"
+            /><input
+              type="number"
+              step=".01"
+              name="quality_score"
+              placeholder="Quality Score"
+            /><input
+              type="number"
+              step=".01"
+              name="delivery_score"
+              placeholder="Delivery Score"
+            /><input
+              type="number"
+              step=".01"
+              name="compliance_score"
+              placeholder="Compliance Score"
+            /><input
+              type="number"
+              step=".01"
+              name="capacity_score"
+              placeholder="Capacity Score"
+            /><textarea
+              class="full"
+              name="nomination_reason"
+              placeholder="Evaluation / Negotiation Notes"
+            ></textarea
+            ><button class="btn full">Calculate Evaluation</button>
+          </form>
+        </div>
+
+        <div class="card" id="nominate">
+          <h3>SUPPLIER NOMINATION</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="nominate"
+            /><select class="full" name="evaluation_id" required>
+              <option value="">Evaluation</option>
+              {% for e in evaluations %}
+              <option value="{{e.id}}">
+                {{e.request.request_no}} · {% if e.quotation.candidate.supplier
+                %}{{e.quotation.candidate.supplier.supplier_id}}{% else %}NEW{%
+                endif %} · Score {{e.total_score}} · Price Var
+                {{e.price_variance_pct}}%
+              </option>
+              {% endfor %}</select
+            ><textarea
+              class="full"
+              name="nomination_reason"
+              placeholder="Nomination Reason"
+            ></textarea
+            ><select class="full" name="approval_id" required>
+              <option value="">Mandatory Nomination Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Nominate Supplier</button>
+          </form>
+        </div>
+
+        <div class="card" id="handoff">
+          <h3>HANDOFF TO PROCUREMENT</h3>
+          <form method="post" class="f">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="handoff"
+            /><select class="full" name="request_id" required>
+              <option value="">Nominated Sourcing Request</option>
+              {% for r in requests %}
+              <option value="{{r.id}}">{{r.request_no}} · {{r.status}}</option>
+              {% endfor %}</select
+            ><input
+              class="full"
+              name="procurement_request_no"
+              placeholder="New Procurement Request No."
+              required
+            /><input
+              class="full"
+              type="number"
+              step=".01"
+              name="budget_value"
+              placeholder="Approved / Proposed Budget"
+            /><button class="btn full">Create Procurement Handoff</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>AUTO REPORTS / EXPORT</h3>
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="report"
+            /><button class="btn" name="slot" value="08:00">08:00</button>
+            <button class="btn" name="slot" value="13:00">13:00</button>
+            <button class="btn" name="slot" value="20:00">20:00</button>
+            <a class="btn" href="{% url 'sourcing_report_csv' %}">CSV</a>
+            <button type="button" class="btn" onclick="window.print()">
+              Print
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 7px">
+        <h3>SOURCING REQUEST / NOMINATION STATUS</h3>
+        <table class="tbl">
+          <tr>
+            <th>Request</th>
+            <th>Order</th>
+            <th>Category</th>
+            <th>Material</th>
+            <th>Required</th>
+            <th>Stock</th>
+            <th>Reserved</th>
+            <th>Shortage</th>
+            <th>Target Price</th>
+            <th>Status</th>
+            <th>Nomination / Handoff</th>
+          </tr>
+          {% for r in requests %}
+          <tr>
+            <td>{{r.request_no}}</td>
+            <td>{% if r.order %}{{r.order.master_order_id}}{% endif %}</td>
+            <td>{{r.category}}</td>
+            <td>{% if r.material %}{{r.material.material_code}}{% endif %}</td>
+            <td>{{r.required_qty}}</td>
+            <td>{{r.stock_available}}</td>
+            <td>{{r.stock_reserved}}</td>
+            <td class="{% if r.shortage_qty > 0 %}orange{% endif %}">
+              {{r.shortage_qty}}
+            </td>
+            <td>{{r.target_price}} {{r.target_currency}}</td>
+            <td>{{r.status}}</td>
+            <td>
+              {% for h in handoffs %}{% if h.request_id == r.id
+              %}{{h.supplier.supplier_id}} →
+              {{h.procurement_request.request_no}}{% endif %}{% endfor %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="11">No sourcing requests.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+
+      <div class="card" style="margin-top: 7px">
+        <h3>SUPPLIER EVALUATION / PRICE VARIANCE</h3>
+        <table class="tbl">
+          <tr>
+            <th>Request</th>
+            <th>Supplier</th>
+            <th>Quote</th>
+            <th>Landed</th>
+            <th>Last Purchase</th>
+            <th>Current Quote</th>
+            <th>Price Variance</th>
+            <th>Quality</th>
+            <th>Delivery</th>
+            <th>Compliance</th>
+            <th>Capacity</th>
+            <th>Total</th>
+            <th>Nominated</th>
+          </tr>
+          {% for e in evaluations %}
+          <tr>
+            <td>{{e.request.request_no}}</td>
+            <td>
+              {% if e.quotation.candidate.supplier
+              %}{{e.quotation.candidate.supplier.supplier_id}}{% else
+              %}{{e.quotation.candidate.supplier_name}}{% endif %}
+            </td>
+            <td>{{e.quotation.quote_no}}</td>
+            <td>{{e.quotation.landed_unit_cost}}</td>
+            <td>{{e.last_purchase_price}}</td>
+            <td>{{e.current_quote_price}}</td>
+            <td
+              class="{% if e.price_variance_pct > 10 or e.price_variance_pct < -10 %}red{% endif %}"
+            >
+              {{e.price_variance_pct}}%
+            </td>
+            <td>{{e.quality_score}}</td>
+            <td>{{e.delivery_score}}</td>
+            <td>{{e.compliance_score}}</td>
+            <td>{{e.capacity_score}}</td>
+            <td>{{e.total_score}}</td>
+            <td>{{e.nominated}}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="13">No evaluations.</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

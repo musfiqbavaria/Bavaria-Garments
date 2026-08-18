@@ -1,0 +1,1211 @@
+{% extends "base.html" %}{% block title %}Attendance Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #061724;
+    color: #eaf6f1;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .at {
+    display: grid;
+    grid-template-columns: 222px 1fr;
+    min-height: 100vh;
+    background: #061724;
+    font: 11px Arial;
+    color: #eaf6f1;
+  }
+  .side {
+    background: linear-gradient(#041822, #03131e);
+    border-right: 1px solid #163847;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 16px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #21404d;
+  }
+  .brand b {
+    color: #12b95d;
+  }
+  .brand small {
+    display: block;
+    font: 8px Arial;
+    letter-spacing: 4px;
+    text-align: center;
+    color: #d6eee5;
+  }
+  .navh {
+    font-size: 9px;
+    color: #27c96d;
+    padding: 13px 14px 5px;
+  }
+  .side a {
+    display: block;
+    color: #e6f2ee;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #166b2b;
+    border-radius: 4px;
+  }
+  .live {
+    background: #e10c17;
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 5px;
+    float: right;
+  }
+  .devicebox,
+  .install {
+    margin: 10px 12px;
+    padding: 8px;
+    border: 1px solid #d21722;
+    border-radius: 6px;
+  }
+  .devicebox h4,
+  .install h4 {
+    color: #29e65d;
+    margin: 0 0 6px;
+  }
+  .dev {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22df52;
+    display: inline-block;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    height: 64px;
+    background: #051321;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    border-bottom: 1px solid #173442;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 24px;
+  }
+  .head small {
+    display: block;
+    color: #c7d8d2;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .tool {
+    border: 1px solid #173846;
+    border-radius: 6px;
+    padding: 9px 12px;
+    color: #fff;
+    text-decoration: none;
+    background: #071b28;
+  }
+  .date-tabs {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 7px;
+    padding: 8px;
+  }
+  .date-tab {
+    background: #152b39;
+    border: 1px solid #1d3b49;
+    border-radius: 6px;
+    padding: 9px 12px;
+    color: #dfeee8;
+    text-decoration: none;
+  }
+  .date-tab b {
+    font-size: 13px;
+    display: block;
+  }
+  .date-tab.active {
+    background: #1d6f29;
+  }
+  .date-tab:nth-child(2) b {
+    color: #25a7ff;
+  }
+  .date-tab:nth-child(3) b {
+    color: #c76aff;
+  }
+  .date-tab:nth-child(4) b {
+    color: #ff9416;
+  }
+  .date-tab:nth-child(5) b {
+    color: #20d2e7;
+  }
+  .date-tab:nth-child(6) b {
+    color: #ff3976;
+  }
+  .content {
+    padding: 0 8px 12px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  .kpi {
+    background: linear-gradient(#f7f8f8, #e8ebeb);
+    color: #08141a;
+    border: 1px solid #cbd3d1;
+    border-radius: 4px;
+    padding: 10px;
+    min-height: 65px;
+  }
+  .kpi b {
+    display: block;
+    font-size: 22px;
+  }
+  .kpi span {
+    font-size: 10px;
+  }
+  .kpi .sub {
+    font-size: 9px;
+    color: #253b45;
+  }
+  .kpi2 {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 7px;
+  }
+  .kpi2 .kpi {
+    min-height: 62px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1.75fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: 1.1fr 0.85fr 0.9fr 1.55fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card {
+    background: #061d29;
+    border: 1px solid #1d4250;
+    border-radius: 5px;
+    padding: 9px;
+    margin: 0;
+    box-shadow: none;
+  }
+  .card.green {
+    border-color: #19a33f;
+  }
+  .card.blue {
+    border-color: #1689ce;
+  }
+  .card h2 {
+    font-size: 12px;
+    margin: 0 0 9px;
+    color: #f2f8f6;
+  }
+  .muted {
+    color: #9bb8ae;
+    font-size: 9px;
+  }
+  .big {
+    font-size: 27px;
+    font-weight: bold;
+  }
+  .green-txt {
+    color: #4fe62d;
+  }
+  .red-txt {
+    color: #ff2b2b;
+  }
+  .orange-txt {
+    color: #ff7f08;
+  }
+  .blue-txt {
+    color: #27a8ff;
+  }
+  .purple-txt {
+    color: #be63ff;
+  }
+  .donut {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: conic-gradient(
+      #4f932b 0 {{attendance_pct}}%,
+      #e9231c {{attendance_pct}}% 92%,
+      #6739c0 92% 96%,
+      #ef8b13 96%
+    );
+    display: grid;
+    place-items: center;
+    margin: auto;
+  }
+  .donut:after {
+    content: "{{scheduled_employees}} Scheduled";
+    display: grid;
+    place-items: center;
+    text-align: center;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: #0b2330;
+    color: #fff;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  .summaryline {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid #173743;
+  }
+  .chart {
+    height: 140px;
+    border-left: 1px solid #385561;
+    border-bottom: 1px solid #385561;
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 4px 8px;
+  }
+  .chart i {
+    flex: 1;
+    background: linear-gradient(#45c94b, #187d2f);
+    min-height: 2px;
+    border-radius: 2px 2px 0 0;
+  }
+  .chart-label {
+    display: flex;
+    justify-content: space-around;
+    font-size: 8px;
+    color: #9ab5ab;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #123846;
+    text-align: left;
+  }
+  .tbl th {
+    color: #dcebe5;
+  }
+  .bar {
+    height: 8px;
+    background: #17323f;
+    border-radius: 5px;
+    overflow: hidden;
+    min-width: 55px;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: #2aa33c;
+  }
+  .bar.orange i {
+    background: #f0790c;
+  }
+  .camera-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 7px;
+  }
+  .cam {
+    height: 105px;
+    border: 1px solid #1b4757;
+    border-radius: 4px;
+    background: #102c38;
+    overflow: hidden;
+    position: relative;
+  }
+  .cam img {
+    width: 100%;
+    height: 78px;
+    object-fit: cover;
+  }
+  .cam .fallback {
+    height: 78px;
+    display: grid;
+    place-items: center;
+    color: #7fa99a;
+  }
+  .cam span {
+    font-size: 8px;
+    padding: 5px;
+    display: block;
+  }
+  .cam b {
+    color: #13e04f;
+    float: right;
+  }
+  .timeline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 7px;
+    margin: 10px 0;
+  }
+  .step {
+    text-align: center;
+    flex: 1;
+  }
+  .circle {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    margin: auto;
+    background: #37a52d;
+    color: #fff;
+    font-size: 17px;
+  }
+  .circle.orange {
+    background: #e6780c;
+  }
+  .circle.red {
+    background: #e51622;
+  }
+  .line {
+    height: 2px;
+    background: #39a936;
+    flex: 1;
+  }
+  .status {
+    background: #176526;
+    padding: 5px 8px;
+    border-radius: 3px;
+    color: #dff9e6;
+    margin: 8px 0;
+  }
+  .detailgrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+    font-size: 9px;
+  }
+  .detailgrid div {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #143744;
+    padding: 4px;
+  }
+  .sys {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .sys .card {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .sys .ico {
+    font-size: 27px;
+  }
+  .quick {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .btn {
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 10px;
+    color: #fff;
+    background: #126dd4;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .btn.green {
+    background: #368d24;
+  }
+  .btn.purple {
+    background: #6c2fb2;
+  }
+  .btn.orange {
+    background: #b74c0d;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-top: 7px;
+  }
+  .formbox {
+    background: #071f2b;
+    border: 1px solid #1f4351;
+    border-radius: 5px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0c2936;
+    color: #e7f4ef;
+    border: 1px solid #24505e;
+    border-radius: 4px;
+    padding: 6px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .bottom {
+    border-top: 1px solid #153441;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    color: #a6bbb2;
+    font-size: 9px;
+  }
+  @media (max-width: 1200px) {
+    .kpis {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .kpi2 {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid3,
+    .grid4 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 760px) {
+    .at {
+      display: block;
+    }
+    .side {
+      height: auto;
+      position: relative;
+    }
+    .kpis,
+    .kpi2,
+    .grid3,
+    .grid4,
+    .forms,
+    .sys,
+    .quick {
+      grid-template-columns: 1fr;
+    }
+    .date-tabs {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+
+<div class="at">
+  <aside class="side">
+    <div class="brand"><b>EMERALD</b> ROZALIA<small>LIMITED</small></div>
+    <div class="navh">MAIN NAVIGATION</div>
+    <a class="on" href="{% url 'attendance_dashboard' %}">⌂ Dashboard</a
+    ><a href="#live">◴ Live Monitoring <span class="live">LIVE</span></a
+    ><a href="#employees">♙ Employees ›</a
+    ><a href="#records">▣ Attendance Records ›</a
+    ><a href="#shifts">◴ Shift Management ›</a
+    ><a href="#leave">▤ Leave Management ›</a
+    ><a href="#gatepass">◴ Gate Pass Management ›</a
+    ><a href="#holiday">□ Holiday Calendar ›</a
+    ><a href="#overtime">◴ Overtime & Adjustment ›</a
+    ><a href="#npt">◴ NPT Management ›</a
+    ><a href="#reports">▤ Reports & Analytics ›</a
+    ><a href="#alerts">♢ Alerts & Notifications ›</a
+    ><a href="#payroll">▧ Payroll Integration ›</a
+    ><a href="#settings">⚙ Settings ›</a><a href="#audit">⌘ Audit Trail ›</a>
+    <div class="devicebox">
+      <h4>CONNECTED DEVICES</h4>
+      {% for d in devices|slice:":6" %}
+      <div class="dev"><span>{{d.name}}</span><span class="dot"></span></div>
+      {% empty %}
+      <div class="muted">No devices registered.</div>
+      {% endfor %}
+    </div>
+    <div class="devicebox">
+      <h4>CCTV CONTROL CENTER</h4>
+      <a href="#live">▧ All Cameras (Live Grid) ›</a><a href="#live">▧ NVRs</a
+      ><a href="#live">▧ Camera List</a><a href="#live">▧ Offline Cameras</a
+      ><a href="#alerts">⚠ Events & Alerts</a><a href="#live">▧ Playback</a>
+    </div>
+    <div class="install">
+      <h4>INSTALL & SETUP</h4>
+      <div>
+        ▣ IP Camera / CCTV<br /><span class="muted">Install & Configure</span>
+      </div>
+      <br />
+      <div>
+        ▣ Attendance Device<br /><span class="muted">Install & Configure</span>
+      </div>
+      <br />
+      <div>☎ IP Phone<br /><span class="muted">Install & Configure</span></div>
+    </div>
+  </aside>
+
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>ATTENDANCE DASHBOARD</h1>
+        <small>Real-time Overview of Workforce Attendance</small>
+      </div>
+      <div class="tools">
+        <span class="tool">🇧🇩 Bangladesh</span
+        ><span class="tool">🇬🇧 English</span><span class="tool">BDT (৳)</span>
+        <form method="get">
+          <input
+            class="tool"
+            style="color: #fff"
+            type="date"
+            name="date"
+            value="{{work_date|date:'Y-m-d'}}"
+            onchange="this.form.submit()"
+          />
+        </form>
+        <span class="tool">🔔 {{alerts|length}}</span
+        ><span class="tool">Super Admin</span>
+      </div>
+    </header>
+
+    <div class="date-tabs">
+      <a class="date-tab active" href="?date={{today|date:'Y-m-d'}}"
+        ><b>Today</b>{{today}}</a
+      >
+      <a class="date-tab" href="?date={{today|date:'Y-m-d'}}"
+        ><b>Tomorrow</b>Next Day</a
+      >
+      <div class="date-tab"><b>Day After Tomorrow</b>Planning View</div>
+      <div class="date-tab"><b>This Week</b>Weekly Attendance</div>
+      <div class="date-tab"><b>This Month</b>Monthly Attendance</div>
+      <div class="date-tab"><b>This Year</b>Annual Records</div>
+    </div>
+
+    <div class="content">
+      {% for message in messages %}
+      <div class="card green">{{message}}</div>
+      {% endfor %}
+      <div class="kpis">
+        <div class="kpi">
+          <span>Total Employees</span><b>{{total_employees}}</b>
+          <div class="sub">All Employees</div>
+        </div>
+        <div class="kpi">
+          <span>Total Scheduled Employees</span><b>{{scheduled_employees}}</b>
+          <div class="sub">{{attendance_pct}}% attendance base</div>
+        </div>
+        <div class="kpi">
+          <span>Total Present</span><b class="green-txt">{{present}}</b>
+          <div class="sub">{{attendance_pct}}%</div>
+        </div>
+        <div class="kpi">
+          <span>Total Absent</span><b class="red-txt">{{absent}}</b>
+          <div class="sub">For selected day</div>
+        </div>
+        <div class="kpi">
+          <span>Total Late (LT)</span><b class="orange-txt">{{late}}</b>
+          <div class="sub">{{late_hm}} H/M</div>
+        </div>
+        <div class="kpi">
+          <span>Total Early Leave (EL)</span><b class="blue-txt">{{early}}</b>
+          <div class="sub">Selected Day</div>
+        </div>
+      </div>
+
+      <div class="kpi2">
+        <div class="kpi">
+          <span>Mandatory H/M (Cost)</span><b>{{mandatory_hm}}</b>
+          <div class="sub">BDT {{sums.mandatory_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>Done Duty H/M (Cost)</span><b class="green-txt">{{done_hm}}</b>
+          <div class="sub">BDT {{sums.done_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>Due Duty H/M (Cost)</span><b class="orange-txt">{{due_hm}}</b>
+          <div class="sub">BDT {{sums.due_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>Total Late H/M (Cost)</span><b class="red-txt">{{late_hm}}</b>
+          <div class="sub">BDT {{sums.late_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>Office Gate Pass (Paid) H/M</span
+          ><b class="blue-txt">{{paid_gp_hm}}</b>
+          <div class="sub">BDT {{sums.paid_gp_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>Gate Pass (Unpaid) H/M</span
+          ><b class="purple-txt">{{unpaid_gp_hm}}</b>
+          <div class="sub">BDT {{sums.unpaid_gp_cost|floatformat:2}}</div>
+        </div>
+        <div class="kpi">
+          <span>NPT (H/M) (Cost)</span><b>{{npt_hm}}</b>
+          <div class="sub">BDT {{sums.npt_cost|floatformat:2}}</div>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card">
+          <h2>ATTENDANCE SUMMARY (Today)</h2>
+          <div class="donut"></div>
+          <div class="summaryline">
+            <span>Present</span
+            ><b class="green-txt">{{present}} ({{attendance_pct}}%)</b>
+          </div>
+          <div class="summaryline">
+            <span>Absent</span><b class="red-txt">{{absent}}</b>
+          </div>
+          <div class="summaryline">
+            <span>Late</span><b class="purple-txt">{{late}}</b>
+          </div>
+          <div class="summaryline">
+            <span>Early Leave</span><b class="orange-txt">{{early}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>ATTENDANCE TREND (This Week)</h2>
+          <div class="chart">
+            {% for d in week %}<i
+              style="height:{% widthratio d.pct 1 1 %}px"
+              title="{{d.date}} · {{d.pct}}%"
+            ></i
+            >{% endfor %}
+          </div>
+          <div class="chart-label">
+            {% for d in week %}<span
+              >{{d.date|date:"D"}}<br />{{d.date|date:"d M"}}</span
+            >{% endfor %}
+          </div>
+        </div>
+        <div class="card">
+          <h2>ATTENDANCE BY DEPARTMENT (Today)</h2>
+          <table class="tbl">
+            <tr>
+              <th>Department</th>
+              <th>Scheduled</th>
+              <th>Present</th>
+              <th>Absent</th>
+              <th>Late</th>
+              <th>EL</th>
+              <th>Attendance %</th>
+            </tr>
+            {% for d in dept_rows %}
+            <tr>
+              <td>{{d.name}}</td>
+              <td>{{d.scheduled}}</td>
+              <td>{{d.present}}</td>
+              <td>{{d.absent}}</td>
+              <td>{{d.late}}</td>
+              <td>{{d.early}}</td>
+              <td>
+                <div class="bar {% if d.pct < 70 %}orange{% endif %}">
+                  <i style="width:{{d.pct}}%"></i>
+                </div>
+                {{d.pct}}%
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7">No department attendance.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>SHIFT / CATEGORY WISE SUMMARY</h2>
+          <table class="tbl">
+            <tr>
+              <th>Category</th>
+              <th>Scheduled</th>
+              <th>Present</th>
+              <th>Absent</th>
+              <th>Late</th>
+              <th>EL</th>
+              <th>%</th>
+            </tr>
+            {% for s in category_rows %}
+            <tr>
+              <td>{{s.name}}</td>
+              <td>{{s.scheduled}}</td>
+              <td>{{s.present}}</td>
+              <td>{{s.absent}}</td>
+              <td>{{s.late}}</td>
+              <td>{{s.early}}</td>
+              <td>{{s.pct}}%</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>ATTENDANCE SUMMARY (This Month)</h2>
+          <table class="tbl">
+            <tr>
+              <td>Mandatory H/M</td>
+              <td>{{month_mandatory_hm}}</td>
+            </tr>
+            <tr>
+              <td>Done Duty H/M</td>
+              <td>{{month_done_hm}}</td>
+            </tr>
+            <tr>
+              <td>Due Duty H/M</td>
+              <td>{{month_due_hm}}</td>
+            </tr>
+            <tr>
+              <td>Total Late H/M</td>
+              <td>{{month_late_hm}}</td>
+            </tr>
+            <tr>
+              <td>Office Gate Pass (Paid)</td>
+              <td>{{month_paid_hm}}</td>
+            </tr>
+            <tr>
+              <td>Gate Pass (Unpaid)</td>
+              <td>{{month_unpaid_hm}}</td>
+            </tr>
+            <tr>
+              <td>NPT</td>
+              <td>{{month_npt_hm}}</td>
+            </tr>
+          </table>
+        </div>
+        <div class="card" id="live">
+          <h2>LIVE MONITORING · {{cameras|length}} Live</h2>
+          <div class="camera-grid">
+            {% for c in cameras %}
+            <div class="cam">
+              {% if c.thumbnail %}<img src="{{c.thumbnail.url}}" />{% else %}
+              <div class="fallback">CCTV {{c.name}}</div>
+              {% endif %}<span>{{c.location}} <b>● LIVE</b></span>
+            </div>
+            {% empty %}
+            <div class="muted">No attendance CCTV feeds configured.</div>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <div class="card green" id="shifts">
+            <h2>DAY SHIFT (Operator / Helper)</h2>
+            <div class="timeline">
+              <div class="step">
+                <div class="circle">⇥</div>
+                08:00<br /><span class="muted">Check In</span>
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                13:00<br /><span class="muted">Break In</span>
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                14:00<br /><span class="muted">Break Out</span>
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle red">⇤</div>
+                17:00<br /><span class="muted">Check Out</span>
+              </div>
+            </div>
+            <div class="status">STATUS: {{present}} PRESENT</div>
+            <div class="detailgrid">
+              <div><span>Mandatory Working</span><b>08:00</b></div>
+              <div><span>OT Earliest</span><b>17:30</b></div>
+              <div><span>Break</span><b>01:00</b></div>
+              <div><span>Grace</span><b>10 Min</b></div>
+            </div>
+          </div>
+          <div class="card blue" style="margin-top: 7px">
+            <h2>OFFICE STAFF</h2>
+            <div class="timeline">
+              <div class="step">
+                <div class="circle">⇥</div>
+                08:00
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                13:00
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                14:00
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                17:00
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle orange">☕</div>
+                17:15
+              </div>
+              <div class="line"></div>
+              <div class="step">
+                <div class="circle red">⇤</div>
+                20:00
+              </div>
+            </div>
+            <div class="status">STATUS: STAFF SCHEDULE</div>
+            <div class="detailgrid">
+              <div><span>Mandatory Working</span><b>11:00</b></div>
+              <div><span>OT Earliest</span><b>20:30</b></div>
+              <div><span>Break Allowance</span><b>01:00</b></div>
+              <div><span>Grace</span><b>10 Min</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sys">
+        <div class="card">
+          <div class="ico">◷</div>
+          <div>
+            <span class="muted">System Time</span>
+            <div class="big" style="font-size: 17px">{{work_date}}</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ico">▣</div>
+          <div>
+            <span class="muted">Device Status</span>
+            <div class="big" style="font-size: 17px">
+              {{devices|length}} Devices
+            </div>
+            <span class="green-txt">Registered</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ico">↻</div>
+          <div>
+            <span class="muted">Data Last Updated</span>
+            <div class="big" style="font-size: 17px">Live / On Request</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ico">🛡</div>
+          <div>
+            <span class="muted">Server Status</span>
+            <div class="big green-txt" style="font-size: 17px">Healthy</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick" id="reports" style="margin-top: 7px">
+        <a class="btn" href="#gatepass">Add Gate Pass</a
+        ><a class="btn green" href="#leave">Apply Leave</a
+        ><button class="btn purple" onclick="window.print()">
+          Attendance Report</button
+        ><a
+          class="btn orange"
+          href="{% url 'attendance_export_csv' %}?date={{work_date|date:'Y-m-d'}}"
+          >Export Data</a
+        >
+      </div>
+
+      <div class="forms">
+        <div class="formbox" id="records">
+          <h3>Attendance Event / Authorized Manual Entry</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="event"
+            /><select class="full" name="employee_id" required>
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+              {% endfor %}</select
+            ><select name="event">
+              <option>CHECK_IN</option>
+              <option>BREAK_IN</option>
+              <option>BREAK_OUT</option>
+              <option>CHECK_OUT</option></select
+            ><input type="datetime-local" name="occurred_at" /><input
+              class="full"
+              name="device_ref"
+              placeholder="Device reference"
+            /><label class="full"
+              ><input type="checkbox" name="manual" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Approval (required for manual)</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><textarea name="reason" placeholder="Reason"></textarea
+            ><button class="btn full">Record Event</button>
+          </form>
+          <form method="post" style="margin-top: 6px">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="recalculate"
+            /><button class="btn green" style="width: 100%">
+              Recalculate Day
+            </button>
+          </form>
+        </div>
+
+        <div class="formbox" id="gatepass">
+          <h3>Gate Pass Management</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="gate_pass"
+            /><select class="full" name="employee_id" required>
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+              {% endfor %}</select
+            ><select name="pass_type">
+              <option value="PAID">Office Gate Pass (Paid)</option>
+              <option value="UNPAID">Gate Pass (Unpaid)</option></select
+            ><input name="reason" placeholder="Reason" required /><input
+              type="datetime-local"
+              name="out_at"
+              required
+            /><input type="datetime-local" name="in_at" /><select
+              class="full"
+              name="approval_id"
+            >
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Record Gate Pass</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="overtime">
+          <h3>Overtime & Adjustment</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="overtime"
+            /><select class="full" name="employee_id" required>
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+              {% endfor %}</select
+            ><input type="datetime-local" name="start_at" required /><input
+              type="datetime-local"
+              name="end_at"
+              required
+            /><input
+              class="full"
+              name="reason"
+              placeholder="OT reason"
+            /><select class="full" name="approval_id" required>
+              <option value="">Approved authorization</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Record Authorized OT</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="npt">
+          <h3>NPT Management</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="npt"
+            /><select name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="department_id">
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="category">
+              <option>MACHINE_BREAKDOWN</option>
+              <option>POWER_OUTAGE</option>
+              <option>MATERIAL_SHORTAGE</option>
+              <option>QUALITY_HOLD</option>
+              <option>WAITING</option>
+              <option>OTHER</option></select
+            ><input
+              type="number"
+              name="minutes"
+              placeholder="Minutes"
+              required
+            /><input
+              type="number"
+              step="0.01"
+              name="cost"
+              placeholder="Cost BDT"
+            /><input
+              type="date"
+              name="work_date"
+              value="{{work_date|date:'Y-m-d'}}"
+            /><textarea name="reason" placeholder="Reason" required></textarea
+            ><button class="btn full">Add NPT</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox" id="leave">
+          <h3>Leave Management</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="leave"
+            /><select class="full" name="employee_id" required>
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+              {% endfor %}</select
+            ><input name="leave_type" value="Annual Leave" /><input
+              type="date"
+              name="start_date"
+              required
+            /><input type="date" name="end_date" required /><select
+              name="approval_id"
+            >
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><textarea name="reason" placeholder="Reason"></textarea
+            ><input class="full" type="file" name="attachment" /><button
+              class="btn green full"
+            >
+              Record Leave
+            </button>
+          </form>
+        </div>
+        <div class="formbox" id="alerts">
+          <h3>Alerts & Notifications</h3>
+          {% for a in alerts|slice:":8" %}
+          <div class="summaryline">
+            <span>{{a.title}}</span
+            ><b
+              class="{% if a.level == 'RED' %}red-txt{% else %}orange-txt{% endif %}"
+              >{{a.level}}</b
+            >
+          </div>
+          {% empty %}
+          <div class="muted">No open alerts.</div>
+          {% endfor %}
+        </div>
+        <div class="formbox" id="audit">
+          <h3>Gate Pass / OT / NPT History</h3>
+          <table class="tbl">
+            <tr>
+              <th>Type</th>
+              <th>Employee</th>
+              <th>H/M</th>
+            </tr>
+            {% for g in gate_passes|slice:":4" %}
+            <tr>
+              <td>{{g.pass_type}}</td>
+              <td>{{g.employee.employee_id}}</td>
+              <td>{{g.minutes}}m</td>
+            </tr>
+            {% endfor %}{% for o in ot_rows|slice:":3" %}
+            <tr>
+              <td>OT</td>
+              <td>{{o.employee.employee_id}}</td>
+              <td>{{o.minutes}}m</td>
+            </tr>
+            {% endfor %}{% for n in npt_rows|slice:":3" %}
+            <tr>
+              <td>NPT</td>
+              <td>
+                {% if n.employee %}{{n.employee.employee_id}}{% else
+                %}{{n.department.name}}{% endif %}
+              </td>
+              <td>{{n.minutes}}m</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="formbox" id="payroll">
+          <h3>Payroll Integration</h3>
+          <p class="muted">
+            Mandatory, done, due, late, gate-pass, NPT and approved OT minutes
+            are available for payroll calculation and reporting.
+          </p>
+          <table class="tbl">
+            <tr>
+              <td>Mandatory Cost</td>
+              <td>BDT {{sums.mandatory_cost|floatformat:2}}</td>
+            </tr>
+            <tr>
+              <td>Done Duty Cost</td>
+              <td>BDT {{sums.done_cost|floatformat:2}}</td>
+            </tr>
+            <tr>
+              <td>Due Cost</td>
+              <td>BDT {{sums.due_cost|floatformat:2}}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>© 2026 Emerald Rozalia Limited</span
+      ><span>Version 2.0.0 · Project 1 Attendance</span
+      ><span>All times use configured Bangladesh local factory time</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,325 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Profit + Feasibility Gate</h1>
+    <p>
+      Page #72 · Mandatory decision before Buyer Opportunity can be accepted as
+      WON
+    </p>
+  </div>
+  <div>
+    <a class="btn" href="{% url 'profit_feasibility_export_csv' %}"
+      >Download CSV</a
+    >
+    <button class="btn" onclick="window.print()">Preview / Print</button>
+  </div>
+</div>
+{% for message in messages %}
+<div class="card"><b>{{message}}</b></div>
+{% endfor %}
+<div class="kpis">
+  <div class="kpi"><b>{{pending_count}}</b><span>Pending</span></div>
+  <div class="kpi"><b>{{accept_count}}</b><span>Accept</span></div>
+  <div class="kpi"><b>{{risk_count}}</b><span>Accept With Risk</span></div>
+  <div class="kpi"><b>{{hold_count}}</b><span>Hold</span></div>
+  <div class="kpi"><b>{{reject_count}}</b><span>Reject</span></div>
+</div>
+
+<div class="card">
+  <h2>Profitability + Feasibility Assessment</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="save_gate" />
+    <div class="form-grid">
+      <label
+        >Buyer Opportunity<select name="opportunity_id" required>
+          {% for o in opportunities %}
+          <option value="{{o.id}}">
+            {{o.opportunity_no}} · {{o.buyer_company}} · {{o.product}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Currency<input name="currency" value="USD" /></label>
+      <label>Quantity<input type="number" name="quantity" /></label>
+      <label
+        >Selling Price / Unit<input
+          type="number"
+          step="0.0001"
+          name="selling_price_per_unit"
+      /></label>
+      <label
+        >Minimum Profit Margin %<input
+          type="number"
+          step="0.01"
+          name="minimum_margin_percent"
+          value="10"
+      /></label>
+      <label
+        >Production Days Required<input
+          type="number"
+          name="production_days_required"
+      /></label>
+      <label>Available Days<input type="number" name="available_days" /></label>
+    </div>
+    <h3>Cost Build-Up</h3>
+    <div class="form-grid">
+      <label
+        >Material Cost<input
+          type="number"
+          step="0.01"
+          name="material_cost"
+          value="0"
+      /></label>
+      <label
+        >Accessories Cost<input
+          type="number"
+          step="0.01"
+          name="accessory_cost"
+          value="0"
+      /></label>
+      <label
+        >Labour Cost<input
+          type="number"
+          step="0.01"
+          name="labour_cost"
+          value="0"
+      /></label>
+      <label
+        >Production Overhead<input
+          type="number"
+          step="0.01"
+          name="production_overhead"
+          value="0"
+      /></label>
+      <label
+        >Finishing & Packing<input
+          type="number"
+          step="0.01"
+          name="finishing_packing_cost"
+          value="0"
+      /></label>
+      <label
+        >Logistics / Freight<input
+          type="number"
+          step="0.01"
+          name="logistics_freight_cost"
+          value="0"
+      /></label>
+      <label
+        >Finance / Bank Cost<input
+          type="number"
+          step="0.01"
+          name="finance_bank_cost"
+          value="0"
+      /></label>
+      <label
+        >Commission Cost<input
+          type="number"
+          step="0.01"
+          name="commission_cost"
+          value="0"
+      /></label>
+      <label
+        >Compliance / Testing<input
+          type="number"
+          step="0.01"
+          name="compliance_testing_cost"
+          value="0"
+      /></label>
+      <label
+        >Contingency<input
+          type="number"
+          step="0.01"
+          name="contingency_cost"
+          value="0"
+      /></label>
+      <label
+        >Other Cost<input type="number" step="0.01" name="other_cost" value="0"
+      /></label>
+    </div>
+    <h3>Feasibility Readiness Scores (0–100)</h3>
+    <div class="form-grid">
+      <label
+        >Capacity<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="capacity_score"
+      /></label>
+      <label
+        >Material Readiness<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="material_readiness_score"
+      /></label>
+      <label
+        >Workforce<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="workforce_score"
+      /></label>
+      <label
+        >Machine<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="machine_score"
+      /></label>
+      <label
+        >Lead Time<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="lead_time_score"
+      /></label>
+      <label
+        >Quality<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="quality_score"
+      /></label>
+      <label
+        >Compliance<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="compliance_score"
+      /></label>
+      <label
+        >Buyer Credit<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="buyer_credit_score"
+      /></label>
+      <label
+        >Commercial Risk %<input
+          type="number"
+          step="0.01"
+          min="0"
+          max="100"
+          name="commercial_risk_score"
+      /></label>
+    </div>
+    <div class="form-grid">
+      <label
+        >Critical Bottleneck<textarea name="critical_bottleneck"></textarea>
+      </label>
+      <label
+        >Material Shortage<textarea name="material_shortage"></textarea>
+      </label>
+      <label>Capacity Risk<textarea name="capacity_risk"></textarea></label>
+      <label>Commercial Risk<textarea name="commercial_risk"></textarea></label>
+      <label>Remarks<textarea name="remarks"></textarea></label>
+    </div>
+    <button class="btn primary">Calculate / Save Gate</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Gate Decision Register</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Opportunity</th>
+        <th>Buyer / Product</th>
+        <th>Revenue</th>
+        <th>Total Cost</th>
+        <th>Gross Profit</th>
+        <th>Margin</th>
+        <th>Feasibility</th>
+        <th>System Recommendation</th>
+        <th>Final Decision</th>
+        <th>Approval</th>
+        <th>Gate</th>
+      </tr>
+      {% for g in gates %}
+      <tr>
+        <td><b>{{g.opportunity.opportunity_no}}</b></td>
+        <td>{{g.opportunity.buyer_company}}<br />{{g.opportunity.product}}</td>
+        <td>{{g.currency}} {{g.revenue}}</td>
+        <td>{{g.currency}} {{g.total_cost}}</td>
+        <td>{{g.currency}} {{g.gross_profit}}</td>
+        <td>
+          <b>{{g.margin_percent}}%</b><br />Min {{g.minimum_margin_percent}}%
+        </td>
+        <td>{{g.feasibility_score}}%</td>
+        <td><b>{{g.system_recommendation}}</b></td>
+        <td><b>{{g.final_decision}}</b></td>
+        <td>
+          {% if g.approval %}{{g.approval.reference}} · {{g.approval.status}}{%
+          else %}—{% endif %}
+        </td>
+        <td>
+          {% if g.gate_passed %}<b>PASS</b>{% else %}<b>BLOCKED</b>{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="11">No gate assessments yet.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Final Management Decision</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="decision" />
+    <div class="form-grid">
+      <label
+        >Gate<select name="gate_id" required>
+          {% for g in gates %}
+          <option value="{{g.id}}">
+            {{g.opportunity.opportunity_no}} · Margin {{g.margin_percent}}% ·
+            Recommendation {{g.system_recommendation}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Final Decision<select name="final_decision">
+          <option>PENDING</option>
+          <option>ACCEPT</option>
+          <option>ACCEPT_WITH_RISK</option>
+          <option>HOLD</option>
+          <option>REJECT</option>
+        </select></label
+      >
+      <label
+        >Senior Approval<select name="approval_id">
+          <option value="">— Required for Accept —</option>
+          {% for a in approvals %}
+          <option value="{{a.id}}">
+            {{a.reference}} · {{a.approval_type}} · {{a.status}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Decision Remarks<textarea name="decision_remarks"></textarea>
+      </label>
+    </div>
+    <p>
+      <b>Control rule:</b> ACCEPT or ACCEPT WITH RISK requires an APPROVED
+      senior Approval Request. A buyer opportunity cannot change to WON and
+      cannot create the confirmed Order Master until this gate passes. ACCEPT is
+      also blocked when the calculated margin is below the minimum margin
+      threshold.
+    </p>
+    <button class="btn primary">Save Final Decision</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,848 @@
+{% extends "base.html" %}{% block title %}Poly / Polybag Dashboard{% endblock
+%}{% block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .p {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    border-right: 1px solid #1d5c46;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #28614d;
+  }
+  .brand b {
+    color: #1fc46a;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #41dd83;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eaf5f1;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d713f;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07362a;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #bed8ce;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b80e1b;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #46df7b;
+  }
+  .red {
+    color: #ff4a56 !important;
+  }
+  .orange {
+    color: #ff9a24 !important;
+  }
+  .blue {
+    color: #4abaff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #57e08d;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 105px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235664;
+  }
+  .arrow {
+    color: #40e37d;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252f;
+    border: 1px solid #1c4b55;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #52de88;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #3bd670;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e303a;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c2b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .p {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="p">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>POLY / POLYBAG DEPARTMENT</small>
+    </div>
+    <div class="navh">POLY CONTROL</div>
+    <a class="on" href="{% url 'poly_dashboard' %}">⌂ Poly Dashboard</a
+    ><a href="#plans">▤ Poly Plan</a><a href="#stock">▣ Poly Stock Issue</a
+    ><a href="#scan">▦ Garment / Bundle IN-OUT Scan</a
+    ><a href="#packing">◉ Poly Packing</a><a href="#qc">✓ Poly QC</a
+    ><a href="#cost">৳ Poly Costing</a
+    ><a href="#variance">⚠ Variance / Wrong Poly</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'communication_center' %}">◯ Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">◉ WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a
+    ><a href="{% url 'universal_file_center' %}">▤ File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>POLY / POLYBAG DASHBOARD</h1>
+        <small
+          >Buyer Packing Spec → Stock Issue → Garment In → Poly Packing → QC →
+          Garment Out</small
+        >
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#variance">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="{% url 'communication_center' %}">Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >Email</a
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+
+      <div class="kpis">
+        <div class="kpi"><span>Active Plans</span><b>{{payload.plans}}</b></div>
+        <div class="kpi">
+          <span>Planned Qty</span><b>{{payload.planned_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Target</span><b>{{payload.target_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Actual</span><b>{{payload.actual_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Efficiency</span
+          ><b class="blue">{{payload.efficiency_percent}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Poly Used</span><b>{{payload.poly_used_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Reject / Damage</span
+          ><b class="red"
+            >{{payload.qc_reject_qty}} / {{payload.packing_damaged_qty}}</b
+          >
+        </div>
+        <div class="kpi">
+          <span>Total Cost BDT</span
+          ><b class="orange">{{payload.total_cost}}</b>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY POLY FLOW</h2>
+        <div class="flow">
+          <div class="step">Approved Order</div>
+          <b class="arrow">→</b>
+          <div class="step">Buyer Packing Spec</div>
+          <b class="arrow">→</b>
+          <div class="step">Poly Plan</div>
+          <b class="arrow">→</b>
+          <div class="step">POLY STOCK OUT SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">GARMENT/BUNDLE IN SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Poly Packing</div>
+          <b class="arrow">→</b>
+          <div class="step">Barcode/Warning Check</div>
+          <b class="arrow">→</b>
+          <div class="step">Poly QC</div>
+          <b class="arrow">→</b>
+          <div class="step">Rework / Re-QC</div>
+          <b class="arrow">→</b>
+          <div class="step">GARMENT/BUNDLE OUT SCAN</div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card" id="stock">
+          <h2>POLY STOCK CONTROL</h2>
+          <div class="kpi">
+            <span>Issued</span><b>{{payload.stock_issued_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Returned</span><b>{{payload.stock_returned_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Damaged</span><b class="red">{{payload.stock_damaged_qty}}</b>
+          </div>
+          <p>Supplier · Batch · Lot · STOCK OUT · Return STOCK IN.</p>
+        </div>
+        <div class="card">
+          <h2>GARMENT/BUNDLE SCAN</h2>
+          <div class="kpi">
+            <span>Valid IN</span><b>{{payload.bundle_in_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Valid OUT</span><b>{{payload.bundle_out_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Blocked</span><b class="red">{{payload.blocked_scans}}</b>
+          </div>
+          <p>OUT blocked without valid IN and QC PASS.</p>
+        </div>
+        <div class="card" id="cost">
+          <h2>TIME / COST</h2>
+          <div class="kpi">
+            <span>Process / NPT Minutes</span
+            ><b>{{payload.process_minutes}} / {{payload.npt_minutes}}</b>
+          </div>
+          <div class="kpi">
+            <span>Labour Cost</span><b>{{payload.labour_cost}}</b>
+          </div>
+          <div class="kpi">
+            <span>Sticker/Barcode</span><b>{{payload.sticker_barcode_cost}}</b>
+          </div>
+          <div class="kpi">
+            <span>Wastage Cost</span
+            ><b class="orange">{{payload.wastage_cost}}</b>
+          </div>
+        </div>
+        <div class="card" id="variance">
+          <h2>VARIANCE / RED ALERT</h2>
+          <div class="kpi">
+            <span>Outstanding</span
+            ><b class="red">{{payload.unactioned_variances}}</b>
+          </div>
+          {% for v in variances|slice:":5" %}
+          <div class="report">
+            {{v.plan.plan_no}} · {{v.variance_type}} · {{v.variance}} · BDT
+            {{v.value_variance_bdt}}
+          </div>
+          {% empty %}
+          <p>No open Poly variances.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>POLY PLAN / ORDER</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Type</th>
+              <th>Code</th>
+              <th>Size</th>
+              <th>Micron</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+            {% for p in plans|slice:":14" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.poly_type}}</td>
+              <td>{{p.poly_code}}</td>
+              <td>{{p.poly_size}}</td>
+              <td>{{p.thickness_micron}}</td>
+              <td>{{p.planned_qty}}</td>
+              <td>{{p.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="8">No Poly plans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>LATEST GARMENT/BUNDLE SCANS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Time</th>
+              <th>Bundle</th>
+              <th>Dir.</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+            {% for s in scans|slice:":14" %}
+            <tr>
+              <td>{{s.scanned_at|date:"H:i"}}</td>
+              <td>
+                {% if s.bundle %}{{s.bundle.bundle_no}}{% else %}—{% endif %}
+              </td>
+              <td>{{s.direction}}</td>
+              <td>{{s.actual_qty}}/{{s.expected_qty}}</td>
+              <td>{{s.scan_status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5">No scans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC POLY REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button
+            ><button class="btn" name="slot" value="13:00">13:00</button
+            ><button class="btn" name="slot" value="20:00">20:00</button>
+          </form>
+          <br /><a class="btn" href="{% url 'poly_report_csv' %}"
+            >Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE POLY PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input name="buyer" placeholder="Buyer" /><input
+              name="brand"
+              placeholder="Brand"
+            /><input name="style_no" placeholder="Style No." /><input
+              name="product"
+              placeholder="Product"
+            /><input name="colour" placeholder="Colour" /><input
+              name="size_range"
+              placeholder="Size Range"
+            /><select name="poly_type">
+              {% for x in poly_types %}
+              <option>{{x}}</option>
+              {% endfor %}</select
+            ><input name="poly_code" placeholder="Poly Code" required /><input
+              name="poly_size"
+              placeholder="Poly Size"
+            /><input
+              type="number"
+              step="0.01"
+              name="thickness_micron"
+              placeholder="Thickness/Micron"
+            /><input name="material" placeholder="Material" /><input
+              class="full"
+              name="warning_text"
+              placeholder="Warning Text"
+            /><label class="full"
+              ><input type="checkbox" name="barcode_required" checked />
+              Barcode/Sticker Required</label
+            ><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+              required
+            /><input type="date" name="target_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><label
+              >Packing Specification<input
+                type="file"
+                name="packing_specification" /></label
+            ><label>Artwork<input type="file" name="artwork" /></label
+            ><button class="btn full">Create Poly Plan</button>
+          </form>
+        </div>
+
+        <div class="formbox">
+          <h3>POLY STOCK ISSUE</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="stock_issue"
+            /><select class="full" name="plan_id" required>
+              <option value="">Poly Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select name="stock_item_id">
+              <option value="">Stock Item</option>
+              {% for s in stock_items %}
+              <option value="{{s.id}}">{{s.name}}</option>
+              {% endfor %}</select
+            ><input name="supplier" placeholder="Supplier" /><input
+              name="batch_no"
+              placeholder="Batch No."
+            /><input name="lot_no" placeholder="Lot No." /><input
+              type="number"
+              name="issued_qty"
+              placeholder="Issued Qty"
+              required
+            /><input
+              type="number"
+              name="returned_qty"
+              placeholder="Returned Qty"
+            /><input
+              type="number"
+              name="damaged_qty"
+              placeholder="Damaged Qty"
+            /><input
+              class="full"
+              name="stock_out_scan"
+              placeholder="Mandatory POLY STOCK OUT SCAN"
+              required
+            /><input
+              class="full"
+              name="stock_in_return_scan"
+              placeholder="Return STOCK IN SCAN"
+            /><button class="btn full">Issue Poly Stock</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="scan">
+          <h3>GARMENT / BUNDLE IN-OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="bundle_scan"
+            /><select class="full" name="plan_id" required>
+              <option value="">Poly Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">
+                {{b.bundle_no}} · {{b.barcode}} · {{b.quantity}}
+              </option>
+              {% endfor %}</select
+            ><select name="direction">
+              <option value="IN">GARMENT/BUNDLE IN SCAN</option>
+              <option value="OUT">GARMENT/BUNDLE OUT SCAN</option></select
+            ><input name="barcode" placeholder="Scan Barcode / QR" /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><input
+              name="source_department"
+              placeholder="Source Department"
+            /><input
+              name="destination_department"
+              placeholder="Destination Department"
+            /><button class="btn full">Validate & Scan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="packing">
+          <h3>POLY PACKING / COST ENTRY</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="packing"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="target_qty"
+              placeholder="Target"
+            /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual"
+            /><input
+              type="number"
+              name="process_minutes"
+              placeholder="Process Minutes"
+            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+              type="number"
+              name="poly_used_qty"
+              placeholder="Poly Used"
+            /><input
+              type="number"
+              name="damaged_qty"
+              placeholder="Damaged"
+            /><input
+              type="number"
+              name="rejected_qty"
+              placeholder="Rejected"
+            /><input
+              type="number"
+              name="returned_qty"
+              placeholder="Returned"
+            /><input
+              type="number"
+              step="0.0001"
+              name="poly_cost_per_piece"
+              placeholder="Poly Cost/Piece"
+            /><input
+              type="number"
+              step="0.01"
+              name="sticker_barcode_cost"
+              placeholder="Sticker/Barcode Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="labour_cost"
+              placeholder="Labour Cost"
+            /><input
+              type="number"
+              step="0.0001"
+              name="cost_per_minute"
+              placeholder="Cost/Minute"
+            /><input
+              type="number"
+              step="0.01"
+              name="wastage_cost"
+              placeholder="Wastage Cost"
+            /><label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Approval if manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Packing Entry</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="forms" style="grid-template-columns: 1fr 2fr 1fr">
+        <div class="formbox" id="qc">
+          <h3>POLY QC</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="qc"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected"
+            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><select name="defect_type">
+              <option value="">No Defect</option>
+              {% for d in defect_types %}
+              <option>{{d}}</option>
+              {% endfor %}</select
+            ><select name="result">
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REWORK</option>
+              <option>REJECT</option></select
+            ><textarea
+              name="defect_reason"
+              placeholder="Defect / Reason"
+            ></textarea
+            ><label class="full"
+              >QC Photo<input type="file" name="qc_photo" /></label
+            ><button class="btn full">Record Poly QC</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>TODAY'S POLY PACKING</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Bundle</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>Used</th>
+              <th>Damage</th>
+              <th>Reject</th>
+              <th>Return</th>
+              <th>Minutes</th>
+              <th>Total Cost</th>
+            </tr>
+            {% for x in pack|slice:":20" %}
+            <tr>
+              <td>{{x.plan.plan_no}}</td>
+              <td>
+                {% if x.bundle %}{{x.bundle.bundle_no}}{% else %}—{% endif %}
+              </td>
+              <td>{{x.target_qty}}</td>
+              <td>{{x.actual_qty}}</td>
+              <td>{{x.poly_used_qty}}</td>
+              <td>{{x.damaged_qty}}</td>
+              <td>{{x.rejected_qty}}</td>
+              <td>{{x.returned_qty}}</td>
+              <td>{{x.process_minutes}}</td>
+              <td>{{x.total_cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="10">No packing entries.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>POLY QC CONTROL</h2>
+          <div class="kpi">
+            <span>QC Pass</span><b>{{payload.qc_pass_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>QC Reject / Rework</span
+            ><b class="red"
+              >{{payload.qc_reject_qty}} / {{payload.qc_rework_qty}}</b
+            >
+          </div>
+          <p>
+            Wrong poly/order/style/size/colour, bad dimensions/micron,
+            print/barcode/warning/seal errors, dirty/damaged poly, and quantity
+            mismatch can HOLD or BLOCK release.
+          </p>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 Poly / Polybag</span
+      ><span>Wrong Poly / Wrong Order / Barcode Failure = HOLD + RED ALERT</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

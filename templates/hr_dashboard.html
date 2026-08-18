@@ -1,0 +1,833 @@
+{% extends "base.html" %}{% block title %}HR Dashboard{% endblock %}{% block
+content %}
+<style>
+  body {
+    background: #f3f6f5;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .hr {
+    display: grid;
+    grid-template-columns: 178px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+    color: #142b22;
+  }
+  .side {
+    background: linear-gradient(#003a2c, #004533, #003427);
+    color: #fff;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 12px 10px;
+    border-bottom: 1px solid #315b50;
+    font: 700 19px Georgia;
+  }
+  .brand b {
+    color: #18ad5e;
+  }
+  .brand small {
+    display: block;
+    font: 8px Arial;
+    letter-spacing: 5px;
+    text-align: center;
+  }
+  .navh {
+    padding: 11px 12px 5px;
+    font-weight: bold;
+    font-size: 10px;
+  }
+  .side a {
+    display: block;
+    color: #fff;
+    text-decoration: none;
+    padding: 7px 12px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0a9a50;
+    border-radius: 4px;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    height: 54px;
+    background: #003428;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+  }
+  .head h1 {
+    font-size: 19px;
+    margin: 0;
+  }
+  .head small {
+    display: block;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 5px;
+  }
+  .tool {
+    border: 1px solid #276453;
+    border-radius: 5px;
+    padding: 7px 10px;
+    color: #fff;
+    text-decoration: none;
+    background: #063e31;
+  }
+  .tool.red {
+    background: #c90016;
+  }
+  .filters {
+    background: #fff;
+    padding: 7px 10px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr) repeat(6, auto);
+    gap: 7px;
+    border-bottom: 1px solid #d9e4df;
+  }
+  .f {
+    border: 1px solid #d6e1dd;
+    border-radius: 5px;
+    padding: 6px;
+    min-width: 105px;
+  }
+  .f small {
+    display: block;
+    font-size: 8px;
+  }
+  .btn {
+    background: #09653e;
+    color: #fff;
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .content {
+    padding: 8px;
+  }
+  .metrics {
+    background: #fff;
+    border: 1px solid #dce5e1;
+    border-radius: 7px;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 3px;
+    margin-bottom: 7px;
+  }
+  .metric {
+    text-align: center;
+    border-right: 1px solid #e6ece9;
+    padding: 5px;
+  }
+  .metric b {
+    font-size: 19px;
+    color: #0a5d37;
+    display: block;
+  }
+  .metric span {
+    font-size: 8px;
+  }
+  .metric.orange b {
+    color: #ef6d00;
+  }
+  .metric.red b {
+    color: #d9151b;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: 1.15fr 1.4fr 1fr 0.9fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid6 {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid5 {
+    display: grid;
+    grid-template-columns: 1.1fr 1.2fr 1.1fr 1.3fr 1.2fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #dce5e1;
+    border-radius: 7px;
+    padding: 9px;
+    margin: 0;
+    box-shadow: none;
+  }
+  .card h2 {
+    font-size: 10px;
+    color: #0a5d37;
+    margin: 0 0 8px;
+  }
+  .big {
+    font-size: 24px;
+    color: #075f38;
+    font-weight: bold;
+  }
+  .muted {
+    font-size: 8px;
+    color: #65746e;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 4px;
+    border-bottom: 1px solid #edf1ef;
+    text-align: left;
+  }
+  .bar {
+    height: 8px;
+    background: #e6eee9;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: #0b9b52;
+  }
+  .donut {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    margin: auto;
+    background: conic-gradient(
+      #3c54ae 0 30%,
+      #ee4e62 30% 49%,
+      #20a56f 49% 65%,
+      #f4a51c 65% 75%,
+      #72b151 75% 88%,
+      #2d7da9 88%
+    );
+    display: grid;
+    place-items: center;
+  }
+  .donut:after {
+    content: "{{active_employees}} Active";
+    display: grid;
+    place-items: center;
+    text-align: center;
+    width: 70px;
+    height: 70px;
+    background: #fff;
+    border-radius: 50%;
+    font-weight: bold;
+  }
+  .chart {
+    height: 130px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    border-left: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    padding: 5px;
+  }
+  .chart i {
+    flex: 1;
+    background: #15974f;
+    min-height: 5px;
+  }
+  .chart i:nth-child(even) {
+    background: #2e63b6;
+  }
+  .legend {
+    display: flex;
+    gap: 10px;
+    font-size: 8px;
+    margin-top: 5px;
+  }
+  .pill {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 6px;
+    border-radius: 8px;
+    margin: 3px 0;
+    background: #eef4f1;
+  }
+  .pill b {
+    color: #0a663e;
+  }
+  .alert {
+    padding: 5px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 8px;
+  }
+  .redtxt {
+    color: #d10b16;
+  }
+  .orangetxt {
+    color: #ef7900;
+  }
+  .green {
+    color: #087340;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid #d4dfda;
+    border-radius: 4px;
+    font-size: 9px;
+  }
+  .form textarea {
+    grid-column: 1/-1;
+  }
+  .full {
+    grid-column: 1/-1;
+  }
+  .bottom {
+    background: #00382c;
+    color: #fff;
+    padding: 9px 14px;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .metrics {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .grid6,
+    .grid5 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .hr {
+      display: block;
+    }
+    .side {
+      height: auto;
+      position: relative;
+    }
+    .grid4,
+    .grid6,
+    .grid5 {
+      grid-template-columns: 1fr;
+    }
+    .metrics {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .filters {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+</style>
+<div class="hr">
+  <aside class="side">
+    <div class="brand">☘ <b>EMERALD</b> ROZALIA<small>LIMITED</small></div>
+    <div class="navh">HR CORE MODULES</div>
+    <a class="on" href="{% url 'hr_dashboard' %}">⌂ HR Dashboard</a
+    ><a href="#employee">♙ Employee Master</a
+    ><a href="#recruitment">♧ Recruitment</a
+    ><a href="#recruitment">▤ Appointment & Joining Letters</a
+    ><a href="{% url 'staff_self_service' %}">▣ Staff ID Cards</a
+    ><a href="{% url 'universal_file_center' %}">▤ Document Storage</a
+    ><a href="#attendance">✓ Attendance</a
+    ><a href="#attendance">▦ Weekly Done Duty Review</a
+    ><a href="#workforce">□ Next-Week Roster</a
+    ><a href="#leave">♧ Leave Management</a><a href="#training">▣ Training</a
+    ><a href="#performance">▤ Performance</a
+    ><a href="#payroll">▧ Payroll Review</a
+    ><a href="#analytics">◉ Overtime Cost Analysis</a
+    ><a href="#workforce">▤ Leave Forecasting</a
+    ><a href="#workforce">▧ Workforce Planning</a
+    ><a href="#survey">▤ Survey Results</a
+    ><a href="#recognition">♧ Recognition & Rewards</a
+    ><a href="#mobility">⇄ Internal Mobility</a
+    ><a href="#policy">▤ Policy Acknowledgement</a
+    ><a href="#cases">◉ Complaints & Grievance</a
+    ><a href="#cases">⚠ Incident / Disciplinary</a
+    ><a href="#mobility">⇄ Transfer / Relocation</a
+    ><a href="#employee">▤ Exit Management</a
+    ><a href="#analytics">▤ Reports & Analytics</a>
+    <div class="navh">ADMINISTRATION</div>
+    <a href="{% url 'staff_self_service' %}"
+      >♙ Employee Self-Service Administration</a
+    ><a href="#audit">▤ Audit Trail</a><a href="#settings">⚙ HR Settings</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>HR DASHBOARD</h1>
+        <small>Human Resources Management System</small>
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#alerts">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="#approvals"
+          >✓ {{approval_counts.actioned}} Actioned</a
+        ><a class="tool" href="{% url 'communication_center' %}">◯ Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >◉ WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >✉ Email</a
+        ><span class="tool">◉ HR Admin</span>
+      </div>
+    </header>
+    <div class="filters">
+      <div class="f"><small>Country</small>🇧🇩 Bangladesh</div>
+      <div class="f"><small>Company</small>Emerald Rozalia Limited</div>
+      <div class="f"><small>Factory / Unit</small>All Units</div>
+      <div class="f"><small>Department</small>All Departments</div>
+      <div class="f"><small>Period</small>This Month</div>
+      <a class="btn" href="#employee">Add Employee</a
+      ><a class="btn" href="{% url 'universal_file_center' %}">Company Forms</a
+      ><a class="btn" href="#audit">Authorized Manual Entry</a
+      ><button class="btn" onclick="window.print()">Print</button
+      ><a class="btn" href="#analytics">Report</a
+      ><a class="btn" href="#employee">View All</a>
+    </div>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="metrics">
+        <div class="metric">
+          <span>Total Registered Employees</span><b>{{total_employees}}</b>
+        </div>
+        <div class="metric">
+          <span>Active Employees</span><b>{{active_employees}}</b>
+        </div>
+        <div class="metric">
+          <span>Inactive Employees</span><b>{{inactive_employees}}</b>
+        </div>
+        <div class="metric">
+          <span>Pending Joining</span><b>{{pending_joining}}</b>
+        </div>
+        <div class="metric">
+          <span>New Joiners This Month</span><b>{{new_joiners}}</b>
+        </div>
+        <div class="metric"><span>On Leave Today</span><b>{{on_leave}}</b></div>
+        <div class="metric">
+          <span>Absent Today</span><b>{{absent_today}}</b>
+        </div>
+        <div class="metric"><span>Late Today</span><b>{{late_today}}</b></div>
+        <div class="metric">
+          <span>Early Leave Today</span><b>{{early_today}}</b>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric orange">
+          <span>Pending HR Approvals</span><b>{{pending_hr}}</b>
+        </div>
+        <div class="metric orange">
+          <span>Pending Documents</span><b>{{pending_docs}}</b>
+        </div>
+        <div class="metric red">
+          <span>Expiring Documents 30 Days</span><b>{{expiring_count}}</b>
+        </div>
+        <div class="metric">
+          <span>Training Due 30 Days</span><b>{{training_due}}</b>
+        </div>
+        <div class="metric red">
+          <span>Open Complaints</span><b>{{open_complaints}}</b>
+        </div>
+        <div class="metric red">
+          <span>Open Incidents</span><b>{{open_incidents}}</b>
+        </div>
+        <div class="metric orange">
+          <span>Suspended</span><b>{{suspended}}</b>
+        </div>
+        <div class="metric">
+          <span>Self-Service Active</span><b>{{self_service_active}}</b>
+        </div>
+        <div class="metric">
+          <span>Actioned This Month</span><b>{{actioned_month}}</b>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>EMPLOYEE OVERVIEW</h2>
+          <div class="donut"></div>
+          <table class="tbl">
+            {% for d in dept_counts %}
+            <tr>
+              <td>{{d.department__name|default:"Other"}}</td>
+              <td>{{d.total}}</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>JOINING TREND (This Year)</h2>
+          <div class="chart">
+            {% for n in monthly_joiners %}<i
+              style="height:{% widthratio n 1 2 %}px"
+              title="{{n}}"
+            ></i
+            >{% endfor %}
+          </div>
+          <div class="legend">
+            Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+          </div>
+        </div>
+        <div class="card" id="leave">
+          <h2>LEAVE SUMMARY (This Month)</h2>
+          <div class="big">
+            {{total_leave}} <span class="muted">Total</span>
+          </div>
+          <div class="pill">
+            <span>Approved</span><b>{{leave_summary.APPROVED}}</b>
+          </div>
+          <div class="pill">
+            <span>Pending</span><b>{{leave_summary.PENDING}}</b>
+          </div>
+          <div class="pill">
+            <span>Rejected</span><b>{{leave_summary.REJECTED}}</b>
+          </div>
+          <div class="pill">
+            <span>Cancelled</span><b>{{leave_summary.CANCELLED}}</b>
+          </div>
+        </div>
+        <div class="card" id="approvals">
+          <h2>HR APPROVAL CENTER</h2>
+          <div class="pill">
+            <span>Pending</span><b>{{approval_counts.pending}}</b>
+          </div>
+          <div class="pill">
+            <span>Approved</span><b>{{approval_counts.approved}}</b>
+          </div>
+          <div class="pill">
+            <span>Rejected</span><b>{{approval_counts.rejected}}</b>
+          </div>
+          <div class="pill">
+            <span>Actioned</span><b>{{approval_counts.actioned}}</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="analytics">
+        <h2>HR ANALYTICS & WORKFORCE INTELLIGENCE</h2>
+      </div>
+      <div class="grid6">
+        <div class="card">
+          <h2>PRODUCTIVITY INDEX</h2>
+          <div class="big">{{avg_productivity|floatformat:0}}%</div>
+          <span class="muted">Linked to attendance and performance output</span>
+        </div>
+        <div class="card">
+          <h2>BENEFIT UTILIZATION</h2>
+          <div class="pill">
+            <span>Active Employees</span><b>{{active_employees}}</b>
+          </div>
+          <div class="pill"><span>On Leave</span><b>{{on_leave}}</b></div>
+          <div class="pill">
+            <span>Training Due</span><b>{{training_due}}</b>
+          </div>
+        </div>
+        <div class="card">
+          <h2>COST-PER-HIRE & TRAINING ROI</h2>
+          <div class="big">{{new_joiners}}</div>
+          <span class="muted"
+            >New hires this month. Training cost/ROI is captured per training
+            record.</span
+          >
+        </div>
+        <div class="card">
+          <h2>ATTRITION RISK</h2>
+          <div class="big">{{inactive_employees}}</div>
+          <span class="muted"
+            >Inactive employees; risk indicators feed HR review.</span
+          >
+        </div>
+        <div class="card" id="workforce">
+          <h2>FUTURE WORKFORCE DEMAND</h2>
+          <table class="tbl">
+            <tr>
+              <th>Period</th>
+              <th>Required</th>
+              <th>Current</th>
+              <th>Plan</th>
+            </tr>
+            {% for w in workforce_rows|slice:":5" %}
+            <tr>
+              <td>{{w.period}}</td>
+              <td>{{w.required_headcount}}</td>
+              <td>{{w.current_headcount}}</td>
+              <td>{{w.planned_headcount}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="4">No workforce plans yet.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>INTERNAL COMMUNICATION RESPONSIVENESS</h2>
+          <div class="big">{{comm_threads|length}}</div>
+          <span class="muted"
+            >Recent communication threads. Full history in Communication
+            Center.</span
+          ><a class="btn" href="{% url 'communication_center' %}">View</a>
+        </div>
+      </div>
+
+      <div class="grid5">
+        <div class="card" id="policy">
+          <h2>POLICY ACKNOWLEDGMENT TREND</h2>
+          <div class="big">{{policy_ack}} / {{policy_total}}</div>
+          <div class="bar">
+            <i
+              style="width:{% if policy_total %}{% widthratio policy_ack policy_total 100 %}{% else %}0{% endif %}%"
+            ></i>
+          </div>
+        </div>
+        <div class="card" id="payroll">
+          <h2>TOTAL HR COST vs PRODUCTIVITY</h2>
+          <p class="muted">
+            Payroll review, overtime costs and productivity are connected to
+            employee/payroll/performance records.
+          </p>
+          <a class="btn" href="#employee">View Analysis</a>
+        </div>
+        <div class="card">
+          <h2>EMPLOYEE SATISFACTION TREND</h2>
+          <div class="big">{{survey_avg|floatformat:1}} / 5</div>
+          <span class="muted">{{survey_responses}} survey responses</span>
+        </div>
+        <div class="card" id="alerts">
+          <h2>KEY ALERTS & RISK INDICATORS</h2>
+          {% for a in alerts %}
+          <div class="alert">
+            <b
+              class="{% if a.level == 'RED' %}redtxt{% else %}orangetxt{% endif %}"
+              >⚠ {{a.title}}</b
+            ><br />{{a.message|truncatechars:80}}
+          </div>
+          {% empty %}
+          <p class="muted">No outstanding alerts.</p>
+          {% endfor %}
+        </div>
+        <div class="card">
+          <h2>DOCUMENT EXPIRY ALERTS (30 Days)</h2>
+          <table class="tbl">
+            <tr>
+              <th>Document</th>
+              <th>Expiry</th>
+              <th>Employee</th>
+            </tr>
+            {% for d in expiring_docs %}
+            <tr>
+              <td>{{d.title}}</td>
+              <td>{{d.expires_at}}</td>
+              <td>{{d.employee.employee_id}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3">No expiring documents.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+
+      <div class="grid5">
+        <div class="card" id="survey">
+          <h2>SURVEY RESULTS</h2>
+          <div class="big">{{survey_avg|floatformat:1}}</div>
+          <span class="muted"
+            >Out of 5 · Response count {{survey_responses}}</span
+          >
+        </div>
+        <div class="card" id="recognition">
+          <h2>RECOGNITION & REWARDS TRACKER</h2>
+          <div class="big">🏆 {{recognition_count}}</div>
+          <div class="pill">
+            <span>Total Rewarded</span><b>{{reward_total}}</b>
+          </div>
+        </div>
+        <div class="card" id="mobility">
+          <h2>INTERNAL MOBILITY</h2>
+          <div class="big">⇄ {{mobility_count}}</div>
+          <span class="muted"
+            >Transfers · Promotions · Department changes · Relocations</span
+          >
+        </div>
+        <div class="card" id="audit">
+          <h2>AUDIT TRAIL (Latest)</h2>
+          {% for a in recent_audit %}
+          <div class="alert">
+            ✓ {{a.action}} · {{a.user|default:"System"}}
+            <span class="muted">{{a.created_at}}</span>
+          </div>
+          {% empty %}
+          <p class="muted">No audit entries.</p>
+          {% endfor %}
+        </div>
+        <div class="card">
+          <h2>COMMUNICATION CENTER</h2>
+          {% for c in comm_threads %}
+          <div class="alert">
+            <b>{{c.subject}}</b><br /><span class="muted"
+              >{{c.updated_at}}</span
+            >
+          </div>
+          {% empty %}
+          <p class="muted">No threads.</p>
+          {% endfor %}<a class="btn" href="{% url 'communication_center' %}"
+            >Go to Communication Center</a
+          >
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card" id="employee">
+          <h2>ADD EMPLOYEE</h2>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="add_employee"
+            /><input
+              name="employee_id"
+              placeholder="Employee ID"
+              required
+            /><input name="name" placeholder="Employee Name" required /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="category">
+              <option>STAFF</option>
+              <option>OPERATOR</option>
+              <option>HELPER</option></select
+            ><input
+              class="full"
+              name="role"
+              placeholder="Role / Designation"
+            /><button class="btn full">Add Employee</button>
+          </form>
+        </div>
+        <div class="card" id="recruitment">
+          <h2>RECRUITMENT / PENDING JOINING</h2>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="recruitment"
+            /><input
+              name="candidate_name"
+              placeholder="Candidate Name"
+              required
+            /><input name="position" placeholder="Position" required /><input
+              name="email"
+              type="email"
+              placeholder="Email"
+            /><input name="phone" placeholder="Phone" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><input type="date" name="joining_date" /><input
+              class="full"
+              type="file"
+              name="cv"
+            /><button class="btn full">Add Candidate</button>
+          </form>
+        </div>
+        <div class="card" id="training">
+          <h2>TRAINING DUE</h2>
+          <table class="tbl">
+            <tr>
+              <th>Employee</th>
+              <th>Course</th>
+              <th>Due</th>
+            </tr>
+            {% for t in training_rows|slice:":8" %}
+            <tr>
+              <td>{{t.employee.employee_id}}</td>
+              <td>{{t.course}}</td>
+              <td>{{t.due_date}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3">No training records.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="cases">
+          <h2>COMPLAINT / GRIEVANCE / INCIDENT</h2>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="case"
+            /><select name="case_type">
+              <option>COMPLAINT</option>
+              <option>GRIEVANCE</option>
+              <option>INCIDENT</option>
+              <option>DISCIPLINARY</option></select
+            ><select name="severity">
+              <option>LOW</option>
+              <option selected>MEDIUM</option>
+              <option>HIGH</option></select
+            ><select class="full" name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
+              {% endfor %}</select
+            ><input
+              class="full"
+              name="subject"
+              placeholder="Subject"
+              required
+            /><textarea name="details" placeholder="Details"></textarea
+            ><input class="full" type="file" name="attachment" /><button
+              class="btn full"
+            >
+              Open Case
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — HR Management System</span
+      ><span>Confidential · Secure · Compliant</span
+      ><span>© 2026 Emerald Rozalia Limited</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

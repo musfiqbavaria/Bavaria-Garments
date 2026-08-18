@@ -1,0 +1,126 @@
+{% extends "base.html" %}{% block title %}Account Master{% endblock %}{% block
+content %}
+<style>
+  .a {
+    background: #071b21;
+    color: #eef8f4;
+    padding: 18px;
+    min-height: 100vh;
+  }
+  .a h1,
+  .a h2 {
+    color: #48df83;
+  }
+  .row {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+  .x,
+  .c {
+    background: #0b3037;
+    border: 1px solid #286050;
+    padding: 9px;
+    border-radius: 6px;
+  }
+  .c {
+    min-width: 180px;
+  }
+  .c b {
+    display: block;
+    font-size: 18px;
+  }
+  .g {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .btn {
+    background: #0d7244;
+    color: white;
+    padding: 8px;
+    border-radius: 4px;
+  }
+  @media (max-width: 800px) {
+    .g {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="a">
+  <h1>ACCOUNT MASTER / FINANCE DEPARTMENT</h1>
+  <div class="row">
+    {% for x in "Global
+    View,Country,Language,Currency,Company,Factory,Production Unit,E-commerce
+    Website,Retail Store,POS,Franchise,Franchise Retail Store,Vendor".split %}{%
+    endfor %}<span class="x">Global View</span><span class="x">Country</span
+    ><span class="x">Language</span><span class="x">Currency</span
+    ><span class="x">Company</span><span class="x">Factory</span
+    ><span class="x">Production Unit</span><span class="x">E-commerce</span
+    ><span class="x">Retail</span><span class="x">POS</span
+    ><span class="x">Franchise</span><span class="x">Franchise Retail</span
+    ><span class="x">Vendor</span>
+  </div>
+  <div class="row">
+    <span class="x">Yesterday</span><span class="x">Today</span
+    ><span class="x">Tomorrow / Forecast</span><span class="x">This Week</span
+    ><span class="x">This Month</span><span class="x">This Year</span>
+  </div>
+  <div class="row">
+    <div class="c">TOTAL IN<b>Ledger</b></div>
+    <div class="c">TOTAL OUT<b>Ledger</b></div>
+    <div class="c">PROFIT<b>Calculated</b></div>
+    <div class="c">LOSS<b>Calculated</b></div>
+    <div class="c">PROFIT / LOSS %<b>Calculated</b></div>
+  </div>
+  <div class="row">
+    <span class="btn">+ ADD DAILY EXPENSE</span
+    ><span class="btn">+ ADD INVOICE</span><span class="btn">+ ADD BILL</span
+    ><span class="btn">+ ADD RECEIPT / PAYMENT</span
+    ><span class="btn">+ JOURNAL</span>
+  </div>
+  <div class="g">
+    <div class="c">
+      <h2>Bookkeeping</h2>
+      Double Entry · Chart of Accounts · Journal · General Ledger · Sub-ledgers
+      · Trial Balance
+    </div>
+    <div class="c">
+      <h2>Statements</h2>
+      P&amp;L · Balance Sheet · Cash Flow · Gross Margin · Cost/Unit ·
+      Profit/Unit
+    </div>
+    <div class="c">
+      <h2>Production Expense</h2>
+      Cash · bKash · Bank Transfer<br />Fabric · Accessories · Cutting · Sewing
+      · Print · Embroidery · Label · Hand Iron · Poly · QC · Iron · Finishing QC
+      · Packing · Shipping
+    </div>
+    <div class="c">
+      <h2>Invoice / Bill</h2>
+      20 Invoice Types · 30 Bill Types · AP · AR
+    </div>
+    <div class="c">
+      <h2>Finance Operations</h2>
+      Payroll · VAT/Tax · Banking · Reconciliation · Multi-currency ·
+      Forecasting
+    </div>
+    <div class="c">
+      <h2>Reports / Controls</h2>
+      08:00 · 13:00 · 20:00 · Alerts · Decision Engine · Report Master · CEO
+      Report
+    </div>
+  </div>
+  <h2>Universal Controls</h2>
+  <p>
+    ADD · VIEW · PREVIEW · EDIT · DELETE/CANCEL · APPROVE/REJECT · DOWNLOAD ·
+    PRINT · ATTACHMENT · LOG HISTORY
+  </p>
+  <h2>Account User Manual</h2>
+  <p>
+    Built-in operating guide for Accounts Officers, Finance Managers, approvers
+    and administrators.
+  </p>
+</div>
+{% endblock %}

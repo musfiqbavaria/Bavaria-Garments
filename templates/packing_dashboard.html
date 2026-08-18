@@ -1,0 +1,759 @@
+{% extends "base.html" %}{% block title %}Packing Dashboard{% endblock %}{%
+block content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .p {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    border-right: 1px solid #1d5c46;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #28614d;
+  }
+  .brand b {
+    color: #1fc46a;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #41dd83;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eaf5f1;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d713f;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07362a;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #bed8ce;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b80e1b;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #46df7b;
+  }
+  .red {
+    color: #ff4a56 !important;
+  }
+  .orange {
+    color: #ff9a24 !important;
+  }
+  .blue {
+    color: #4abaff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #57e08d;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 110px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235664;
+  }
+  .arrow {
+    color: #40e37d;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252f;
+    border: 1px solid #1c4b55;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #52de88;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #3bd670;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e303a;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c2b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .p {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="p">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>PACKING DEPARTMENT</small>
+    </div>
+    <div class="navh">PACKING CONTROL</div>
+    <a class="on" href="{% url 'packing_dashboard' %}">⌂ Packing Dashboard</a
+    ><a href="#plans">▤ Packing Plan</a
+    ><a href="#scan">▦ PACKING IN / OUT Scan</a
+    ><a href="#carton">▣ Carton Allocation</a
+    ><a href="#production">◉ Packing Production</a><a href="#qc">✓ Packing QC</a
+    ><a href="#cost">৳ Packing Cost</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'final_qc_dashboard' %}">Final QC Release</a
+    ><a href="{% url 'communication_center' %}">Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">Email</a
+    ><a href="{% url 'universal_file_center' %}">File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>PACKING DEPARTMENT DASHBOARD</h1>
+        <small
+          >Final QC Release → Packing → Carton → Packing QC → Shipping
+          Handover</small
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="kpis">
+        <div class="kpi"><span>Plans</span><b>{{payload.plans}}</b></div>
+        <div class="kpi"><span>Target</span><b>{{payload.target}}</b></div>
+        <div class="kpi"><span>Actual</span><b>{{payload.actual}}</b></div>
+        <div class="kpi"><span>WIP</span><b>{{payload.wip}}</b></div>
+        <div class="kpi">
+          <span>Efficiency</span><b class="blue">{{payload.efficiency}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Cartons / Packed</span
+          ><b>{{payload.cartons}} / {{payload.packed_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>QC Pass / Rework</span
+          ><b>{{payload.pass_qty}} / {{payload.rework_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Total Packing Cost</span
+          ><b class="orange">{{payload.total_cost}}</b>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY PACKING FLOW</h2>
+        <div class="flow">
+          <div class="step">Final QC Release</div>
+          <b class="arrow">→</b>
+          <div class="step">PACKING IN SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Order/Style/Size/Colour</div>
+          <b class="arrow">→</b>
+          <div class="step">Folding / Poly / Label</div>
+          <b class="arrow">→</b>
+          <div class="step">Assortment Ratio</div>
+          <b class="arrow">→</b>
+          <div class="step">Carton Allocation</div>
+          <b class="arrow">→</b>
+          <div class="step">Carton Barcode / QR</div>
+          <b class="arrow">→</b>
+          <div class="step">Weight / Dimension / CBM</div>
+          <b class="arrow">→</b>
+          <div class="step">Packing QC</div>
+          <b class="arrow">→</b>
+          <div class="step">Seal</div>
+          <b class="arrow">→</b>
+          <div class="step">PACKING OUT SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Shipping</div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>SCAN CONTROL</h2>
+          <div class="kpi">
+            <span>IN / OUT</span
+            ><b>{{payload.in_scans}} / {{payload.out_scans}}</b>
+          </div>
+          <div class="kpi">
+            <span>Blocked</span><b class="red">{{payload.blocked}}</b>
+          </div>
+          <p>
+            PACKING IN requires valid Final QC release. PACKING OUT requires
+            Packing QC PASS.
+          </p>
+        </div>
+        <div class="card">
+          <h2>CARTON CONTROL</h2>
+          <div class="kpi">
+            <span>Gross / Net Weight</span
+            ><b>{{payload.gross_weight}} / {{payload.net_weight}} kg</b>
+          </div>
+          <div class="kpi"><span>Total CBM</span><b>{{payload.cbm}}</b></div>
+        </div>
+        <div class="card">
+          <h2>QUALITY CONTROL</h2>
+          <div class="kpi"><span>Pass</span><b>{{payload.pass_qty}}</b></div>
+          <div class="kpi">
+            <span>Rework / Reject</span
+            ><b class="red">{{payload.rework_qty}} / {{payload.reject_qty}}</b>
+          </div>
+        </div>
+        <div class="card" id="cost">
+          <h2>PACKING COST</h2>
+          <p>
+            Carton · Poly · Label/Sticker · Hanger/Tissue/Accessory · Labour ·
+            Process · Utility · Rework/Wastage.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>PACKING PLANS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Buyer</th>
+              <th>Style</th>
+              <th>Ratio</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+            {% for p in plans|slice:":14" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.buyer}}</td>
+              <td>{{p.style_no}}</td>
+              <td>{{p.packing_ratio}}</td>
+              <td>{{p.planned_qty}}</td>
+              <td>{{p.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7">No packing plans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>CARTON SUMMARY</h2>
+          <table class="tbl">
+            <tr>
+              <th>Carton</th>
+              <th>Barcode</th>
+              <th>Qty</th>
+              <th>Gross</th>
+              <th>CBM</th>
+              <th>Sealed</th>
+            </tr>
+            {% for c in cartons|slice:":14" %}
+            <tr>
+              <td>{{c.carton_no}}</td>
+              <td>{{c.barcode}}</td>
+              <td>{{c.packed_qty}}</td>
+              <td>{{c.gross_weight_kg}}</td>
+              <td>{{c.cbm}}</td>
+              <td>{{c.sealed}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">No cartons.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC PACKING REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button
+            ><button class="btn" name="slot" value="13:00">13:00</button
+            ><button class="btn" name="slot" value="20:00">20:00</button>
+          </form>
+          <br /><a class="btn" href="{% url 'packing_report_csv' %}"
+            >Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE PACKING PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input name="buyer" placeholder="Buyer" /><input
+              name="style_no"
+              placeholder="Style"
+            /><input name="product" placeholder="Product" /><input
+              name="colour"
+              placeholder="Colour"
+            /><input name="size_range" placeholder="Size Range" /><input
+              name="packing_ratio"
+              placeholder="Packing Ratio"
+            /><input
+              class="full"
+              name="carton_marking"
+              placeholder="Buyer Carton Marking"
+            /><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+            /><input type="date" name="target_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><label class="full"
+              >Packing Specification<input
+                type="file"
+                name="packing_spec_file" /></label
+            ><button class="btn full">Create Plan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="scan">
+          <h3>PACKING IN / OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="scan"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}} · {{b.barcode}}</option>
+              {% endfor %}</select
+            ><select name="direction">
+              <option value="IN">PACKING IN SCAN</option>
+              <option value="OUT">PACKING OUT SCAN</option></select
+            ><input name="barcode" placeholder="Barcode/QR" /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual Qty"
+            /><button class="btn full">Validate & Scan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="carton">
+          <h3>CARTON ALLOCATION / BARCODE</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="carton"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><input name="carton_no" placeholder="Carton No." required /><input
+              name="barcode"
+              placeholder="Unique Carton Barcode/QR"
+              required
+            /><input
+              class="full"
+              name="size_colour_matrix"
+              placeholder="Size/Colour Matrix JSON or text"
+            /><input
+              type="number"
+              name="packed_qty"
+              placeholder="Packed Qty"
+            /><input
+              type="number"
+              step="0.001"
+              name="gross_weight_kg"
+              placeholder="Gross kg"
+            /><input
+              type="number"
+              step="0.001"
+              name="net_weight_kg"
+              placeholder="Net kg"
+            /><input
+              type="number"
+              step="0.01"
+              name="length_cm"
+              placeholder="Length cm"
+            /><input
+              type="number"
+              step="0.01"
+              name="width_cm"
+              placeholder="Width cm"
+            /><input
+              type="number"
+              step="0.01"
+              name="height_cm"
+              placeholder="Height cm"
+            /><input
+              class="full"
+              name="carton_marking"
+              placeholder="Carton Marking"
+            /><label><input type="checkbox" name="sealed" /> Sealed</label
+            ><input name="seal_no" placeholder="Seal No." /><button
+              class="btn full"
+            >
+              Create Carton
+            </button>
+          </form>
+        </div>
+
+        <div class="formbox" id="production">
+          <h3>PACKING PRODUCTION / COST</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="production"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="carton_id">
+              <option value="">Carton</option>
+              {% for c in cartons %}
+              <option value="{{c.id}}">{{c.carton_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="target_qty"
+              placeholder="Target"
+            /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual"
+            /><input type="number" name="wip_qty" placeholder="WIP" /><input
+              type="number"
+              name="process_minutes"
+              placeholder="Minutes"
+            /><input type="number" name="npt_minutes" placeholder="NPT" />{% for
+            n in "carton_cost poly_cost label_sticker_cost
+            hanger_tissue_accessory_cost labour_cost process_cost utility_cost
+            rework_wastage_cost".split %}<input
+              type="number"
+              step="0.01"
+              name="{{n}}"
+              placeholder="{{n|title}}"
+            />{% endfor %}<label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Senior Approval if Manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Packing</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="grid3" style="margin-top: 7px">
+        <div class="formbox" id="qc">
+          <h3>PACKING QC</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="qc"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select class="full" name="carton_id">
+              <option value="">Carton</option>
+              {% for c in cartons %}
+              <option value="{{c.id}}">{{c.carton_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected"
+            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><select name="defect_type">
+              <option value="">Defect</option>
+              {% for d in defect_types %}
+              <option>{{d}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="defect_qty"
+              placeholder="Defect Qty"
+            /><select name="result">
+              <option>PASS</option>
+              <option>HOLD</option>
+              <option>REWORK</option>
+              <option>REJECT</option></select
+            ><textarea name="comments" placeholder="Comments"></textarea
+            ><input class="full" type="file" name="qc_photo" /><button
+              class="btn full"
+            >
+              Record QC
+            </button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>TODAY'S PACKING PRODUCTION</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Bundle</th>
+              <th>Carton</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>WIP</th>
+              <th>Minutes</th>
+              <th>Total Cost</th>
+            </tr>
+            {% for x in production %}
+            <tr>
+              <td>{{x.plan.plan_no}}</td>
+              <td>{% if x.bundle %}{{x.bundle.bundle_no}}{% endif %}</td>
+              <td>{% if x.carton %}{{x.carton.carton_no}}{% endif %}</td>
+              <td>{{x.target_qty}}</td>
+              <td>{{x.actual_qty}}</td>
+              <td>{{x.wip_qty}}</td>
+              <td>{{x.process_minutes}}</td>
+              <td>{{x.total_cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="8">No entries today.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card">
+          <h2>PACKING QC RULES</h2>
+          <p>
+            Wrong order/style/size/colour, wrong carton marking, assortment
+            mismatch, duplicate carton barcode, quantity mismatch, barcode/QR
+            failure, poly/folding/ratio failure, weight/dimension issue or seal
+            problem can HOLD/BLOCK packing release.
+          </p>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 Packing</span
+      ><span>FINAL QC RELEASE + PACKING QC PASS REQUIRED</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

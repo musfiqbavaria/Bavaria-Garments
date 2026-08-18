@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# Emerald Rozalia — Project 1
+# Every text file in this project is LF today. Pinning eol=lf keeps it that
+# way on Windows, Linux and inside the Docker image, so a checkout on one
+# machine never produces whole-file diffs on another.
+# ---------------------------------------------------------------------------
+
+* text=auto eol=lf
+
+# Shell scripts must be LF or they will not execute in the Linux container.
+*.sh    text eol=lf
+
+# Django templates: never let a tool reflow these. A formatter that wraps a
+# line inside {% %} or {{ }} silently breaks the template, because Django's
+# lexer does not match tags across newlines. See TECHNICAL_ASSESSMENT.md 2.2.
+*.html  text eol=lf
+
+# Binary assets — no line-ending or diff processing.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.zip   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary

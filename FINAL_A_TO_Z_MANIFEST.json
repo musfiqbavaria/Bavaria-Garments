@@ -1,0 +1,42 @@
+{
+  "project": "Emerald Rozalia Unified Website / Production / Barcode / Device / Finance project",
+  "target": "Python 3.14.3",
+  "website_views": 300,
+  "forms_master": 650,
+  "step_370": {
+    "implemented": true,
+    "title": "Print Department Barcode Control + Print Machine/Operator/Helper + Bundle Process Validation Master",
+    "validation": [
+      "bundle barcode",
+      "current department",
+      "current process",
+      "route sequence",
+      "correct machine",
+      "machine active",
+      "operator",
+      "helper"
+    ],
+    "wrong_way": "BLOCK + reason + audit/process event + Red Alert",
+    "correct_way": "VALID + process completion + advance to next route step"
+  },
+  "production": "Baseball Cap: 19 processes / 19 separate machines; Bucket Hat: same 19-step structure; route names configurable.",
+  "universal_stock": "STOCK IN SCAN / STOCK OUT SCAN",
+  "reports": [
+    "08:00",
+    "13:00",
+    "20:00"
+  ],
+  "finance_scopes": [
+    "HQ",
+    "Country",
+    "Factory",
+    "Production Unit",
+    "E-Commerce",
+    "Online Store",
+    "Retail Store",
+    "Franchise Retail Store",
+    "Transport",
+    "Shipping"
+  ],
+  "employee_self_service": "Face photo upload \u2192 HR approval \u2192 ID card workflow foundation"
+}

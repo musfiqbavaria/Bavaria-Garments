@@ -1,0 +1,218 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Master Order → Buyer Address Delivery</h1>
+    <p>
+      Page #75 · Maximum 15 calendar days from confirmed Master Order to buyer
+      delivery.
+    </p>
+  </div>
+  <div>
+    <a class="btn" href="{% url 'buyer_delivery_export_csv' %}">Download CSV</a>
+    <button class="btn" onclick="window.print()">Preview / Print</button>
+  </div>
+</div>
+{% for message in messages %}
+<div class="card"><b>{{message}}</b></div>
+{% endfor %}
+<div class="kpis">
+  <div class="kpi"><b>{{in_transit_count}}</b><span>In Transit</span></div>
+  <div class="kpi">
+    <b>{{delivered_count}}</b><span>Delivery Confirmed</span>
+  </div>
+  <div class="kpi"><b>{{due_soon}}</b><span>Due ≤ 3 Days</span></div>
+  <div class="kpi"><b>{{overdue_count}}</b><span>Overdue</span></div>
+</div>
+
+<div class="card">
+  <h2>Create / Update Buyer Delivery SLA</h2>
+  <form method="post">
+    {% csrf_token %}<input type="hidden" name="action" value="create" />
+    <div class="form-grid">
+      <label
+        >Master Order<select name="order_id" required>
+          {% for o in orders %}
+          <option value="{{o.id}}">
+            {{o.master_order_id}} · {{o.buyer}} · {{o.product}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Buyer Name<input name="buyer_name" /></label
+      ><label>Contact Person<input name="contact_person" /></label
+      ><label>Phone<input name="phone" /></label
+      ><label>Email<input type="email" name="email" /></label>
+      <label>Street<input name="street" /></label
+      ><label>City<input name="city" /></label
+      ><label>State<input name="state" /></label
+      ><label>Postal Code<input name="postal_code" /></label
+      ><label>Country<input name="country" /></label
+      ><label
+        >Location<input name="location_text" placeholder="GPS / map text"
+      /></label>
+      <label
+        >Expected Delivery<input
+          type="date"
+          name="expected_delivery_date" /></label
+      ><label>Courier<input name="courier" /></label
+      ><label>Tracking Number<input name="tracking_number" /></label
+      ><label
+        >Shipping Cost<input type="number" step="0.01" name="shipping_cost"
+      /></label>
+    </div>
+    <button class="btn primary">Save 15-Day Delivery SLA</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Delivery SLA Register</h2>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Order</th>
+        <th>Buyer / Address</th>
+        <th>Confirmed</th>
+        <th>Dispatch Target</th>
+        <th>Deadline</th>
+        <th>Days Left</th>
+        <th>Courier / Tracking</th>
+        <th>Status</th>
+        <th>Exception</th>
+      </tr>
+      {% for x in rows %}
+      <tr>
+        <td><b>{{x.order.master_order_id}}</b><br />{{x.order.product}}</td>
+        <td>{{x.buyer_name}}<br />{{x.street}}, {{x.city}}, {{x.country}}</td>
+        <td>{{x.confirmed_at}}</td>
+        <td>{{x.dispatch_target_date}}</td>
+        <td><b>{{x.effective_deadline}}</b></td>
+        <td>
+          {% if x.overdue %}<b>OVERDUE {{x.days_remaining}}</b>{% else
+          %}{{x.days_remaining}}{% endif %}
+        </td>
+        <td>{{x.courier}}<br />{{x.tracking_number}}</td>
+        <td><b>{{x.status}}</b></td>
+        <td>
+          {% if x.exception_required
+          %}{{x.exception_reason|default:"Required"}}{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="9">No delivery SLA records.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Shipping / Delivery Status</h2>
+    <form method="post">
+      {% csrf_token %}<input
+        type="hidden"
+        name="action"
+        value="update_status"
+      />
+      <label
+        >Order Delivery<select name="sla_id" required>
+          {% for x in rows %}
+          <option value="{{x.id}}">
+            {{x.order.master_order_id}} · {{x.buyer_name}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Status<select name="status">
+          <option>ORDER_CONFIRMED</option>
+          <option>PLANNING</option>
+          <option>PRODUCTION</option>
+          <option>QC</option>
+          <option>PACKED</option>
+          <option>DISPATCHED</option>
+          <option>IN_TRANSIT</option>
+          <option>OUT_FOR_DELIVERY</option>
+          <option>DELIVERED</option>
+        </select></label
+      >
+      <label>Courier<input name="courier" /></label
+      ><label>Tracking<input name="tracking_number" /></label
+      ><label
+        >Expected Delivery<input type="date" name="expected_delivery_date"
+      /></label>
+      <button class="btn primary">Update Status</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>15-Day Exception Approval</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="exception" />
+      <label
+        >Order Delivery<select name="sla_id" required>
+          {% for x in rows %}
+          <option value="{{x.id}}">
+            {{x.order.master_order_id}} · Deadline {{x.effective_deadline}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Reason<textarea name="exception_reason" required></textarea></label
+      ><label
+        >New Delivery Date<input
+          type="date"
+          name="exception_new_delivery_date"
+          required
+      /></label>
+      <label
+        >Senior Approval<select name="approval_id" required>
+          <option value="">—</option>
+          {% for a in approvals %}
+          <option value="{{a.id}}">
+            {{a.reference}} · {{a.approval_type}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <button class="btn primary">Approve Exception</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Proof of Delivery / Final Buyer Confirmation</h2>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}<input
+      type="hidden"
+      name="action"
+      value="confirm_delivery"
+    />
+    <div class="form-grid">
+      <label
+        >Order Delivery<select name="sla_id" required>
+          {% for x in rows %}
+          <option value="{{x.id}}">
+            {{x.order.master_order_id}} · {{x.buyer_name}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Receiver Name<input name="receiver_name" /></label
+      ><label>GPS Location<input name="gps_location" /></label
+      ><label>Courier Confirmation<input name="courier_confirmation" /></label>
+      <label
+        >Proof of Delivery<input type="file" name="proof_of_delivery" /></label
+      ><label>Buyer Signature<input type="file" name="buyer_signature" /></label
+      ><label>Delivery Photo<input type="file" name="delivery_photo" /></label>
+    </div>
+    <p>
+      <b>Completion control:</b> the Master Order is marked COMPLETED only after
+      DELIVERY_CONFIRMED. Proof of Delivery or courier confirmation is
+      mandatory.
+    </p>
+    <button class="btn primary">Confirm Buyer Delivery</button>
+  </form>
+</div>
+{% endblock %}

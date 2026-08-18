@@ -1,0 +1,515 @@
+{% extends "base.html" %}{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Communication Center Master</h1>
+    <p>
+      Page #71 · Unified Inbox · Chat 24/7 · Email · WhatsApp · Voice · Video ·
+      Broadcast · Notice · Red Alert
+    </p>
+  </div>
+  <div>
+    <a class="btn" href="{% url 'communication_center_export_csv' %}"
+      >Download CSV</a
+    >
+    <button class="btn" onclick="window.print()">Preview / Print</button>
+  </div>
+</div>
+{% for message in messages %}
+<div class="card"><b>{{message}}</b></div>
+{% endfor %}
+<div class="kpis">
+  <div class="kpi"><b>{{open_threads}}</b><span>Open Threads</span></div>
+  <div class="kpi"><b>{{unread_count}}</b><span>Unread</span></div>
+  <div class="kpi"><b>{{chat_count}}</b><span>Chat 24/7</span></div>
+  <div class="kpi"><b>{{email_count}}</b><span>Email History</span></div>
+  <div class="kpi"><b>{{whatsapp_count}}</b><span>WhatsApp History</span></div>
+  <div class="kpi"><b>{{red_alerts}}</b><span>Red Alerts</span></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Start Conversation / Chat 24/7</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}<input type="hidden" name="action" value="new_thread" />
+      <label>Subject<input name="subject" required /></label
+      ><label
+        >Type<select name="thread_type">
+          {% for x in thread_types %}
+          <option>{{x}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Priority<select name="priority">
+          {% for x in priorities %}
+          <option>{{x}}</option>
+          {% endfor %}
+        </select></label
+      ><label
+        >Channel<select name="channel">
+          {% for x in channels %}
+          <option {% if x="" ="CHAT_24_7" %}selected{% endif %}>{{x}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Reference<input
+          name="reference"
+          placeholder="Order / PO / Enquiry / Employee / Case" /></label
+      ><label
+        >Department<select name="department_id">
+          <option value="">—</option>
+          {% for d in departments %}
+          <option value="{{d.id}}">{{d.name}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Assign To<select name="assigned_to">
+          <option value="">—</option>
+          {% for u in users %}
+          <option value="{{u.id}}">{{u.username}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Buyer Opportunity<select name="buyer_opportunity_id">
+          <option value="">—</option>
+          {% for b in buyers %}
+          <option value="{{b.id}}">
+            {{b.opportunity_no}} · {{b.buyer_company}}
+          </option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Order<select name="order_id">
+          <option value="">—</option>
+          {% for o in orders %}
+          <option value="{{o.id}}">{{o.master_order_id}} · {{o.buyer}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Message<textarea name="body" required></textarea></label
+      ><label
+        >Attachments<input type="file" name="attachments" multiple /></label
+      ><button class="btn primary">Open Chat / Thread</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Send Message / Reply</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}<input type="hidden" name="action" value="send_message" />
+      <label
+        >Thread<select name="thread_id" required>
+          {% for t in threads %}
+          <option value="{{t.id}}">{{t.thread_no}} · {{t.subject}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Channel<select name="channel">
+          {% for x in channels %}
+          <option {% if x="" ="CHAT_24_7" %}selected{% endif %}>{{x}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label
+        >Sender Address<input
+          name="sender_address"
+          placeholder="Optional external sender" /></label
+      ><label
+        >Recipient<input
+          name="recipient_address"
+          placeholder="Email / phone / WhatsApp number / username"
+      /></label>
+      <label>Subject<input name="message_subject" /></label
+      ><label>Message<textarea name="body" required></textarea></label
+      ><label
+        >Attachments<input type="file" name="attachments" multiple
+      /></label>
+      <label
+        ><input type="checkbox" name="is_red_alert" /> Send as Red Alert</label
+      ><button class="btn primary">Send / Queue</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Alert Center</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="alert" />
+      <label
+        >Level<select name="level">
+          <option>INFO</option>
+          <option>WARNING</option>
+          <option>RED</option>
+        </select></label
+      >
+      <label>Title<input name="title" required /></label
+      ><label
+        >Reference<input
+          name="reference"
+          placeholder="Order / Buyer / Stock / Employee / Case"
+      /></label>
+      <label>Department<input name="department_name" /></label
+      ><label>Message<textarea name="body" required></textarea></label>
+      <label
+        ><input type="checkbox" name="create_action" /> Create Action
+        Automatically</label
+      >
+      <label>Action Title<input name="action_title" /></label
+      ><label
+        >Assign To<select name="assigned_to">
+          <option value="">—</option>
+          {% for u in users %}
+          <option value="{{u.id}}">{{u.username}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Due At<input type="datetime-local" name="due_at" /></label
+      ><button class="btn primary">Create Alert</button>
+    </form>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Level</th>
+          <th>Alert</th>
+          <th>Reference</th>
+          <th>Actioned</th>
+        </tr>
+        {% for a in alerts %}
+        <tr>
+          <td>{{a.created_at}}</td>
+          <td>{{a.level}}</td>
+          <td><b>{{a.title}}</b><br />{{a.message|truncatechars:120}}</td>
+          <td>{{a.reference}}</td>
+          <td>{{a.actioned}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Action Center</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="action_item" />
+      <label>Action<input name="title" required /></label
+      ><label
+        >Assign To<select name="assigned_to">
+          <option value="">—</option>
+          {% for u in users %}
+          <option value="{{u.id}}">{{u.username}}</option>
+          {% endfor %}
+        </select></label
+      >
+      <label>Department<input name="department_name" /></label
+      ><label
+        >Priority<select name="priority">
+          <option>LOW</option>
+          <option>NORMAL</option>
+          <option>HIGH</option>
+          <option>URGENT</option>
+        </select></label
+      >
+      <label>Due At<input type="datetime-local" name="due_at" /></label
+      ><button class="btn primary">Create Action</button>
+    </form>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Action</th>
+          <th>Assigned</th>
+          <th>Department</th>
+          <th>Due</th>
+          <th>Status</th>
+          <th>Control</th>
+        </tr>
+        {% for a in action_items %}
+        <tr>
+          <td>{{a.title}}</td>
+          <td>{{a.assigned_to|default:"—"}}</td>
+          <td>{{a.department}}</td>
+          <td>{{a.due_at|default:"—"}}</td>
+          <td>{{a.status}}</td>
+          <td>
+            {% if a.status != 'COMPLETED' %}
+            <form method="post">
+              {% csrf_token %}<input
+                type="hidden"
+                name="action"
+                value="action_complete"
+              /><input type="hidden" name="action_id" value="{{a.id}}" /><button
+                class="btn"
+              >
+                Complete
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Unified Inbox / Chat 24/7 History</h2>
+  <form method="get">
+    <input
+      name="q"
+      value="{{request.GET.q}}"
+      placeholder="Search thread / subject / reference"
+    />
+    <select name="channel">
+      <option value="">All channels</option>
+      {% for x in channels %}
+      <option {% if request.GET.channel="" ="x" %}selected{% endif %}>
+        {{x}}
+      </option>
+      {% endfor %}
+    </select>
+    <button class="btn">Filter</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Date</th>
+        <th>Thread</th>
+        <th>Channel</th>
+        <th>From / To</th>
+        <th>Message</th>
+        <th>Status</th>
+        <th>Files</th>
+        <th>Action</th>
+      </tr>
+      {% for m in comm_messages %}
+      <tr>
+        <td>{{m.sent_at}}</td>
+        <td><b>{{m.thread.thread_no}}</b><br />{{m.thread.subject}}</td>
+        <td>
+          {{m.channel}}{% if m.is_red_alert %}<br /><b>RED ALERT</b>{% endif %}
+        </td>
+        <td>
+          {{m.sender_user|default:m.sender_address}}<br />{{m.recipient_address}}
+        </td>
+        <td>{{m.body|truncatechars:180}}</td>
+        <td>{{m.status}}</td>
+        <td>
+          {% for f in m.attachments.all %}<b>{{f.original_name}}</b><br /><a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' f.id 'view' %}"
+            >VIEW</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'communication_attachment' f.id 'preview' %}"
+            >PREVIEW</a
+          >
+          <a
+            class="btn"
+            href="{% url 'universal_file_action' 'communication_attachment' f.id 'download' %}"
+            >DOWNLOAD</a
+          >
+          <a
+            class="btn"
+            target="_blank"
+            href="{% url 'universal_file_action' 'communication_attachment' f.id 'print' %}"
+            >PRINT</a
+          ><br />{% empty %}—{% endfor %}
+        </td>
+        <td>
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="mark_read"
+            /><input type="hidden" name="message_id" value="{{m.id}}" /><button
+              class="btn"
+            >
+              Mark Read
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8">No messages yet.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Notice Board / Broadcast / Red Alert</h2>
+    <form method="post">
+      {% csrf_token %}<input type="hidden" name="action" value="notice" /><label
+        >Type<select name="notice_type">
+          <option>NOTICE</option>
+          <option>BROADCAST</option>
+          <option>RED_ALERT</option>
+        </select></label
+      ><label>Title<input name="title" required /></label
+      ><label>Message<textarea name="body" required></textarea></label
+      ><label
+        >Department<select name="department_id">
+          <option value="">—</option>
+          {% for d in departments %}
+          <option value="{{d.id}}">{{d.name}}</option>
+          {% endfor %}
+        </select></label
+      ><label>Target Role<input name="target_role" /></label
+      ><label><input type="checkbox" name="target_all" /> All Users</label
+      ><label>Expires At<input type="datetime-local" name="expires_at" /></label
+      ><button class="btn primary">Publish</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Active Notices</h2>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Type</th>
+          <th>Title</th>
+          <th>Target</th>
+          <th>Created</th>
+        </tr>
+        {% for n in notices %}
+        <tr>
+          <td>{{n.notice_type}}</td>
+          <td><b>{{n.title}}</b><br />{{n.body|truncatechars:140}}</td>
+          <td>
+            {% if n.target_all %}All Users{% elif n.department
+            %}{{n.department.name}}{% else %}{{n.target_role}}{% endif %}
+          </td>
+          <td>{{n.created_at}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Conversation Threads</h2>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Thread</th>
+          <th>Type</th>
+          <th>Reference</th>
+          <th>Assigned</th>
+          <th>Status</th>
+        </tr>
+        {% for t in threads %}
+        <tr>
+          <td><b>{{t.thread_no}}</b><br />{{t.subject}}</td>
+          <td>{{t.thread_type}}<br />{{t.priority}}</td>
+          <td>
+            {{t.reference}}{% if t.buyer_opportunity %}<br />{{t.buyer_opportunity.opportunity_no}}{%
+            endif %}{% if t.order %}<br />{{t.order.master_order_id}}{% endif %}
+          </td>
+          <td>{{t.assigned_to|default:"—"}}</td>
+          <td>{{t.status}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>External Connector Status</h2>
+    <p>
+      Chat 24/7 and internal messaging work inside Project 1. Email, WhatsApp
+      Business, SMS, voice and video use connector settings and require the
+      relevant provider credentials before external sending becomes live.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Connector</th>
+          <th>Type</th>
+          <th>Enabled</th>
+          <th>Status</th>
+        </tr>
+        {% for c in connectors %}
+        <tr>
+          <td>{{c.name}}</td>
+          <td>{{c.connector_type}}</td>
+          <td>{{c.enabled}}</td>
+          <td>{{c.last_status|default:"Not configured"}}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4">No external connectors configured yet.</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <h2>Communication History</h2>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Channel</th>
+          <th>Thread</th>
+          <th>From / To</th>
+          <th>Status</th>
+          <th>Message</th>
+        </tr>
+        {% for m in comm_messages %}
+        <tr>
+          <td>{{m.sent_at}}</td>
+          <td>{{m.channel}}</td>
+          <td>{{m.thread.thread_no}}</td>
+          <td>
+            {{m.sender_user|default:m.sender_address}}<br />{{m.recipient_address}}
+          </td>
+          <td>{{m.status}}</td>
+          <td>{{m.body|truncatechars:100}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Log History</h2>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Date/Time</th>
+          <th>User</th>
+          <th>Method</th>
+          <th>Path / Action</th>
+          <th>Status</th>
+          <th>IP</th>
+        </tr>
+        {% for l in audit_logs %}
+        <tr>
+          <td>{{l.created_at}}</td>
+          <td>{{l.user|default:"—"}}</td>
+          <td>{{l.method}}</td>
+          <td>{{l.path}}</td>
+          <td>{{l.status_code}}</td>
+          <td>{{l.ip|default:"—"}}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

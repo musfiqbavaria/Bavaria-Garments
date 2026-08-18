@@ -1,0 +1,809 @@
+{% extends "base.html" %}{% block title %}Label Dashboard{% endblock %}{% block
+content %}
+<style>
+  body {
+    background: #071921;
+    color: #edf8f3;
+  }
+  .topbar,
+  .controlbar {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .l {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 100vh;
+    font: 11px Arial;
+  }
+  .side {
+    background: #08291f;
+    border-right: 1px solid #1d5c46;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow: auto;
+  }
+  .brand {
+    padding: 15px;
+    font: 700 18px Georgia;
+    border-bottom: 1px solid #28614d;
+  }
+  .brand b {
+    color: #1fc46a;
+  }
+  .navh {
+    padding: 12px 14px 5px;
+    color: #41dd83;
+    font-size: 9px;
+  }
+  .side a {
+    display: block;
+    color: #eaf5f1;
+    text-decoration: none;
+    padding: 8px 14px;
+  }
+  .side a:hover,
+  .side a.on {
+    background: #0d713f;
+  }
+  .main {
+    min-width: 0;
+  }
+  .head {
+    background: #07362a;
+    padding: 13px 15px;
+    display: flex;
+    align-items: center;
+  }
+  .head h1 {
+    margin: 0;
+    font-size: 23px;
+  }
+  .head small {
+    color: #bed8ce;
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .tool,
+  .btn {
+    background: #0f7144;
+    color: #fff;
+    border: 1px solid #2c8a61;
+    border-radius: 5px;
+    padding: 8px 10px;
+    text-decoration: none;
+    font-size: 9px;
+  }
+  .tool.red {
+    background: #b80e1b;
+  }
+  .content {
+    padding: 8px;
+  }
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .kpi,
+  .card {
+    background: #0b2731;
+    border: 1px solid #1d4954;
+    border-radius: 6px;
+    padding: 9px;
+  }
+  .kpi span {
+    font-size: 8px;
+    color: #b4cdc4;
+  }
+  .kpi b {
+    display: block;
+    font-size: 20px;
+    color: #46df7b;
+  }
+  .red {
+    color: #ff4a56 !important;
+  }
+  .orange {
+    color: #ff9a24 !important;
+  }
+  .blue {
+    color: #4abaff !important;
+  }
+  .grid4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 7px;
+  }
+  .card h2 {
+    font-size: 11px;
+    color: #57e08d;
+    margin: 0 0 8px;
+  }
+  .flow {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: auto;
+  }
+  .step {
+    min-width: 105px;
+    text-align: center;
+    padding: 8px;
+    background: #103642;
+    border-radius: 5px;
+    border: 1px solid #235664;
+  }
+  .arrow {
+    color: #40e37d;
+  }
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  .tbl td,
+  .tbl th {
+    padding: 5px;
+    border-bottom: 1px solid #1b414a;
+    text-align: left;
+  }
+  .forms {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+  }
+  .formbox {
+    background: #09252f;
+    border: 1px solid #1c4b55;
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .formbox h3 {
+    margin: 0 0 7px;
+    color: #52de88;
+    font-size: 10px;
+  }
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
+  }
+  .form input,
+  .form select,
+  .form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #0e303b;
+    color: #fff;
+    border: 1px solid #2b5661;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+  .form textarea,
+  .full {
+    grid-column: 1/-1;
+  }
+  .report {
+    border-left: 3px solid #3bd670;
+    padding: 6px;
+    margin: 4px 0;
+    background: #0e303a;
+  }
+  .bottom {
+    padding: 10px 15px;
+    border-top: 1px solid #1a424b;
+    color: #a9c2b8;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media (max-width: 1100px) {
+    .kpis {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .grid4,
+    .forms {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .l {
+      display: block;
+    }
+    .side {
+      position: relative;
+      height: auto;
+    }
+    .kpis,
+    .grid4,
+    .grid3,
+    .forms {
+      grid-template-columns: 1fr;
+    }
+    .tools {
+      display: none;
+    }
+  }
+</style>
+<div class="l">
+  <aside class="side">
+    <div class="brand">
+      <b>EMERALD</b> ROZALIA<br /><small>LABEL DEPARTMENT</small>
+    </div>
+    <div class="navh">LABEL CONTROL</div>
+    <a class="on" href="{% url 'label_dashboard' %}">⌂ Label Dashboard</a
+    ><a href="#plans">▤ Label Plan</a
+    ><a href="#proof">▧ Artwork / Proof / Sample</a
+    ><a href="#material">▣ Label Material Issue</a
+    ><a href="#production">◉ Label Production</a><a href="#qc">✓ Label QC</a
+    ><a href="#allocation">▦ Label Allocation</a
+    ><a href="#scan">▦ LABEL IN / OUT SCAN</a
+    ><a href="#variance">⚠ Variance / Wrong Label</a
+    ><a href="#reports">▤ Automatic Reports</a>
+    <div class="navh">PROJECT 1 CONTROL</div>
+    <a href="{% url 'communication_center' %}">◯ Chat 24/7</a
+    ><a href="{% url 'communication_center' %}?channel=WHATSAPP">◉ WhatsApp</a
+    ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a
+    ><a href="{% url 'universal_file_center' %}">▤ File Center</a>
+  </aside>
+  <section class="main">
+    <header class="head">
+      <div>
+        <h1>LABEL DASHBOARD</h1>
+        <small
+          >Label Requirement → Proof Approval → Production/QC → Allocation →
+          LABEL IN/OUT Scan</small
+        >
+      </div>
+      <div class="tools">
+        <a class="tool red" href="#variance">⚠ {{alerts|length}} Red Alert</a
+        ><a class="tool" href="{% url 'communication_center' %}">Chat 24/7</a
+        ><a
+          class="tool"
+          href="{% url 'communication_center' %}?channel=WHATSAPP"
+          >WhatsApp</a
+        ><a class="tool" href="{% url 'communication_center' %}?channel=EMAIL"
+          >Email</a
+        >
+      </div>
+    </header>
+    <div class="content">
+      {% for message in messages %}
+      <div class="card">{{message}}</div>
+      {% endfor %}
+      <div class="kpis">
+        <div class="kpi"><span>Active Plans</span><b>{{payload.plans}}</b></div>
+        <div class="kpi">
+          <span>Planned Qty</span><b>{{payload.planned_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Target</span><b>{{payload.target_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Today's Actual</span><b>{{payload.actual_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Efficiency</span><b class="blue">{{efficiency}}%</b>
+        </div>
+        <div class="kpi">
+          <span>Allocated / Issued</span
+          ><b>{{payload.allocated_qty}} / {{payload.issued_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Reject / Rework</span
+          ><b class="red">{{payload.reject_qty}} / {{payload.rework_qty}}</b>
+        </div>
+        <div class="kpi">
+          <span>Total Cost BDT</span
+          ><b class="orange">{{payload.total_cost}}</b>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 7px">
+        <h2>MANDATORY LABEL FLOW</h2>
+        <div class="flow">
+          <div class="step">Approved Order</div>
+          <b class="arrow">→</b>
+          <div class="step">Label Plan</div>
+          <b class="arrow">→</b>
+          <div class="step">Artwork / Spec</div>
+          <b class="arrow">→</b>
+          <div class="step">Proof Approval</div>
+          <b class="arrow">→</b>
+          <div class="step">Material STOCK OUT</div>
+          <b class="arrow">→</b>
+          <div class="step">Production</div>
+          <b class="arrow">→</b>
+          <div class="step">QC PASS</div>
+          <b class="arrow">→</b>
+          <div class="step">LABEL IN SCAN</div>
+          <b class="arrow">→</b>
+          <div class="step">Allocation</div>
+          <b class="arrow">→</b>
+          <div class="step">LABEL OUT SCAN</div>
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="card">
+          <h2>LABEL QUANTITY CONTROL</h2>
+          <div class="kpi">
+            <span>Allocated</span><b>{{payload.allocated_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Issued</span><b>{{payload.issued_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Used / Returned</span
+            ><b>{{payload.used_qty}} / {{payload.returned_qty}}</b>
+          </div>
+          <p>
+            Required · Issued · Used · Returned · Reject · Balance
+            reconciliation.
+          </p>
+        </div>
+        <div class="card">
+          <h2>MATERIAL CONTROL</h2>
+          <div class="kpi">
+            <span>Issued</span><b>{{payload.material_issued}}</b>
+          </div>
+          <div class="kpi">
+            <span>Consumed</span><b>{{payload.material_consumed}}</b>
+          </div>
+          <p>Supplier · Batch · Lot · STOCK OUT SCAN.</p>
+        </div>
+        <div class="card">
+          <h2>QC / VERSION CONTROL</h2>
+          <div class="kpi">
+            <span>QC Pass</span><b>{{payload.qc_pass_qty}}</b>
+          </div>
+          <div class="kpi">
+            <span>Reject / Rework</span
+            ><b class="red">{{payload.reject_qty}} / {{payload.rework_qty}}</b>
+          </div>
+          <p>
+            Wrong artwork/version automatically places QC on HOLD and raises Red
+            Alert.
+          </p>
+        </div>
+        <div class="card" id="variance">
+          <h2>VARIANCE / RED ALERT</h2>
+          <div class="kpi">
+            <span>Outstanding</span
+            ><b class="red">{{payload.unactioned_variances}}</b>
+          </div>
+          {% for v in variances|slice:":5" %}
+          <div class="report">
+            {{v.plan.plan_no}} · {{v.variance_type}} · {{v.variance}} · BDT
+            {{v.value_variance_bdt}}
+          </div>
+          {% empty %}
+          <p>No open label variances.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="card" id="plans">
+          <h2>LABEL PLAN / ORDER</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Type</th>
+              <th>Code</th>
+              <th>Version</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+            {% for p in plans|slice:":12" %}
+            <tr>
+              <td>{{p.plan_no}}</td>
+              <td>{{p.order.master_order_id}}</td>
+              <td>{{p.label_type}}</td>
+              <td>{{p.label_code}}</td>
+              <td>{{p.version}}</td>
+              <td>{{p.planned_qty}}</td>
+              <td>{{p.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="7">No label plans.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="allocation">
+          <h2>LATEST ALLOCATION / SCANS</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Order</th>
+              <th>Allocated</th>
+              <th>Issued</th>
+              <th>Balance</th>
+              <th>Status</th>
+            </tr>
+            {% for a in allocations|slice:":12" %}
+            <tr>
+              <td>{{a.plan.plan_no}}</td>
+              <td>{{a.order.master_order_id}}</td>
+              <td>{{a.allocated_qty}}</td>
+              <td>{{a.issued_qty}}</td>
+              <td>{{a.balance_qty}}</td>
+              <td>{{a.status}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">No allocations.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+        <div class="card" id="reports">
+          <h2>AUTOMATIC REPORT CENTER</h2>
+          <p><b>Bangladesh local time:</b> 08:00 · 13:00 · 20:00</p>
+          {% for r in reports %}
+          <div class="report">
+            <b>{{r.slot}}</b> · Alerts {{r.outstanding_alerts}} · Pending
+            {{r.pending_actions}} · Escalated {{r.escalated_items}}
+          </div>
+          {% empty %}
+          <p>No reports generated today.</p>
+          {% endfor %}
+          <form method="post">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="generate_report"
+            /><button class="btn" name="slot" value="08:00">08:00</button
+            ><button class="btn" name="slot" value="13:00">13:00</button
+            ><button class="btn" name="slot" value="20:00">20:00</button>
+          </form>
+          <br /><a class="btn" href="{% url 'label_report_csv' %}"
+            >Download CSV</a
+          ><button class="btn" onclick="window.print()">Print</button>
+        </div>
+      </div>
+
+      <div class="forms">
+        <div class="formbox">
+          <h3>CREATE LABEL PLAN</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="plan"
+            /><input name="plan_no" placeholder="Plan No." required /><select
+              name="order_id"
+              required
+            >
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><input name="buyer" placeholder="Buyer" /><input
+              name="brand"
+              placeholder="Brand"
+            /><input name="style_no" placeholder="Style No." /><input
+              name="product"
+              placeholder="Product"
+            /><input name="colour" placeholder="Colour" /><input
+              name="size_range"
+              placeholder="Size Range"
+            /><select name="label_type">
+              {% for x in label_types %}
+              <option>{{x}}</option>
+              {% endfor %}</select
+            ><input name="label_code" placeholder="Label Code" required /><input
+              name="version"
+              value="1.0"
+            /><input
+              type="number"
+              name="planned_qty"
+              placeholder="Planned Qty"
+              required
+            /><input type="date" name="target_date" /><select
+              name="department_id"
+            >
+              <option value="">Department</option>
+              {% for d in departments %}
+              <option value="{{d.id}}">{{d.name}}</option>
+              {% endfor %}</select
+            ><select name="approval_id">
+              <option value="">Approval</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><label>Artwork<input type="file" name="artwork" /></label
+            ><label
+              >Specification<input type="file" name="specification" /></label
+            ><button class="btn full">Create Plan</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="proof">
+          <h3>PROOF / SAMPLE APPROVAL</h3>
+          <form method="post" enctype="multipart/form-data" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="proof"
+            /><select class="full" name="plan_id" required>
+              <option value="">Label Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}} · V{{p.version}}</option>
+              {% endfor %}</select
+            ><input name="proof_no" placeholder="Proof No." required /><input
+              name="version"
+              placeholder="Version"
+              required
+            /><select name="status">
+              <option>PENDING</option>
+              <option>APPROVED</option>
+              <option>REJECTED</option>
+              <option>REVISE</option></select
+            ><input type="file" name="proof_file" /><input
+              type="file"
+              name="sample_image"
+            /><textarea name="remarks" placeholder="Remarks"></textarea
+            ><button class="btn full">Save Proof</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="material">
+          <h3>LABEL MATERIAL STOCK OUT</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="material"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><select name="stock_item_id">
+              <option value="">Stock Item</option>
+              {% for s in stock_items %}
+              <option value="{{s.id}}">{{s.name}}</option>
+              {% endfor %}</select
+            ><input name="supplier" placeholder="Supplier" /><input
+              name="batch_no"
+              placeholder="Batch No."
+            /><input name="lot_no" placeholder="Lot No." /><input
+              type="number"
+              step="0.001"
+              name="issued_qty"
+              placeholder="Issued Qty"
+              required
+            /><select name="unit">
+              <option>PCS</option>
+              <option>METRE</option>
+              <option>ROLL</option></select
+            ><input
+              class="full"
+              name="stock_out_scan"
+              placeholder="Mandatory STOCK OUT SCAN"
+              required
+            /><button class="btn full">Issue Material</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="production">
+          <h3>LABEL PRODUCTION / COST</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="production"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="date"
+              name="work_date"
+              value="{{today|date:'Y-m-d'}}"
+            /><select name="employee_id">
+              <option value="">Employee</option>
+              {% for e in employees %}
+              <option value="{{e.id}}">{{e.employee_id}}</option>
+              {% endfor %}</select
+            ><select name="machine_id">
+              <option value="">Machine</option>
+              {% for m in machines %}
+              <option value="{{m.id}}">{{m.name}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="target_qty"
+              placeholder="Target"
+            /><input
+              type="number"
+              name="actual_qty"
+              placeholder="Actual"
+            /><input
+              type="number"
+              name="process_minutes"
+              placeholder="Minutes"
+            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+              type="number"
+              step="0.0001"
+              name="cost_per_minute"
+              placeholder="Cost/Minute"
+            /><input
+              type="number"
+              step="0.01"
+              name="material_cost"
+              placeholder="Material Cost"
+            /><input
+              type="number"
+              step="0.01"
+              name="other_cost"
+              placeholder="Other Cost"
+            /><label class="full"
+              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              Entry</label
+            ><select class="full" name="approval_id">
+              <option value="">Approval if manual</option>
+              {% for a in approvals %}
+              <option value="{{a.id}}">{{a.reference}}</option>
+              {% endfor %}</select
+            ><button class="btn full">Save Production</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="forms" style="grid-template-columns: 1fr 1.6fr 1.4fr">
+        <div class="formbox" id="qc">
+          <h3>LABEL QC</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="qc"
+            /><select class="full" name="plan_id" required>
+              <option value="">Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}} · V{{p.version}}</option>
+              {% endfor %}</select
+            ><input
+              name="checked_version"
+              placeholder="Checked Version"
+              required
+            /><input
+              type="number"
+              name="inspected_qty"
+              placeholder="Inspected"
+            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+              type="number"
+              name="reject_qty"
+              placeholder="Reject"
+            /><input
+              type="number"
+              name="rework_qty"
+              placeholder="Rework"
+            /><select name="status">
+              <option>PASS</option>
+              <option>REJECT</option>
+              <option>REWORK</option>
+              <option>HOLD</option></select
+            ><textarea
+              name="defect_reason"
+              placeholder="Defect / reason"
+            ></textarea
+            ><button class="btn full">Record QC</button>
+          </form>
+        </div>
+
+        <div class="formbox" id="scan">
+          <h3>ALLOCATION + LABEL IN / OUT SCAN</h3>
+          <form method="post" class="form">
+            {% csrf_token %}<input
+              type="hidden"
+              name="action"
+              value="allocation"
+            /><select class="full" name="plan_id" required>
+              <option value="">Label Plan</option>
+              {% for p in plans %}
+              <option value="{{p.id}}">{{p.plan_no}} · {{p.label_code}}</option>
+              {% endfor %}</select
+            ><select class="full" name="order_id" required>
+              <option value="">Master Order</option>
+              {% for o in orders %}
+              <option value="{{o.id}}">{{o.master_order_id}}</option>
+              {% endfor %}</select
+            ><select class="full" name="bundle_id">
+              <option value="">Optional Bundle</option>
+              {% for b in bundles %}
+              <option value="{{b.id}}">{{b.bundle_no}}</option>
+              {% endfor %}</select
+            ><input
+              type="number"
+              name="allocated_qty"
+              placeholder="Allocated Qty"
+              required
+            /><input
+              type="number"
+              name="issued_qty"
+              placeholder="Issued Qty"
+            /><input
+              type="number"
+              name="used_qty"
+              placeholder="Used Qty"
+            /><input
+              type="number"
+              name="returned_qty"
+              placeholder="Returned Qty"
+            /><input
+              type="number"
+              name="rejected_qty"
+              placeholder="Rejected Qty"
+            /><input name="destination_department" value="Finishing" /><input
+              class="full"
+              name="label_in_scan"
+              placeholder="Mandatory LABEL IN SCAN"
+              required
+            /><input
+              class="full"
+              name="label_out_scan"
+              placeholder="LABEL OUT SCAN"
+            /><button class="btn full">Allocate / Issue Labels</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>TODAY'S LABEL PRODUCTION</h2>
+          <table class="tbl">
+            <tr>
+              <th>Plan</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>Minutes</th>
+              <th>NPT</th>
+              <th>Total Cost</th>
+            </tr>
+            {% for x in prod|slice:":20" %}
+            <tr>
+              <td>{{x.plan.plan_no}}</td>
+              <td>{{x.target_qty}}</td>
+              <td>{{x.actual_qty}}</td>
+              <td>{{x.process_minutes}}</td>
+              <td>{{x.npt_minutes}}</td>
+              <td>{{x.total_cost}}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6">No production entries.</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+    </div>
+    <footer class="bottom">
+      <span>Emerald Rozalia Limited — Project 1 Label</span
+      ><span>Wrong Label / Wrong Version = BLOCK + RED ALERT</span
+      ><span>08:00 · 13:00 · 20:00 Auto Reports</span>
+    </footer>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page"><p class="eyebrow">370 · PRINT DEPARTMENT</p>
+<h1>Print Department Barcode Control + Machine / Operator / Helper + Bundle Process Validation Master</h1>
+<div class="grid">
+<div class="card"><h2>1. Scan bundle</h2><p>Operator scans the bundle barcode. System identifies order, style, quantity, current department and current process.</p></div>
+<div class="card"><h2>2. Validate route</h2><p>System checks the active production route and exact sequence. A bundle cannot skip a process.</p></div>
+<div class="card"><h2>3. Validate machine</h2><p>Only the machine assigned/approved for the current Print process can pass.</p></div>
+<div class="card"><h2>4. Validate operator + helper</h2><p>Both required users must be assigned/authorized for the process.</p></div>
+<div class="card"><h2>5. Correct way</h2><p><b>Bundle + Print process + correct machine + correct operator + correct helper = VALID.</b> Process may complete and bundle advances.</p></div>
+<div class="card"><h2>6. Wrong way</h2><p><b>Wrong bundle, wrong process, wrong machine, missing operator/helper or inactive machine = BLOCKED.</b> System records reason, audit event and Red Alert.</p></div>
+</div>
+<h2>Validation Event History</h2>
+<table><tr><th>Bundle</th><th>Process</th><th>Machine</th><th>Operator</th><th>Helper</th><th>Result</th><th>Reason</th></tr>
+{% for e in events %}<tr><td>{{e.bundle_no}}</td><td>{{e.process}}</td><td>{{e.machine}}</td><td>{{e.operator}}</td><td>{{e.helper}}</td><td>{{e.result}}</td><td>{{e.reason}}</td></tr>{% empty %}<tr><td colspan="7">No events recorded yet.</td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

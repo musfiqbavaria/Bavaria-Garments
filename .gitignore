@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# Emerald Rozalia — Project 1
+# Secrets, generated output and local state must never enter version control.
+# ---------------------------------------------------------------------------
+
+# Secrets and environment ---------------------------------------------------
+# .env holds live credentials. The committed template is .env.example.
+.env
+.env.*
+!.env.example
+
+# Python --------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments ------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# Django generated ----------------------------------------------------------
+# collectstatic output — rebuilt on every deploy.
+staticfiles/
+# User uploads. Backed up by scripts/backup.sh, never versioned:
+# uploads are data, not source, and can contain confidential documents.
+media/
+*.sqlite3
+db.sqlite3
+
+# Backups -------------------------------------------------------------------
+# Backup archives contain company data. Keep them off the repository.
+backups/
+
+# Celery --------------------------------------------------------------------
+celerybeat-schedule
+celerybeat-schedule.*
+celerybeat.pid
+
+# Logs and local runtime ----------------------------------------------------
+*.log
+*.pid
+
+# Test and tooling caches ---------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Editors and OS ------------------------------------------------------------
+# .vscode/settings.json IS tracked on purpose: it carries the guard that stops
+# a formatter from rewriting Django templates. See TECHNICAL_ASSESSMENT.md 2.2.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
