@@ -36,8 +36,12 @@ step() {
 
 step "django system checks"        "$PYTHON" manage.py check
 step "models match migrations"     "$PYTHON" manage.py makemigrations --check --dry-run
-step "test suite (templates compile, no route 5xx, every page renders)" \
-     "$PYTHON" manage.py test portal --verbosity 1
+# core.settings_test inherits the real configuration - including the
+# authorisation middleware and the security settings - and only swaps the
+# password hasher and cache backend, so the suite is not dominated by PBKDF2 and
+# does not wait on a Redis host that exists only inside the compose stack.
+step "test suite (templates, routes, authorisation, file access, hardening)" \
+     "$PYTHON" manage.py test portal --settings=core.settings_test --verbosity 1
 
 printf '\n'
 if [ "$failed" -ne 0 ]; then

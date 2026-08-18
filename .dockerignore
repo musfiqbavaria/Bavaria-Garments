@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Emerald Rozalia - Project 1
+#
+# Without this file `COPY . .` baked the live .env, local __pycache__ and 82 MB
+# of reference screenshots into every image.
+# ---------------------------------------------------------------------------
+
+# Secrets. The image must be configured by env_file at run time, never by a
+# credential baked into a layer.
+.env
+.env.*
+!.env.example
+
+# Version control and local tooling
+.git
+.gitignore
+.gitattributes
+.github
+.vscode
+.idea
+.prettierignore
+
+# Python artefacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Generated at build/run time, not copied in
+staticfiles/
+media/
+backups/
+*.sqlite3
+*.log
+
+# Approved design references: 82 MB of PNGs used as visual targets during
+# development. They are in version control but have no place in the runtime
+# image. static/reference/ is excluded for the same reason - nothing serves it.
+references/
+static/reference/
+
+# Documentation
+*.md
+!README.md
+BUILD_REPORT.txt
