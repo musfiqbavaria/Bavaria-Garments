@@ -1,5 +1,4 @@
-{% extends 'base.html' %}{% block title %}Forms Master{% endblock %}{% block
-content %}
+{% extends 'base.html' %}{% block title %}Forms Master{% endblock %}{% block content %}
 <section class="wrap">
   <div class="pagehead">
     <div>
@@ -16,7 +15,7 @@ content %}
     /><select name="department">
       <option value="">All departments</option>
       {% for d in departments %}
-      <option {% if request.GET.department="" ="d" %}selected{% endif %}>
+      <option {% if request.GET.department == d %}selected{% endif %}>
         {{ d }}
       </option>
       {% endfor %}</select

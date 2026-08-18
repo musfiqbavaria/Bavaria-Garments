@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Packing Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Packing Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #071921;
@@ -634,10 +633,7 @@ block content %}
               type="number"
               name="process_minutes"
               placeholder="Minutes"
-            /><input type="number" name="npt_minutes" placeholder="NPT" />{% for
-            n in "carton_cost poly_cost label_sticker_cost
-            hanger_tissue_accessory_cost labour_cost process_cost utility_cost
-            rework_wastage_cost".split %}<input
+            /><input type="number" name="npt_minutes" placeholder="NPT" />{% for n in cost_fields %}<input
               type="number"
               step="0.01"
               name="{{n}}"

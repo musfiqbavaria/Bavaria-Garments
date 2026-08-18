@@ -1,5 +1,4 @@
-{% extends 'base.html' %}{% block title %}Stock & Material Master{% endblock
-%}{% block content %}
+{% extends 'base.html' %}{% block title %}Stock & Material Master{% endblock %}{% block content %}
 <section class="wrap">
   <div class="pagehead">
     <div>
@@ -49,7 +48,7 @@
         /><select name="category">
           <option value="">All categories</option>
           {% for c in categories %}
-          <option {% if request.GET.category="" ="c" %}selected{% endif %}>
+          <option {% if request.GET.category == c %}selected{% endif %}>
             {{ c }}
           </option>
           {% endfor %}</select
@@ -145,7 +144,7 @@
         <select name="status">
           <option value="">All statuses</option>
           {% for s in stock_statuses %}
-          <option {% if request.GET.status="" ="s" %}selected{% endif %}>
+          <option {% if request.GET.status == s %}selected{% endif %}>
             {{ s }}
           </option>
           {% endfor %}</select
@@ -296,8 +295,7 @@
           >Roll / Lot<select name="lot_id" required>
             {% for l in lots %}
             <option value="{{ l.id }}">
-              {{ l.roll_barcode }} · {{ l.material.material_code }} · Avail {{
-              l.available_qty }}
+              {{ l.roll_barcode }} · {{ l.material.material_code }} · Avail {{ l.available_qty }}
             </option>
             {% endfor %}
           </select></label

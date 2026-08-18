@@ -1,5 +1,4 @@
-{% extends 'base.html' %}{% block title %}Asset & Machine Master{% endblock %}{%
-block content %}
+{% extends 'base.html' %}{% block title %}Asset & Machine Master{% endblock %}{% block content %}
 <section class="wrap">
   <div class="pagehead">
     <div>
@@ -54,14 +53,14 @@ block content %}
         /><select name="asset_type">
           <option value="">All types</option>
           {% for x in asset_types %}
-          <option {% if request.GET.asset_type="" ="x" %}selected{% endif %}>
+          <option {% if request.GET.asset_type == x %}selected{% endif %}>
             {{ x }}
           </option>
           {% endfor %}</select
         ><select name="status">
           <option value="">All statuses</option>
           {% for x in statuses %}
-          <option {% if request.GET.status="" ="x" %}selected{% endif %}>
+          <option {% if request.GET.status == x %}selected{% endif %}>
             {{ x }}
           </option>
           {% endfor %}</select
@@ -351,8 +350,7 @@ block content %}
       <div class="notice danger">
         <b>{{ a.asset_code }} · {{ a.name }}</b
         ><small
-          >Due {{ a.next_maintenance_date }} · {{ a.location|default:'No
-          location' }}</small
+          >Due {{ a.next_maintenance_date }} · {{ a.location|default:'No location' }}</small
         >
       </div>
       {% endfor %}{% endif %}
@@ -385,8 +383,7 @@ block content %}
             <td>{{ x.duration_minutes }}</td>
             <td>{{ x.production_impact_qty }}</td>
             <td>
-              {% if x.ended_at %}CLOSED {{ x.ended_at|date:'Y-m-d H:i' }}{% else
-              %}<b style="color: #b42318">OPEN</b>{% endif %}
+              {% if x.ended_at %}CLOSED {{ x.ended_at|date:'Y-m-d H:i' }}{% else %}<b style="color: #b42318">OPEN</b>{% endif %}
             </td>
             <td>
               {% if not x.ended_at %}

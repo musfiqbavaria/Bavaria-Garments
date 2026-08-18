@@ -189,8 +189,7 @@
       <tr>
         <td><b>{{x.reference}}</b></td>
         <td>
-          {% if x.opportunity %}{{x.opportunity.opportunity_no}}<br />{{x.opportunity.buyer_company}}{%
-          else %}—{% endif %}
+          {% if x.opportunity %}{{x.opportunity.opportunity_no}}<br />{{x.opportunity.buyer_company}}{% else %}—{% endif %}
         </td>
         <td>{{x.product}}<br />{{x.quantity}} pcs</td>
         <td>{{x.required_minutes}} min</td>

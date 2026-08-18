@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Finishing Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Finishing Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #071921;
@@ -173,11 +172,7 @@ block content %}
       <div class="c">
         <h3>MANDATORY FINISHING FLOW</h3>
         <div class="flow">
-          {% for s in "Production Complete|FINISHING IN SCAN|Thread
-          Trimming|Spot / Stain Check|Cleaning|Measurement|Button / Snap /
-          Zip|Shape / Appearance|Iron / Press|Label Verify|Folding
-          Prep|Finishing QC|Rework / Re-QC|PASS|FINISHING OUT SCAN|Final
-          QC"|cut:" "|slice:":0" %}{% endfor %}
+          
           <div class="st">Production Complete</div>
           →
           <div class="st">FINISHING IN SCAN</div>
@@ -307,11 +302,7 @@ block content %}
               {% for m in machines %}
               <option value="{{m.id}}">{{m.asset_code}}</option>
               {% endfor %}</select
-            >{% for n in "target_qty actual_qty wip_qty process_minutes
-            npt_minutes downtime_minutes trimmed_qty stain_checked_qty
-            cleaned_qty measurement_checked_qty accessory_checked_qty
-            appearance_checked_qty label_checked_qty folding_ready_qty
-            labour_cost process_cost utility_cost rework_cost".split %}<input
+            >{% for n in production_fields %}<input
               type="number"
               step="0.01"
               name="{{n}}"

@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Shipping Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Shipping Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #071921;
@@ -645,9 +644,7 @@ block content %}
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            >{% for n in "freight forwarder customs port_airport truck_vehicle
-            loading documentation insurance duty_tax handling
-            demurrage_detention courier other_approved".split %}<input
+            >{% for n in cost_fields %}<input
               type="number"
               step="0.01"
               name="{{n}}"

@@ -534,8 +534,7 @@ Portal{% endblock %}{% block content %}
       ><a href="{% url 'communication_center' %}?channel=EMAIL">✉ Email</a>
     </nav>
     <div class="help">
-      <b>Need Help?</b><br />Contact HR / Support<br />{{profile.phone|default:"+353
-      87 123 4567"}}
+      <b>Need Help?</b><br />Contact HR / Support<br />{{profile.phone|default:"+353 87 123 4567"}}
     </div>
   </aside>
 
@@ -757,8 +756,7 @@ Portal{% endblock %}{% block content %}
               ><br />{{employee.department.name|default:"—"}}<br /><b
                 >FACTORY / UNIT</b
               ><br />{{profile.factory_unit|default:"—"}}<br /><b>ISSUE DATE</b
-              ><br />{% if id_doc %}{{id_doc.issue_date|default:"—"}}{% else
-              %}—{% endif %}
+              ><br />{% if id_doc %}{{id_doc.issue_date|default:"—"}}{% else %}—{% endif %}
             </div>
             <div>
               <img class="qr" src="/barcode/{{id_barcode_code}}.png" />
@@ -999,8 +997,7 @@ Portal{% endblock %}{% block content %}
             <tr>
               <td>{{d.title}}</td>
               <td>
-                {% if d.days_to_expiry < 0 %}<b>EXPIRED</b>{% else
-                %}{{d.days_to_expiry}} Days{% endif %}
+                {% if d.days_to_expiry < 0 %}<b>EXPIRED</b>{% else %}{{d.days_to_expiry}} Days{% endif %}
               </td>
               <td>{{d.expires_at}}</td>
             </tr>
