@@ -22,7 +22,7 @@
   },
   {
     "id": 2,
-    "title": "Product Detail & 360\u00b0 Viewer",
+    "title": "Product Detail & 360° Viewer",
     "slug": "product-detail",
     "group": "public",
     "actions": [
@@ -291,7 +291,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "hr-dashboard"
   },
   {
     "id": 15,
@@ -312,7 +313,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "attendance-dashboard"
   },
   {
     "id": 16,
@@ -333,7 +335,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "staff-self-service-portal"
   },
   {
     "id": 17,
@@ -501,7 +504,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "sourcing-dashboard"
   },
   {
     "id": 25,
@@ -543,7 +547,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "supplier-dashboard"
   },
   {
     "id": 27,
@@ -732,7 +737,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "profit-feasibility-gate"
   },
   {
     "id": 36,
@@ -753,11 +759,12 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "free-capacity-opportunity"
   },
   {
     "id": 37,
-    "title": "Order Master \u2014 Buyer Address Delivery \u226430 Days",
+    "title": "Order Master - Buyer Address Delivery (superseded by #75, 15 days)",
     "slug": "order-master",
     "group": "orders",
     "actions": [
@@ -774,7 +781,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "buyer-delivery-sla"
   },
   {
     "id": 38,
@@ -795,7 +803,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "cutting-dashboard"
   },
   {
     "id": 39,
@@ -837,7 +846,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "embroidery-dashboard"
   },
   {
     "id": 41,
@@ -900,7 +910,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "label-dashboard"
   },
   {
     "id": 44,
@@ -921,7 +932,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "qc-dashboard"
   },
   {
     "id": 45,
@@ -942,7 +954,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "hand-iron-dashboard"
   },
   {
     "id": 46,
@@ -963,7 +976,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "poly-dashboard"
   },
   {
     "id": 47,
@@ -1026,7 +1040,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "finishing-dashboard"
   },
   {
     "id": 50,
@@ -1047,7 +1062,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "final-qc-dashboard"
   },
   {
     "id": 51,
@@ -1068,11 +1084,12 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "packing-dashboard"
   },
   {
     "id": 52,
-    "title": "Report Master \u2014 Central Reporting Dashboard",
+    "title": "Report Master — Central Reporting Dashboard",
     "slug": "report-master",
     "group": "reports",
     "actions": [
@@ -1189,11 +1206,12 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "account-master"
   },
   {
     "id": 56,
-    "title": "CEO Executive Command & Report Center \u2014 Rebuilt",
+    "title": "CEO Executive Command & Report Center — Rebuilt",
     "slug": "ceo-dashboard",
     "group": "executive",
     "actions": [
@@ -1330,7 +1348,7 @@
   },
   {
     "id": 61,
-    "title": "POS \u2014 Point of Sale Master Dashboard",
+    "title": "POS — Point of Sale Master Dashboard",
     "slug": "pos-master",
     "group": "retail",
     "actions": [
@@ -1410,7 +1428,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "profit-before-spend"
   },
   {
     "id": 65,
@@ -1452,7 +1471,8 @@
       "Login No.",
       "Today Present Staff",
       "Today Staff Cost"
-    ]
+    ],
+    "superseded_by": "procurement-dashboard"
   },
   {
     "id": 67,
@@ -1671,7 +1691,7 @@
   },
   {
     "id": 75,
-    "title": "Master Order \u2192 Buyer Address Delivery (Max 15 Days)",
+    "title": "Master Order → Buyer Address Delivery (Max 15 Days)",
     "slug": "buyer-delivery-sla",
     "group": "shipping",
     "actions": [

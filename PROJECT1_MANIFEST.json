@@ -1,7 +1,7 @@
 {
   "project": "Emerald Rozalia Project 1",
   "architecture": "Unified website/platform",
-  "primary_pages": 70,
+  "primary_pages": 95,
   "forms_master": 650,
   "roles": [
     "CEO",
@@ -48,7 +48,7 @@
     "Download",
     "Print"
   ],
-  "delivery_target_days": 30,
+  "delivery_target_days": 15,
   "project2_included": false,
   "project3_included": false,
   "reference_images_expected": 34,
@@ -130,5 +130,17 @@
       "downtime",
       "movement history"
     ]
+  },
+  "primary_pages_note": "data/page_registry.json is the single source of truth for this figure. Of these, 33 have a dedicated implementation and the rest render a shared placeholder; 20 are legacy entries superseded by a later module. See TECHNICAL_ASSESSMENT.md 3.1.",
+  "delivery_target_note": "Maximum 15 calendar days from confirmed Master Order to buyer-address delivery, per v10 and BuyerDeliverySLA.max_delivery_days. The previous value of 30 contradicted both.",
+  "implementation_status": {
+    "implemented_pages": 33,
+    "placeholder_pages": 62,
+    "superseded_legacy_pages": 20,
+    "not_built": [
+      "Print Department (#39)",
+      "Sewing Department (#42)"
+    ],
+    "assessment": "TECHNICAL_ASSESSMENT.md"
   }
 }

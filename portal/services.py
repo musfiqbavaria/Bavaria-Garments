@@ -1,8 +1,12 @@
+import logging
+import zoneinfo
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from .models import Alert, ApprovalRequest, AttendanceDailySummary, AttendanceEvent, AttendanceGatePass, AttendanceNPT, AttendanceOvertime, AttendanceHoliday, AttendanceShift, StockMovement, StockScan, ValueVariance
+
+logger = logging.getLogger('portal.services')
 
 VARIANCE_RED_ALERT_THRESHOLD_BDT = Decimal('10.00')
 
@@ -143,6 +147,30 @@ def attendance_schedule(*hints):
     return schedule
 
 
+def employee_timezone(employee):
+    """The clock this employee's shift is measured against.
+
+    Attendance anchors - 08:00 check-in, the break window, checkout - must resolve
+    in the timezone the workforce actually works in, not the server's. Before the
+    organisation scope existed there was nowhere to record that, so every site was
+    measured against one global TIME_ZONE (TECHNICAL_ASSESSMENT.md 5.5).
+
+    Falls back to settings.TIME_ZONE when the employee has no site assigned, so
+    unscoped data keeps behaving exactly as it did.
+    """
+    node=getattr(employee,'scope',None)
+    if node is not None:
+        name=node.effective_timezone
+        if name:
+            try:
+                return zoneinfo.ZoneInfo(name)
+            except Exception:
+                # A bad IANA name must not stop payroll; fall through and log.
+                logger.warning('invalid timezone %r on organisation node %s; '
+                               'using the project default', name, node.pk)
+    return timezone.get_current_timezone()
+
+
 def _overlap_minutes(start, end, window_start, window_end):
     """Whole minutes of [start, end] that fall inside the scheduled window."""
     if not start or not end:
@@ -192,7 +220,7 @@ def calculate_attendance_day(employee, work_date):
     checkin=(by_event.get('CHECK_IN') or [events[0].occurred_at])[0]
     checkout=(by_event.get('CHECK_OUT') or [events[-1].occurred_at])[-1]
 
-    tz=timezone.get_current_timezone()
+    tz=employee_timezone(employee)
     start_anchor=timezone.make_aware(datetime.combine(work_date,schedule['start']),tz)
     end_anchor=timezone.make_aware(datetime.combine(work_date,schedule['end']),tz)
     grace_end=start_anchor+timedelta(minutes=schedule['grace_minutes'])

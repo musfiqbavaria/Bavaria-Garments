@@ -9,7 +9,7 @@ DEBUG=os.getenv('DJANGO_DEBUG','0')=='1'
 ALLOWED_HOSTS=[x.strip() for x in os.getenv('DJANGO_ALLOWED_HOSTS','localhost').split(',') if x.strip()]
 CSRF_TRUSTED_ORIGINS=[x.strip() for x in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS','').split(',') if x.strip()]
 INSTALLED_APPS=['django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles','portal']
-MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
+MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','portal.middleware.TenancyMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
 ROOT_URLCONF='core.urls'
 TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal']}}]
 WSGI_APPLICATION='core.wsgi.application'
@@ -174,6 +174,13 @@ EXCHANGE_RATE_TIMEOUT_SECONDS=int(os.getenv('EXCHANGE_RATE_TIMEOUT','10'))
 # Refuse to convert with a rate older than this, rather than silently reporting
 # stale figures as current.
 EXCHANGE_RATE_MAX_AGE_DAYS=int(os.getenv('EXCHANGE_RATE_MAX_AGE_DAYS','7'))
+
+# --- organisation scoping ---------------------------------------------------
+# Off means records with no site assigned stay visible to every scope, which is
+# required while the backfill is outstanding: every row that exists today has
+# scope=None, so filtering them out would hide all existing data on day one.
+# Turn this on once `manage.py report_unscoped` comes back clean.
+TENANCY_STRICT=_flag('TENANCY_STRICT')
 
 # --- audit retention --------------------------------------------------------
 # AuditMiddleware writes a row per authenticated request, with no retention.

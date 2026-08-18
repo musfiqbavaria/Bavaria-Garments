@@ -1,4 +1,46 @@
-EMERALD ROZALIA PROJECT 1 BUILD REPORT — v4
+EMERALD ROZALIA PROJECT 1 BUILD REPORT
+
+READ THIS FIRST - RECONCILIATION NOTE
+=====================================
+The build log below was written during the original v2-v32 development and
+records what each wave INTENDED to deliver. An independent assessment found that
+several of those claims were not met by the delivered code, and some figures in
+this file are wrong. Corrections:
+
+  * "Primary pages registered: 70" - data/page_registry.json contains 95. Of
+    those, 33 have a dedicated implementation; the remaining 62 render one shared
+    placeholder. 20 are legacy entries superseded by a later module and are now
+    marked as such.
+
+  * "Forms Master definitions: 650" - correct as a count of titles, but no form
+    has a field schema and there is no submit, approve or print workflow. The
+    data is generated as 65 departments x 10 categories.
+
+  * "Python syntax compile: PASS" - true, but the project could not start:
+    core/settings.py raised AttributeError on import, 30 of 39 templates did not
+    compile, and 91 of 95 pages returned HTTP 500. All fixed in Phase 1.
+
+  * "Existing barcode / QR generator: RETAINED" - only QR exists. There is no
+    1D/linear barcode generator, although the platform is scanner-driven.
+
+  * Delivery target - the maximum is 15 calendar days (v10), not the 30 stated in
+    PROJECT1_MANIFEST.json and page #37. Corrected.
+
+  * v32 Account Master - the page is a static HTML mock-up. No accounting model
+    exists: no chart of accounts, journal, ledger, invoice or bill. The same
+    applies to POS, retail, franchise and e-commerce.
+
+  * Step 370 print validation - the app is not in INSTALLED_APPS, its URLs are in
+    an unused .txt fragment, and the validation logic was never written.
+
+  * Sewing (#42) and Print (#39) have no implementation, leaving two holes in the
+    middle of the bundle traceability chain.
+
+Current, verified status is in TECHNICAL_ASSESSMENT.md, which records what was
+measured rather than what was intended, and is updated as each phase lands.
+
+ORIGINAL BUILD LOG FOLLOWS
+==========================
 
 Primary pages registered: 70
 Forms Master definitions: 650

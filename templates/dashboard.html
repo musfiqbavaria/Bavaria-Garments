@@ -3,17 +3,17 @@
   <div class="pagehead">
     <div>
       <h1>Unified Project 1 Dashboard</h1>
-      <p>70 controlled primary pages • 650 Forms Master definitions</p>
+      <p>{{ pages|length }} registered pages • 650 Forms Master definitions</p>
     </div>
     <div class="pill">LIVE CORE</div>
   </div>
   <div class="stats">
-    <article><small>Primary Pages</small><strong>70</strong></article>
+    <article><small>Registered Pages</small><strong>{{ pages|length }}</strong></article>
     <article><small>Forms Master</small><strong>650</strong></article>
     <article>
       <small>Open Orders</small><strong>{{ orders|length }}</strong>
     </article>
-    <article><small>Delivery Target</small><strong>≤30d</strong></article>
+    <article><small>Delivery Target</small><strong>≤15d</strong></article>
   </div>
   <h2>All Modules</h2>
   <div class="grid">
