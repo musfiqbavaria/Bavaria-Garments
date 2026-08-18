@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -1190,7 +1191,6 @@ class CuttingProductionEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
         super().save(*args,**kwargs)
 
@@ -1309,7 +1309,6 @@ class EmbroideryProductionEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
         self.total_cost=(self.process_cost+self.thread_cost+self.other_cost).quantize(Decimal('0.01'))
         super().save(*args,**kwargs)
@@ -1429,7 +1428,6 @@ class LabelProductionEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
         self.total_cost=(self.process_cost+self.material_cost+self.other_cost).quantize(Decimal('0.01'))
         super().save(*args,**kwargs)
@@ -1722,7 +1720,6 @@ class HandIronProductionEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         if self.start_at and self.end_at:
             self.process_minutes=max(int((self.end_at-self.start_at).total_seconds()//60),0)
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
@@ -1860,7 +1857,6 @@ class PolyPackingEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
         poly_cost=(Decimal(self.poly_used_qty)*self.poly_cost_per_piece).quantize(Decimal('0.01'))
         self.total_cost=(poly_cost+self.sticker_barcode_cost+self.labour_cost+self.process_cost+self.wastage_cost).quantize(Decimal('0.01'))
@@ -1987,7 +1983,6 @@ class IronProductionEntry(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         if self.start_at and self.end_at:
             self.process_minutes=max(int((self.end_at-self.start_at).total_seconds()//60),0)
         self.process_cost=(Decimal(self.process_minutes)*self.cost_per_minute).quantize(Decimal('0.01'))
@@ -2314,7 +2309,6 @@ class PackingCarton(TimeStamped):
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         self.cbm=((self.length_cm*self.width_cm*self.height_cm)/Decimal('1000000')).quantize(Decimal('0.000001'))
         super().save(*args,**kwargs)
 
@@ -2618,7 +2612,6 @@ class ProcurementComparison(TimeStamped):
     reason=models.TextField(blank=True)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         qty=self.request.required_qty or Decimal('1')
         self.landed_unit_cost=(self.unit_price+(self.freight_cost+self.tax_duty_cost+self.other_cost)/qty)
         perf=getattr(self.supplier,'performance',None)
@@ -2778,7 +2771,6 @@ class SourcingQuotation(TimeStamped):
     quotation_file=models.FileField(upload_to='sourcing/quotations/%Y/%m/',blank=True)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         qty=self.request.required_qty or Decimal('1')
         self.landed_unit_cost=(self.unit_price+(self.freight+self.duty_tax+self.other_cost)/qty)
         super().save(*args,**kwargs)
@@ -2813,7 +2805,6 @@ class SourcingEvaluation(TimeStamped):
     evaluated_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
-        from decimal import Decimal
         if self.last_purchase_price:
             self.price_variance_pct=((self.current_quote_price-self.last_purchase_price)/self.last_purchase_price*100).quantize(Decimal('0.01'))
         self.total_score=(

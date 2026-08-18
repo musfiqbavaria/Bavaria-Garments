@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from celery.schedules import crontab
 from dotenv import load_dotenv
 BASE_DIR=Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR/'.env')
@@ -21,9 +22,13 @@ MEDIA_URL='/media/'; MEDIA_ROOT=BASE_DIR/'media'
 DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
 LOGIN_URL='/login/'; LOGIN_REDIRECT_URL='/dashboard/'; LOGOUT_REDIRECT_URL='/login/'
 CELERY_BROKER_URL=os.getenv('REDIS_URL','redis://redis:6379/0'); CELERY_RESULT_BACKEND=CELERY_BROKER_URL
+# NOTE: these fire on Celery's clock, which defaults to UTC because
+# CELERY_TIMEZONE is not set. They are documented as Bangladesh-local
+# 08:00/13:00/20:00 but currently run at those times in UTC. Correcting this
+# needs a decision on per-factory timezones - see TECHNICAL_ASSESSMENT.md 5.5.
 CELERY_BEAT_SCHEDULE={
- 'report-0800':{'task':'portal.tasks.scheduled_report_snapshot','schedule':__import__('celery').schedules.crontab(hour=8,minute=0)},
- 'report-1300':{'task':'portal.tasks.scheduled_report_snapshot','schedule':__import__('celery').schedules.crontab(hour=13,minute=0)},
- 'report-2000':{'task':'portal.tasks.scheduled_report_snapshot','schedule':__import__('celery').schedules.crontab(hour=20,minute=0)},
+ 'report-0800':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=8,minute=0)},
+ 'report-1300':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=13,minute=0)},
+ 'report-2000':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=20,minute=0)},
 }
 SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO','https')
