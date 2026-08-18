@@ -1,8 +1,8 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
-from .models import Alert, ApprovalRequest, AttendanceDailySummary, AttendanceEvent, AttendanceGatePass, AttendanceNPT, AttendanceOvertime, AttendanceHoliday, StockMovement, StockScan, ValueVariance
+from .models import Alert, ApprovalRequest, AttendanceDailySummary, AttendanceEvent, AttendanceGatePass, AttendanceNPT, AttendanceOvertime, AttendanceHoliday, AttendanceShift, StockMovement, StockScan, ValueVariance
 
 VARIANCE_RED_ALERT_THRESHOLD_BDT = Decimal('10.00')
 
@@ -44,36 +44,115 @@ def record_variance(*, reference, expected, actual, department='', currency='BDT
         Alert.objects.create(title='Value Variance Red Alert',message=f'{reference}: expected {expected} BDT, actual {actual} BDT, variance {variance} BDT.',level='RED',department=department,reference=reference)
     return obj
 
-def attendance_schedule(*hints):
-    """Resolve the working shift from any number of hints (category, role).
+#: Fallback shifts, used only when no AttendanceShift row is configured.
+#: These reproduce the Project 1 defaults documented for v14.
+_DEFAULT_SHIFTS = {
+    'OPERATOR': {
+        'start': time(8, 0), 'break1_in': time(13, 0), 'break1_out': time(14, 0),
+        'break2_in': None, 'break2_out': None, 'end': time(17, 0),
+        'scheduled_minutes': 480, 'grace_minutes': 10, 'ot_start': time(17, 30),
+        'source': 'default',
+    },
+    'STAFF': {
+        'start': time(8, 0), 'break1_in': time(13, 0), 'break1_out': time(14, 0),
+        'break2_in': time(17, 0), 'break2_out': time(17, 15), 'end': time(20, 0),
+        'scheduled_minutes': 660, 'grace_minutes': 10, 'ot_start': time(20, 30),
+        'source': 'default',
+    },
+}
+_DEFAULT_SHIFTS['HELPER'] = dict(_DEFAULT_SHIFTS['OPERATOR'])
 
-    Accepts several hints because Employee.category defaults to 'STAFF', which
-    is always truthy. The previous single-argument form was called as
-    `category or role`, so the default swallowed the role and every operator or
-    helper whose category had not been set explicitly was scheduled on the
-    660-minute Staff shift with a 20:00 checkout instead of 480 minutes to
-    17:00. That corrupted worked/late/early-leave/unpaid minutes, per-minute
-    cost and the OT eligibility window for most of the factory workforce.
+#: Resolved shifts, keyed by category. calculate_attendance_day is called in a
+#: loop over every active employee, so the lookup must not be a query per call.
+#: Cleared by a signal whenever an AttendanceShift changes - see portal/apps.py.
+_SHIFT_CACHE = {}
 
-    Any hint naming an operator or helper selects the 480-minute shift.
 
-    These two shifts are still hardcoded. AttendanceShift already models
-    check-in, breaks, checkout, mandatory and grace minutes per category but is
-    never read, so shifts configured in admin have no effect - a blocker for
-    multi-factory operation. See TECHNICAL_ASSESSMENT.md 5.4.
+def clear_shift_cache(*args, **kwargs):
+    """Drop the resolved-shift cache. Wired to AttendanceShift save/delete."""
+    _SHIFT_CACHE.clear()
+
+
+def resolve_employee_category(*hints):
+    """Return 'OPERATOR', 'HELPER' or 'STAFF' from category and/or role hints.
+
+    Employee.category defaults to 'STAFF' and is always truthy, so callers pass
+    both category and role and the first hint that names a floor grade wins.
     """
+    # Only a floor grade wins, and it wins from ANY hint. Returning early on
+    # 'staff' would let category's always-truthy 'STAFF' default swallow the role
+    # again, which is the original defect. STAFF is the fallback, never a match.
     for hint in hints:
-        if (hint or '').strip().lower() in {'operator','helper'}:
-            return {
-                'start':time(8,0),'break1_in':time(13,0),'break1_out':time(14,0),
-                'break2_in':None,'break2_out':None,'end':time(17,0),
-                'scheduled_minutes':480,'grace_minutes':10,'ot_start':time(17,30)
-            }
+        value = (hint or '').strip().casefold()
+        if value == 'operator':
+            return 'OPERATOR'
+        if value == 'helper':
+            return 'HELPER'
+    return 'STAFF'
+
+
+def _schedule_from_shift(shift):
+    """Map an AttendanceShift row onto the schedule dict the engine uses.
+
+    The model has no ot_start column. Overtime becomes payable ot_break_minutes
+    after scheduled checkout, which reproduces the documented rule exactly:
+    17:00 + 30 = 17:30 for operators, 20:00 + 30 = 20:30 for staff.
+    """
+    ot_start = (datetime.combine(date.min, shift.check_out)
+                + timedelta(minutes=shift.ot_break_minutes)).time()
     return {
-        'start':time(8,0),'break1_in':time(13,0),'break1_out':time(14,0),
-        'break2_in':time(17,0),'break2_out':time(17,15),'end':time(20,0),
-        'scheduled_minutes':660,'grace_minutes':10,'ot_start':time(20,30)
+        'start': shift.check_in,
+        'break1_in': shift.break1_in, 'break1_out': shift.break1_out,
+        'break2_in': shift.break2_in, 'break2_out': shift.break2_out,
+        'end': shift.check_out,
+        'scheduled_minutes': shift.mandatory_minutes,
+        'grace_minutes': shift.grace_minutes,
+        'ot_start': ot_start,
+        'source': f'AttendanceShift:{shift.code}',
     }
+
+
+def attendance_schedule(*hints):
+    """Resolve the working shift for an employee.
+
+    Reads AttendanceShift from the database. The model already carried
+    check-in, breaks, checkout, mandatory and grace minutes per category, was
+    registered in admin, and was never read by anything: the two shifts were
+    hardcoded in Python, so a shift configured by an administrator had no
+    effect. That blocked multi-factory operation, where shifts differ by site
+    and by law. See TECHNICAL_ASSESSMENT.md 5.4.
+
+    Falls back to the documented Project 1 defaults when nothing is configured,
+    so an unseeded database still calculates.
+    """
+    category = resolve_employee_category(*hints)
+    if category in _SHIFT_CACHE:
+        return _SHIFT_CACHE[category]
+
+    shift = (AttendanceShift.objects
+             .filter(employee_category=category, active=True)
+             .order_by('code').first())
+    if shift is None and category == 'HELPER':
+        # Helpers share the operator shift unless one is configured for them.
+        shift = (AttendanceShift.objects
+                 .filter(employee_category='OPERATOR', active=True)
+                 .order_by('code').first())
+
+    schedule = _schedule_from_shift(shift) if shift else dict(_DEFAULT_SHIFTS[category])
+    _SHIFT_CACHE[category] = schedule
+    return schedule
+
+
+def _overlap_minutes(start, end, window_start, window_end):
+    """Whole minutes of [start, end] that fall inside the scheduled window."""
+    if not start or not end:
+        return 0
+    lo = max(start, window_start)
+    hi = min(end, window_end)
+    if hi <= lo:
+        return 0
+    return max(0, int((hi - lo).total_seconds() // 60))
+
 
 def calculate_attendance_day(employee, work_date):
     from decimal import Decimal
@@ -132,10 +211,6 @@ def calculate_attendance_day(employee, work_date):
         if bb>aa:
             break_minutes += max(0,int((bb-aa).total_seconds()//60))
 
-    # Project 1 scheduled net duty is authoritative (Staff 660m, Operator/Helper 480m).
-    # Actual work is capped to the scheduled requirement; OT is separate and approval-controlled.
-    worked=max(0,min(raw_normal-break_minutes,schedule['scheduled_minutes'] if scheduled else raw_normal))
-
     late=max(0,int((checkin-grace_end).total_seconds()//60)) if scheduled and checkin>grace_end else 0
     early=max(0,int((end_anchor-checkout).total_seconds()//60)) if scheduled and checkout<end_anchor else 0
 
@@ -144,17 +219,39 @@ def calculate_attendance_day(employee, work_date):
         employee=employee,work_date=work_date,status='APPROVED'
     ).values_list('minutes',flat=True))
 
-    paid_gate=sum(g.minutes for g in AttendanceGatePass.objects.filter(
-        employee=employee,out_at__date=work_date,pass_type='PAID',status='APPROVED'
+    # Gate-pass minutes are clipped to the scheduled window. A pass running past
+    # checkout must not deduct time the employee was never scheduled for.
+    gate_passes=list(AttendanceGatePass.objects.filter(
+        employee=employee,out_at__date=work_date,status='APPROVED'
     ))
-    unpaid_gate=sum(g.minutes for g in AttendanceGatePass.objects.filter(
-        employee=employee,out_at__date=work_date,pass_type='UNPAID',status='APPROVED'
-    ))
+    paid_gate=sum(_overlap_minutes(g.out_at,g.in_at,start_anchor,end_anchor)
+                  for g in gate_passes if g.pass_type=='PAID')
+    unpaid_gate=sum(_overlap_minutes(g.out_at,g.in_at,start_anchor,end_anchor)
+                    for g in gate_passes if g.pass_type=='UNPAID')
     npt=sum(AttendanceNPT.objects.filter(employee=employee,work_date=work_date).values_list('minutes',flat=True))
 
-    unpaid=max(0,scheduled-min(worked+paid_gate,scheduled)) if scheduled else 0
+    # Paid duty = time inside the shift, less breaks, less authorised UNPAID
+    # absence.
+    #
+    # Two arithmetic errors are corrected here (TECHNICAL_ASSESSMENT.md 5.2/5.3):
+    #
+    #  * An APPROVED UNPAID gate pass was recorded but never deducted from
+    #    worked_minutes, so a three-hour unpaid absence still paid a full day.
+    #  * unpaid_minutes was `scheduled - min(worked + paid_gate, scheduled)`.
+    #    A paid gate pass sits between check-in and check-out, so its minutes
+    #    were already inside worked_minutes; adding them again understated
+    #    unpaid time. An employee attending 400 of 480 minutes with a 60-minute
+    #    paid pass was billed 20 minutes unpaid instead of 80.
+    #
+    # paid_gate is now informational only: it reports how much paid duty was
+    # spent off-site and is a SUBSET of worked_minutes, never an addition to it.
+    attended=max(0,raw_normal-break_minutes)
+    paid_duty=max(0,attended-unpaid_gate)
+    worked=min(paid_duty,schedule['scheduled_minutes']) if scheduled else paid_duty
+
+    unpaid=max(0,scheduled-worked) if scheduled else 0
     if scheduled:
-        status='PRESENT' if worked or paid_gate else 'ABSENT'
+        status='PRESENT' if attended else 'ABSENT'
     else:
         status='WEEKEND_WORK' if is_weekly_closed else ('HOLIDAY_WORK' if holiday else 'PRESENT')
 
@@ -177,7 +274,11 @@ def calculate_attendance_day(employee, work_date):
                 'check_in':checkin.isoformat(),'check_out':checkout.isoformat(),
                 'events':len(events),'category':getattr(employee,'category',''),
                 'grace_minutes':schedule['grace_minutes'],'weekly_closed':is_weekly_closed,
-                'holiday':holiday.name if holiday else None,'approved_ot_minutes':overtime
+                'holiday':holiday.name if holiday else None,'approved_ot_minutes':overtime,
+                'shift_source':schedule.get('source','default'),
+                'attended_minutes':attended,'paid_duty_minutes':paid_duty,
+                'unpaid_gate_deducted':unpaid_gate,
+                'paid_gate_within_worked':paid_gate
             }
         }
     )[0]

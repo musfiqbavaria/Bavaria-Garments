@@ -120,19 +120,62 @@ LOGGING={
    'portal':{'handlers':['console'],'level':os.getenv('DJANGO_LOG_LEVEL','INFO'),'propagate':False},
  },
 }
-LANGUAGE_CODE='en-gb'; TIME_ZONE=os.getenv('TIME_ZONE','Europe/Dublin'); USE_I18N=True; USE_TZ=True
+LANGUAGE_CODE='en-gb'
+# Asia/Dhaka is the operating clock, signed off for Phase 3.
+#
+# The attendance engine anchors 08:00 check-in, the 13:00-14:00 break, 17:00 and
+# 20:00 checkouts against this timezone, and every report slot is documented as
+# Bangladesh-local. It was Europe/Dublin, so a Dhaka operator clocking in at
+# 08:00 local was measured against an Irish 08:00 anchor - four to five hours
+# out - which corrupted late, early-leave, worked and unpaid minutes and the
+# payroll cost derived from them. Dublin also observes DST while Dhaka does not,
+# so the error moved twice a year.
+#
+# Per-site timezones for genuine multi-country operation need OrganizationNode
+# to carry its own zone and the report models to be scoped to a factory; see
+# TECHNICAL_ASSESSMENT.md 5.5.
+TIME_ZONE=os.getenv('TIME_ZONE','Asia/Dhaka')
+USE_I18N=True; USE_TZ=True
 STATIC_URL='/static/'; STATIC_ROOT=BASE_DIR/'staticfiles'; STATICFILES_DIRS=[BASE_DIR/'static']
 MEDIA_URL='/media/'; MEDIA_ROOT=BASE_DIR/'media'
 DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
 LOGIN_URL='/login/'; LOGIN_REDIRECT_URL='/dashboard/'; LOGOUT_REDIRECT_URL='/login/'
 CELERY_BROKER_URL=os.getenv('REDIS_URL','redis://redis:6379/0'); CELERY_RESULT_BACKEND=CELERY_BROKER_URL
-# NOTE: these fire on Celery's clock, which defaults to UTC because
-# CELERY_TIMEZONE is not set. They are documented as Bangladesh-local
-# 08:00/13:00/20:00 but currently run at those times in UTC. Correcting this
-# needs a decision on per-factory timezones - see TECHNICAL_ASSESSMENT.md 5.5.
+# Celery reads only CELERY_* keys, so Django's TIME_ZONE does not reach it.
+# Unset, beat defaulted to UTC and the three "Bangladesh" slots actually fired at
+# 08:00/13:00/20:00 UTC - 14:00/19:00/02:00 Dhaka, the last on the wrong date.
+CELERY_TIMEZONE=TIME_ZONE
+CELERY_ENABLE_UTC=True
 CELERY_BEAT_SCHEDULE={
  'report-0800':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=8,minute=0)},
  'report-1300':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=13,minute=0)},
  'report-2000':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=20,minute=0)},
+ # Daily exchange rates, before the 08:00 reporting slot so consolidated
+ # figures use the current day's rate. No-op unless EXCHANGE_RATE_API_URL is set.
+ 'exchange-rates-daily':{'task':'portal.tasks.refresh_exchange_rates','schedule':crontab(hour=6,minute=30)},
+ # AuditMiddleware writes a row per authenticated request; trim it weekly.
+ 'purge-audit-logs-weekly':{'task':'portal.tasks.purge_expired_audit_logs','schedule':crontab(hour=3,minute=15,day_of_week=5)},
 }
+
+# --- currency ---------------------------------------------------------------
+# Consolidated reporting currency, signed off for Phase 3. Rozalia Limited is the
+# Irish parent, so EUR is the base; BDT production costs and USD buyer values
+# convert into it for any figure that spans entities.
+BASE_CURRENCY=os.getenv('BASE_CURRENCY','EUR')
+
+# Daily rate feed. Deliberately empty by default so no outbound request is made
+# until it is configured: the endpoint is an external service and must be
+# authorised before use. Any provider returning {"base": "EUR", "rates": {...}}
+# works, e.g. https://api.frankfurter.app/latest (ECB rates, no key required).
+# The fetched rates are public reference data; no company data is transmitted.
+EXCHANGE_RATE_API_URL=os.getenv('EXCHANGE_RATE_API_URL','').strip()
+EXCHANGE_RATE_API_KEY=os.getenv('EXCHANGE_RATE_API_KEY','').strip()
+EXCHANGE_RATE_TIMEOUT_SECONDS=int(os.getenv('EXCHANGE_RATE_TIMEOUT','10'))
+# Refuse to convert with a rate older than this, rather than silently reporting
+# stale figures as current.
+EXCHANGE_RATE_MAX_AGE_DAYS=int(os.getenv('EXCHANGE_RATE_MAX_AGE_DAYS','7'))
+
+# --- audit retention --------------------------------------------------------
+# AuditMiddleware writes a row per authenticated request, with no retention.
+AUDIT_LOG_RETENTION_DAYS=int(os.getenv('AUDIT_LOG_RETENTION_DAYS','365'))
 SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO','https')
