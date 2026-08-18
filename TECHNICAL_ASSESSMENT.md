@@ -93,7 +93,29 @@ Test suite: **81 tests, all passing.** Migrations squashed to a single `0001_ini
 
 ---
 
-**Still outstanding — Phase 4 has not been started.** What remains is Phase 4: the tenancy backbone (§6.2 — no company, country or factory link on the transactional models, so authorisation cannot be scoped and per-site timezones are impossible), the design system (§3.6), the missing Sewing and Print departments (§3.2), Account Master (§3.3 — a static mock-up with no accounting models at all), the Forms Master schemas (§3.5), and the documentation reconciliation (§3.1, §5.11). **The platform runs, enforces access control, and its payroll and consolidated financial figures are now correct. It remains single-tenant in effect: any manager can see every factory's data, so do not onboard a second company or country until the tenancy work is done.**
+**Phase 4 — tenancy complete; the remaining items are not started** (branch `phase-4/tenancy-backbone`)
+
+| # | Item | Status |
+|---|---|---|
+| 21 | Tenancy backbone (§6.2) | **Done** — scope on 31 aggregate roots, `ScopedManager`, `TenancyMiddleware`, materialised-path subtrees, `TENANCY_STRICT` staged rollout |
+| — | Per-site payroll clock (§5.5, remainder) | **Done for attendance** — per-site timezone with inheritance. Per-factory *report scheduling* still outstanding |
+| 26 | Documentation reconciliation (§3.1, §5.11) | **Done** — page count, 15-day SLA, `BUILD_REPORT` note, 20 duplicate pages superseded and redirecting |
+| 22 | Design system / reference fidelity (§3.6) | **Not started** |
+| 23 | Sewing and Print departments, Step 370 (§3.2, §2.5) | **Not started** |
+| 24 | Account Master — full double-entry accounting (§3.3) | **Not started** — needs separate planning; no accounting model exists |
+| 25 | Forms Master field schemas (§3.5) | **Not started** |
+
+Test suite: **103 tests, all passing.** Cross-site isolation is verified end to end: a Dhaka manager's cutting dashboard shows `MO-DHK-1` and not `MO-CTG-1`.
+
+**Enabling strict tenancy.** Scoping ships permissive on purpose — every existing row has `scope=None`, so filtering unassigned records out would hide all current data immediately. Run `manage.py report_unscoped`, assign the sites it lists, then set `TENANCY_STRICT=1`. Until then an unassigned record is visible to every site.
+
+**Also corrected here:** the exchange-rate and `AttendanceShift` seeding claimed in the Phase 3 commit had never actually been applied — a shell `&&` chain short-circuited and that edit silently never ran. It is applied now.
+
+---
+
+**Remaining work.** Four Phase 4 items remain, in the order I would take them: the **Sewing and Print departments** (§3.2 — two holes in the middle of the bundle traceability chain, and Sewing is the largest cost centre in the factory), the **design system** (§3.6 — the dark `app.css` still contradicts every approved screenshot, and 24 templates carry their own palette), the **Forms Master schemas** (§3.5), and **Account Master** (§3.3), which is a multi-month project needing its own plan rather than a phase item.
+
+**The platform runs, enforces role-based access control, scopes data by site, and its payroll and consolidated financial figures are correct.** Two caveats before real use: TLS is configured but not enabled pending a certificate, and tenancy ships permissive until the backfill is done and `TENANCY_STRICT` is switched on.
 
 ---
 
