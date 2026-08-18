@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Emerald Rozalia — Project 1
+#
+# DO NOT REMOVE ANY LINE IN THIS FILE.
+#
+# Prettier's HTML parser does not understand Django template syntax. When it
+# reformats a template it rewrites the inside of {% %} and {{ }} blocks, and
+# that silently destroys the page:
+#
+#   1. It wraps long lines inside a tag. Django's lexer matches {%.*?%} WITHOUT
+#      re.DOTALL, so a tag containing a newline stops being a tag and becomes
+#      literal text. Its closing partner is then orphaned:
+#
+#        {% block title %}...{% endblock %}{%
+#        block content %}
+#        -> TemplateSyntaxError: Invalid block tag ... 'endblock'
+#
+#   2. It treats the tag interior as an HTML attribute list and rewrites
+#      comparisons:
+#
+#        {% if request.GET.department == d %}
+#        -> {% if request.GET.department="" ="d" %}
+#
+# This already happened to this project. It broke 30 of 39 templates and took
+# 34 of 94 routes and 91 of 95 pages to HTTP 500. Full analysis and the repair
+# plan are in TECHNICAL_ASSESSMENT.md section 2.2.
+#
+# If you need to format a template, use a Django-aware tool
+# (e.g. djlint / djhtml), never Prettier.
+# ---------------------------------------------------------------------------
+
+# Django template directories
+templates/
+final_az/templates/
+
+# Any HTML anywhere in the project is a Django template.
+**/*.html
+
+# Generated and vendored output
+staticfiles/
+media/
+backups/
+__pycache__/
+.venv/
+venv/
+
+# Large binary reference assets
+references/
+static/img/
+static/reference/
