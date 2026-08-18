@@ -22,7 +22,10 @@ class Command(BaseCommand):
         UserProfile.objects.get_or_create(user=admin,defaults={'employee_id':'CEO-001','role':'CEO','department':Department.objects.filter(name='Executive').first()})
         if not Employee.objects.exists():
             for idx,(name,role,dept,cost) in enumerate([('CEO User','CEO','Executive',400),('HR Manager','HR Manager','HR',180),('Cutting Operator','Operator','Cutting',45),('Sewing Operator','Operator','Sewing',45),('Packing Helper','Helper','Packing',35)],1):
-                Employee.objects.create(employee_id=f'ER-{idx:04d}',name=name,role=role,department=Department.objects.filter(name=dept).first(),daily_cost=cost)
+                # Set category explicitly. It defaults to 'STAFF', so seeding an
+                # operator or helper without it leaves the shift ambiguous.
+                category={'Operator':'OPERATOR','Helper':'HELPER'}.get(role,'STAFF')
+                Employee.objects.create(employee_id=f'ER-{idx:04d}',name=name,role=role,category=category,department=Department.objects.filter(name=dept).first(),daily_cost=cost)
         if not MasterOrder.objects.exists():
             MasterOrder.objects.create(master_order_id='MO-2026-0001',buyer='Demo Buyer',product='Premium Cap',quantity=5000,order_value=125000,confirmed_at=timezone.now(),delivery_due=timezone.now()+timedelta(days=30),status='PRODUCTION')
         Alert.objects.get_or_create(title='Project 1 seed complete',defaults={'message':'70 pages and 650 forms loaded.','level':'INFO','department':'System'})

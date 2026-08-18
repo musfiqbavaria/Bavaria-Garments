@@ -2024,7 +2024,7 @@ def attendance_dashboard(request):
                 approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
                 if not approval or approval.status!='APPROVED':
                     raise PermissionError('Overtime requires an APPROVED authorization.')
-                schedule=attendance_schedule(emp.category or emp.role)
+                schedule=attendance_schedule(emp.category,emp.role)
                 earliest=timezone.make_aware(datetime.combine(start_at.date(),schedule['ot_start']),timezone.get_current_timezone())
                 if start_at < earliest:
                     raise PermissionError(f'OT cannot start before {schedule["ot_start"].strftime("%H:%M")} for {emp.category}.')
