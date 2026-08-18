@@ -1,5 +1,5 @@
-import io, json, os
-from decimal import Decimal
+import io, json, logging, os
+from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -9,10 +9,17 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.db.models import Q
+from django.core.cache import cache
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 import qrcode
 from .models import *
+from django.db import transaction
+from . import roles as roles_mod
+from .roles import can_decide_approval, has_any_role, user_roles
 from .services import apply_stock_scan, record_variance, calculate_attendance_day, attendance_schedule
+
+logger = logging.getLogger('portal.views')
 
 # --- form field name lists rendered by the department dashboards ------------
 # Previously these lived in the templates as {% for n in "a b c".split %},
@@ -33,12 +40,75 @@ SHIPPING_COST_FIELDS=[
 ]
 
 
+def _login_throttle_key(request):
+    ip=_file_access_ip(request) or 'unknown'
+    return f'login-attempts:{ip}'
+
+
+def _login_attempts(request):
+    """Failed attempts from this IP inside the window. Fails open."""
+    try:
+        return cache.get(_login_throttle_key(request), 0)
+    except Exception:
+        # A security control must not become an outage. If the cache backend is
+        # unreachable the throttle stops throttling, loudly.
+        logger.warning('login throttle unavailable: cache backend error')
+        return 0
+
+
+def _record_failed_login(request):
+    key=_login_throttle_key(request)
+    window=getattr(settings,'LOGIN_ATTEMPT_WINDOW_SECONDS',900)
+    try:
+        # add() only sets the key if absent, so the window starts at the first
+        # failure and is not extended by later ones.
+        cache.add(key,0,window)
+        cache.incr(key)
+    except Exception:
+        logger.warning('login throttle unavailable: could not record failed attempt')
+
+
+def _clear_failed_logins(request):
+    try:
+        cache.delete(_login_throttle_key(request))
+    except Exception:
+        pass
+
+
+def _safe_next_url(request):
+    """Validate ?next= before redirecting to it.
+
+    Redirecting to an unvalidated parameter is an open redirect: a link to
+    /login/?next=https://evil.example/ would bounce a freshly authenticated
+    user off-site, which is a credible phishing aid.
+    """
+    candidate=request.GET.get('next') or request.POST.get('next') or ''
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    return None
+
+
 def login_view(request):
     if request.user.is_authenticated: return redirect('dashboard')
     error=''
+    limit=getattr(settings,'LOGIN_ATTEMPT_LIMIT',10)
     if request.method=='POST':
+        if _login_attempts(request) >= limit:
+            # No rate limiting existed on /login/, so credentials could be
+            # brute-forced without limit.
+            logger.warning('login throttled: ip=%s', _file_access_ip(request))
+            return render(request,'login.html',{
+                'error':'Too many failed sign-in attempts. Please try again later.',
+            },status=429)
         u=authenticate(request,username=request.POST.get('username',''),password=request.POST.get('password',''))
-        if u: login(request,u); return redirect(request.GET.get('next') or 'dashboard')
+        if u:
+            _clear_failed_logins(request)
+            login(request,u)
+            return redirect(_safe_next_url(request) or 'dashboard')
+        _record_failed_login(request)
         error='Invalid username or password.'
     return render(request,'login.html',{'error':error})
 
@@ -271,8 +341,21 @@ def barcode_png(request,code):
 
 @login_required
 def finance_overseas_preview(request):
-    amount=Decimal(request.GET.get('amount','0') or '0'); country=request.GET.get('country','Bangladesh')
-    rate=Decimal(os.getenv('BANGLADESH_OVERSEAS_INCENTIVE_RATE','2.5')) if country.lower()=='bangladesh' else Decimal('0')
+    # Decimal() on unvalidated query input raised decimal.InvalidOperation and
+    # returned an unhandled 500 for anything non-numeric, e.g. ?amount=abc.
+    # With DEBUG on that response carried a full traceback.
+    raw_amount=request.GET.get('amount','0') or '0'
+    try:
+        amount=Decimal(raw_amount)
+    except InvalidOperation:
+        return JsonResponse({'ok':False,'error':'amount must be a decimal number.'},status=400)
+    if amount < 0:
+        return JsonResponse({'ok':False,'error':'amount cannot be negative.'},status=400)
+    country=request.GET.get('country','Bangladesh')
+    try:
+        rate=Decimal(os.getenv('BANGLADESH_OVERSEAS_INCENTIVE_RATE','2.5')) if country.lower()=='bangladesh' else Decimal('0')
+    except InvalidOperation:
+        return JsonResponse({'ok':False,'error':'BANGLADESH_OVERSEAS_INCENTIVE_RATE is not a valid decimal.'},status=500)
     incentive=(amount*rate/Decimal('100')).quantize(Decimal('0.01'))
     return JsonResponse({'country':country,'amount':str(amount),'rate_percent':str(rate),'incentive_receivable':str(incentive),'display_total':str(amount+incentive),'note':'Incentive shown as receivable/pending until eligibility and approval are confirmed.'})
 
@@ -299,17 +382,85 @@ def api_stock_scan(request):
 @login_required
 @require_http_methods(['POST'])
 def api_approval_request(request):
-    payload=json.loads(request.body or '{}')
-    obj=ApprovalRequest.objects.create(approval_type=str(payload.get('approval_type','GENERAL')),reference=str(payload.get('reference','')),requested_by=request.user,reason=str(payload.get('reason','')),payload=payload.get('payload') or {})
+    try:
+        payload=json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'ok':False,'error':'Request body must be valid JSON.'},status=400)
+    if not isinstance(payload,dict):
+        return JsonResponse({'ok':False,'error':'Request body must be a JSON object.'},status=400)
+    reference=str(payload.get('reference','')).strip()
+    if not reference:
+        return JsonResponse({'ok':False,'error':'reference is required.'},status=400)
+    obj=ApprovalRequest.objects.create(approval_type=str(payload.get('approval_type','GENERAL')).strip().upper(),reference=reference,requested_by=request.user,reason=str(payload.get('reason','')),payload=payload.get('payload') or {})
     return JsonResponse({'ok':True,'approval_id':obj.id,'status':obj.status})
 
 @login_required
 @require_http_methods(['POST'])
+@transaction.atomic
 def api_approval_decision(request,pk):
-    obj=get_object_or_404(ApprovalRequest,pk=pk)
-    payload=json.loads(request.body or '{}'); decision=str(payload.get('decision','')).upper()
-    if decision not in {'APPROVED','REJECTED'}: return JsonResponse({'ok':False,'error':'decision must be APPROVED or REJECTED'},status=400)
-    obj.status=decision; obj.approved_by=request.user; obj.approved_at=timezone.now(); obj.reason=str(payload.get('reason',obj.reason)); obj.save()
+    """Decide an ApprovalRequest.
+
+    This endpoint is the hinge the whole platform's "senior approval" model
+    hangs on: manual stock override, manual material adjustment, asset
+    retirement and disposal, manual production entry in every production
+    module, conditional QC and Final QC release, Profit + Feasibility
+    acceptance, quick-order acceptance, profit-before-spend authorisation,
+    overtime approval and delivery-SLA exceptions all gate on
+    ``approval.status == 'APPROVED'``.
+
+    It previously had no checks whatsoever, so any authenticated user could
+    raise a request and approve it themselves, or flip somebody else's rejected
+    request to approved - defeating every one of those controls with two POSTs
+    (TECHNICAL_ASSESSMENT.md 4.1). Four rules now apply:
+
+      1. the approver must hold a role permitted for this approval_type;
+      2. the requester may never approve their own request;
+      3. a request that has already been decided cannot be re-decided;
+      4. every decision is written to an append-only ApprovalDecisionLog.
+
+    Rule 1 is also enforced at the route level by AuthorizationMiddleware; it is
+    repeated here because this check is per approval_type, and because a
+    security control this important should not depend on middleware ordering.
+    """
+    # select_for_update so two approvers racing the same request cannot both
+    # pass the already-decided check.
+    obj=get_object_or_404(ApprovalRequest.objects.select_for_update(),pk=pk)
+    try:
+        payload=json.loads(request.body or '{}')
+    except ValueError:
+        return JsonResponse({'ok':False,'error':'Request body must be valid JSON.'},status=400)
+    if not isinstance(payload,dict):
+        return JsonResponse({'ok':False,'error':'Request body must be a JSON object.'},status=400)
+
+    decision=str(payload.get('decision','')).strip().upper()
+    if decision not in {'APPROVED','REJECTED'}:
+        return JsonResponse({'ok':False,'error':'decision must be APPROVED or REJECTED'},status=400)
+
+    if not can_decide_approval(request.user,obj.approval_type):
+        _log_authorization_refusal(request,f'approval_type={obj.approval_type!r}')
+        return JsonResponse({'ok':False,'error':'You do not hold a role permitted to decide this approval type.'},status=403)
+
+    if obj.requested_by_id and obj.requested_by_id==request.user.id:
+        _log_authorization_refusal(request,f'self-approval of approval {obj.pk}')
+        return JsonResponse({'ok':False,'error':'You cannot decide an approval request you raised yourself.'},status=403)
+
+    if obj.status!='PENDING':
+        return JsonResponse({'ok':False,'error':f'This request was already {obj.status.lower()} and cannot be decided again.','status':obj.status},status=409)
+
+    previous_status=obj.status
+    obj.status=decision
+    obj.approved_by=request.user
+    obj.approved_at=timezone.now()
+    obj.reason=str(payload.get('reason',obj.reason))
+    obj.save(update_fields=['status','approved_by','approved_at','reason','updated_at'])
+
+    ApprovalDecisionLog.objects.create(
+        approval=obj,decided_by=request.user,previous_status=previous_status,
+        decision=decision,reason=str(payload.get('reason','')),
+        approver_roles=','.join(sorted(user_roles(request.user)))[:255],
+        ip=_file_access_ip(request),
+        user_agent=request.META.get('HTTP_USER_AGENT','')[:500],
+    )
     return JsonResponse({'ok':True,'approval_id':obj.id,'status':obj.status})
 
 @login_required
@@ -1229,63 +1380,146 @@ def _resolve_file_resource(resource_type, resource_id):
         }
     raise Http404('Unknown file resource type.')
 
-def _user_can_access_file(user, meta):
-    if meta['type'] in {'sourcing_specification','sourcing_quotation','sourcing_sample','sourcing_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'purchase_amendment','purchase_return'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'supplier_document','supplier_quotation','supplier_po','supplier_invoice','supplier_grn','supplier_delivery_note'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'shipping_instruction','shipping_document','shipping_pod','shipping_buyer_signature','shipping_delivery_photo','shipping_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'packing_specification','packing_qc_photo','packing_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    if meta['type'] in {'poly_specification','poly_artwork','poly_qc_photo','poly_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'hand_iron_instruction','hand_iron_qc_photo','hand_iron_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'qc_specification','qc_approved_sample','qc_inspection_photo','qc_inspection_sheet','qc_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'label_artwork','label_specification','label_proof','label_sample_image','label_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'embroidery_artwork','embroidery_program','embroidery_sample_image','embroidery_auto_report'}:
-        return user.is_staff or user.is_superuser
-    if meta['type']=='cutting_auto_report':
-        return user.is_staff or user.is_superuser
-    if meta['type']=='attendance_cctv_thumbnail':
-        return user.is_staff or user.is_superuser
-    if meta['type']=='document':
-        if meta.get('confidential'):
-            return bool(meta.get('uploaded_by_id') and meta.get('uploaded_by_id')==user.id)
-        return True
-    if meta['type'] in {'hr_recruitment_cv','hr_leave_attachment','hr_training_certificate','hr_case_attachment'}:
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'staff_document','staff_application_attachment','staff_profile_photo'}:
-        emp=_staff_employee_for_user(user)
-        if emp and emp.id==meta.get('employee_id'):
-            return True
-        return user.is_staff or user.is_superuser
-    if meta['type'] in {'delivery_pod','delivery_signature','delivery_photo'}:
-        return True
-    if meta['type']=='communication_attachment':
-        thread=meta['thread']
-        if meta.get('uploaded_by_id')==user.id or thread.created_by_id==user.id or thread.assigned_to_id==user.id:
-            return True
-        return thread.participants.filter(pk=user.pk).exists()
-    return False
+# ---------------------------------------------------------------------------
+# Universal File Controls - access policy
+#
+# The previous implementation leaked (TECHNICAL_ASSESSMENT.md 4.3):
+#   * any non-confidential DocumentRecord returned True for ANY authenticated
+#     user, so an Operator could read the CEO's board pack;
+#   * delivery proof, buyer signatures and delivery photographs returned True
+#     for any authenticated user;
+#   * "if user.is_superuser or user.is_staff: return True" sat above about ten
+#     branches that each returned "user.is_staff or user.is_superuser", so those
+#     branches could only ever return False - the production, QC, label and
+#     CCTV file types were unreachable for everyone else by accident;
+#   * nine types the resolver can produce (final_qc_*, iron_*) were not
+#     classified at all and fell through to False;
+#   * a confidential document was visible only to its uploader, so a Finance
+#     Manager without Django's is_staff flag could not read their own
+#     department's files.
+#
+# Policy is now expressed as role families over the resource type, with the
+# genuinely special cases handled first. Unclassified types are denied, and
+# FileAccessPolicyTests asserts that every one of the 65 types the resolver can
+# return is classified deliberately rather than by falling through.
+#
+# Still outstanding: this is role-based, not scope-based. There is no company,
+# country or factory link on DocumentRecord, so one factory's manager can still
+# read another's documents. True need-to-know needs the tenancy work in Phase 4
+# - see TECHNICAL_ASSESSMENT.md 6.2.
+# ---------------------------------------------------------------------------
 
-def _log_file_action(request, meta, resource_id, action):
+#: (type prefixes, roles permitted). Order matters: first match wins.
+_FILE_ACCESS_FAMILIES = (
+    (('cutting_', 'embroidery_', 'label_', 'hand_iron_', 'iron_', 'poly_',
+      'packing_'), roles_mod.PRODUCTION),
+    (('qc_', 'final_qc_'), roles_mod.QUALITY),
+    (('shipping_',), roles_mod.SHIPPING),
+    (('sourcing_', 'supplier_', 'purchase_'), roles_mod.PROCUREMENT),
+    (('hr_',), roles_mod.HR),
+    # Camera stills are workforce surveillance: HR owns the process, IT the kit.
+    (('attendance_cctv_',), roles_mod.HR | roles_mod.IT),
+    # Proof of delivery, buyer signature and delivery photographs.
+    (('delivery_',), roles_mod.COMMERCIAL | roles_mod.SHIPPING),
+)
+
+
+def _file_access_decision(user, meta):
+    """Return (allowed, reason). The reason is recorded on refusal."""
+    if not user or not user.is_authenticated:
+        return False, 'not authenticated'
+    if user.is_superuser:
+        return True, ''
+
+    file_type = meta.get('type') or ''
+
+    # --- staff's own records -----------------------------------------------
+    # A member of staff always reaches their own documents, application
+    # attachments and profile photo; otherwise HR authority is required.
+    if file_type in {'staff_document', 'staff_application_attachment', 'staff_profile_photo'}:
+        employee = _staff_employee_for_user(user)
+        if employee and employee.id == meta.get('employee_id'):
+            return True, ''
+        if has_any_role(user, roles_mod.HR):
+            return True, ''
+        return False, 'staff record belongs to another employee and user lacks HR authority'
+
+    # --- communication attachments -----------------------------------------
+    # Confined to the conversation: sender, thread owner, assignee, participant.
+    if file_type == 'communication_attachment':
+        thread = meta.get('thread')
+        if thread is None:
+            return False, 'communication attachment has no resolvable thread'
+        if meta.get('uploaded_by_id') == user.id:
+            return True, ''
+        if thread.created_by_id == user.id or thread.assigned_to_id == user.id:
+            return True, ''
+        if thread.participants.filter(pk=user.pk).exists():
+            return True, ''
+        return False, 'user is not a participant in this conversation'
+
+    # --- corporate document store ------------------------------------------
+    if file_type == 'document':
+        if meta.get('uploaded_by_id') and meta.get('uploaded_by_id') == user.id:
+            return True, ''
+        if meta.get('confidential'):
+            if has_any_role(user, roles_mod.EXECUTIVE | roles_mod.FINANCE):
+                return True, ''
+            return False, ('document is confidential and user is neither the '
+                           'uploader nor executive/finance')
+        if has_any_role(user, roles_mod.MANAGEMENT):
+            return True, ''
+        return False, 'corporate document requires a management role'
+
+    # --- everything else, by family ----------------------------------------
+    for prefixes, allowed in _FILE_ACCESS_FAMILIES:
+        if file_type.startswith(prefixes):
+            if has_any_role(user, allowed):
+                return True, ''
+            held = sorted(user_roles(user)) or ['none']
+            return False, '%s requires one of %s; user holds %s' % (
+                file_type, sorted(allowed), held)
+
+    return False, 'resource type %r is not classified in the file access policy' % file_type
+
+
+def _user_can_access_file(user, meta):
+    """Backwards-compatible boolean wrapper around _file_access_decision."""
+    allowed, _reason = _file_access_decision(user, meta)
+    return allowed
+
+
+def _visible_file_access_logs(user, limit=200):
+    """File access history the given user is entitled to see.
+
+    The Universal File Center previously handed every authenticated user the
+    whole system's FileAccessLog, disclosing which confidential files other
+    people had opened - filenames and references included. Only executive and
+    IT authority sees the global log now; everyone else sees their own history.
+    """
+    qs = FileAccessLog.objects.select_related('user').order_by('-created_at')
+    if user.is_superuser or has_any_role(user, roles_mod.EXECUTIVE | roles_mod.IT):
+        return qs[:limit]
+    return qs.filter(user=user)[:limit]
+
+
+def _log_file_action(request, meta, resource_id, action, granted=True, denial_reason=''):
     FileAccessLog.objects.create(
         user=request.user if request.user.is_authenticated else None,
         resource_type=meta['type'],resource_id=resource_id,
         file_name=meta.get('name',''),action=action,
         reference=meta.get('reference',''),
         ip=_file_access_ip(request),
-        user_agent=request.META.get('HTTP_USER_AGENT','')[:500]
+        user_agent=request.META.get('HTTP_USER_AGENT','')[:500],
+        granted=granted,denial_reason=denial_reason[:255],
+    )
+
+
+def _log_authorization_refusal(request, detail):
+    """Record a refused privileged action that is not a file download."""
+    logging.getLogger('portal.authorization').warning(
+        'refused: user=%s path=%s detail=%s',
+        getattr(request.user,'username','anonymous'), request.path, detail,
     )
 
 @login_required
@@ -1297,7 +1531,12 @@ def universal_file_action(request, resource_type, resource_id, action):
     obj, field, meta=_resolve_file_resource(resource_type,resource_id)
     if not field:
         raise Http404('File not found.')
-    if not _user_can_access_file(request.user,meta):
+    allowed,denial_reason=_file_access_decision(request.user,meta)
+    if not allowed:
+        # Log the refusal too. Previously the log was written only after the
+        # check passed, so denied attempts - the security-relevant ones - left
+        # no audit trail at all.
+        _log_file_action(request,meta,resource_id,action,granted=False,denial_reason=denial_reason)
         return HttpResponse('You do not have permission to access this file.',status=403)
 
     _log_file_action(request,meta,resource_id,action)
@@ -1358,7 +1597,7 @@ def universal_file_center(request):
         'documents':visible_docs,'attachments':visible_attachments,
         'staff_documents':staff_docs,'staff_applications':staff_apps,'staff_profiles':staff_profiles,
         'delivery_files':delivery_files,
-        'access_logs':FileAccessLog.objects.select_related('user').order_by('-created_at')[:200]
+        'access_logs':_visible_file_access_logs(request.user)
     })
 
 

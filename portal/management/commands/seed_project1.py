@@ -1,6 +1,7 @@
 import json, os
 from datetime import timedelta
 from pathlib import Path
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -31,4 +32,7 @@ class Command(BaseCommand):
         Alert.objects.get_or_create(title='Project 1 seed complete',defaults={'message':'70 pages and 650 forms loaded.','level':'INFO','department':'System'})
         ActionItem.objects.get_or_create(title='Replace production secrets',defaults={'department':'IT','priority':'HIGH','status':'OPEN'})
         BarcodeAsset.objects.get_or_create(code='BUNDLE-DEMO-0001',defaults={'asset_type':'BUNDLE','reference':'MO-2026-0001','payload':{'style':'Premium Cap','qty':50}})
+        # Roles must exist as Django groups before the authorisation layer can
+        # resolve them. Idempotent, so safe to call on every seed.
+        call_command('sync_roles', verbosity=0)
         self.stdout.write(self.style.SUCCESS(f'Seeded {DashboardPage.objects.count()} pages and {FormDefinition.objects.count()} forms.'))

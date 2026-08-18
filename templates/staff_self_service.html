@@ -742,7 +742,7 @@ Portal{% endblock %}{% block content %}
           <div class="idcard">
             {% if profile.profile_photo %}<img
               class="avatar"
-              src="{{profile.profile_photo.url}}"
+              src="{% url 'universal_file_action' 'staff_profile_photo' profile.id 'preview' %}"
             />{% else %}
             <div class="avatar">{{employee.name|slice:":1"}}</div>
             {% endif %}

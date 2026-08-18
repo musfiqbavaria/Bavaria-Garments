@@ -97,6 +97,29 @@ class ApprovalRequest(TimeStamped):
     reason=models.TextField(blank=True)
     payload=models.JSONField(default=dict)
 
+class ApprovalDecisionLog(models.Model):
+    """Append-only record of every decision taken on an ApprovalRequest.
+
+    ApprovalRequest keeps only the latest decision, so before this model a
+    request could be flipped between APPROVED and REJECTED with no trace of who
+    did what. Every "senior approval" control in the platform reads
+    ApprovalRequest.status, which makes that history audit-critical.
+    See TECHNICAL_ASSESSMENT.md 4.1.
+    """
+    approval=models.ForeignKey(ApprovalRequest,on_delete=models.CASCADE,related_name='decision_log')
+    decided_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approval_decision_log')
+    previous_status=models.CharField(max_length=20)
+    decision=models.CharField(max_length=20)
+    reason=models.TextField(blank=True)
+    approver_roles=models.CharField(max_length=255,blank=True,help_text='Roles held by the approver at the moment of the decision.')
+    ip=models.GenericIPAddressField(null=True,blank=True)
+    user_agent=models.CharField(max_length=500,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering=['-created_at']
+        indexes=[models.Index(fields=['approval','-created_at'],name='idx_approval_decision_log')]
+    def __str__(self): return f'{self.decision} on {self.approval_id} by {self.decided_by or "unknown"}'
+
 class StockScan(TimeStamped):
     DIRECTIONS=[('IN','STOCK IN SCAN'),('OUT','STOCK OUT SCAN')]
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT)
@@ -659,13 +682,22 @@ class FileAccessLog(models.Model):
     reference=models.CharField(max_length=180,blank=True)
     ip=models.GenericIPAddressField(null=True,blank=True)
     user_agent=models.CharField(max_length=500,blank=True)
+    # Refused attempts are the security-relevant ones. Previously the log was
+    # written only after the permission check passed, so a denial left no trace.
+    granted=models.BooleanField(default=True)
+    denial_reason=models.CharField(max_length=255,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering=['-created_at']
+        indexes=[
+            models.Index(fields=['user','-created_at'],name='idx_file_access_user'),
+            models.Index(fields=['granted','-created_at'],name='idx_file_access_granted'),
+        ]
 
     def __str__(self):
-        return f'{self.action} {self.file_name} by {self.user or "anonymous"}'
+        verdict='' if self.granted else ' DENIED'
+        return f'{self.action} {self.file_name} by {self.user or "anonymous"}{verdict}'
 
 
 class BuyerDeliverySLA(TimeStamped):
