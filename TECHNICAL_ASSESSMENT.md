@@ -47,7 +47,35 @@ Measured before and after, on a seeded database:
 | Test suite | 3 pass, 1 fail | **8 pass, 0 fail** |
 | Committed migrations | 0 | **1 (171 models, 19 constraints)** |
 
-**Still outstanding — nothing in Phases 2–4 has been started.** In particular the self-approval bypass (§4.1), the absent authorisation model (§4.2), the file-access leaks (§4.3), the deployment hardening (§4.6), the remaining payroll defects (§5.2, §5.3, §5.4), the timezone problem (§5.5), the currency mixing (§5.6) and the hardcoded supplier price score (§5.7) are all unchanged. **This platform is now runnable, but it is not yet safe to expose to real users or real data.**
+**Phase 2 — complete** (branch `phase-2/authorisation-and-hardening`)
+
+| # | Finding | Status |
+|---|---|---|
+| 3 | Self-approval bypass defeats every senior-approval control (§4.1) | **Fixed** — role-gated, no self-approval, settled requests locked, append-only `ApprovalDecisionLog` |
+| — | No authorisation model at all; 20 roles unenforced (§4.2) | **Fixed** — roles as Django groups, one default-deny route table, `is_staff` no longer a business privilege |
+| — | File access leaks: open documents, dead branches, unclassified types (§4.3) | **Fixed** — role families over all 65 resource types, refusals logged, access log scoped |
+| — | Unhandled 500 on `/api/finance/overseas-preview/` (§4.4) | **Fixed** — 400 |
+| — | Device endpoints exposed to all users (§4.5) | **Fixed** — IT roles only |
+| — | `AUTH_PASSWORD_VALIDATORS=[]`, no TLS settings, no headers, no rate limit, root container, no `.dockerignore`, no healthchecks, no `LOGGING` (§4.6, §6.6) | **Fixed** — see below |
+
+Verification: the exploit script that succeeded in Phase 0 now fails at every step.
+
+| Attack | As delivered | After Phase 2 |
+|---|---|---|
+| Operator self-approves their own request | `status: APPROVED` | **403**, stays `PENDING` |
+| Operator flips a REJECTED request to APPROVED | `status: APPROVED` | **403**, stays `REJECTED` |
+| Operator downloads the CEO's board pack | HTTP 200 | **403**, refusal logged |
+| Operator reads the global file-access log | payroll download visible | **not visible** |
+| Operator lists CCTV/NVR network endpoints | RTSP URL returned | **403** |
+| `?amount=abc` on the incentive endpoint | unhandled 500 + traceback | **400** |
+
+Test suite: **45 tests, all passing, in 5.2 seconds.** `check --deploy` against a simulated TLS production configuration reports no remaining issues.
+
+Two deliberate carry-overs: TLS is configured but **not enabled** (`DJANGO_SECURE_SSL=0`) because no certificate is provisioned — enabling it without a TLS listener would take the site down; and authorisation is **role-based, not scope-based**, so one factory's manager can still read another's data until the Phase 4 tenancy work lands.
+
+---
+
+**Still outstanding — nothing in Phases 3–4 has been started.** In particular the remaining payroll defects (§5.2 paid gate passes charged twice, §5.3 unpaid gate passes costing nothing, §5.4 `AttendanceShift` never read), the timezone problem (§5.5), the currency mixing (§5.6), the hardcoded supplier price score (§5.7), the missing database indexes (§6.1) and the absent tenancy backbone (§6.2) are all unchanged. **The platform now runs and enforces access control. Its payroll and financial figures are still wrong, so do not rely on them for pay or reporting until Phase 3 is done.**
 
 ---
 
