@@ -172,6 +172,11 @@ def page_view(request,slug):
     if slug=='qc-dashboard': return redirect('qc_dashboard')
     if slug=='hand-iron-dashboard': return redirect('hand_iron_dashboard')
     if slug=='poly-dashboard': return redirect('poly_dashboard')
+    # A superseded legacy page is disabled rather than deleted, so an existing
+    # link keeps working: send it to the module that replaced it instead of 404.
+    replacement=DashboardPage.objects.filter(slug=slug,enabled=False).exclude(superseded_by='').first()
+    if replacement:
+        return redirect('page',slug=replacement.superseded_by)
     page=get_object_or_404(DashboardPage,slug=slug,enabled=True)
     ctx={'page':page,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
     return render(request,'page.html',ctx)

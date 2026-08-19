@@ -4,6 +4,8 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 
+from .tenancy import ScopedManager
+
 class TimeStamped(models.Model):
     # created_at is indexed on the base class because almost every dashboard
     # orders or filters by it, and 170-odd concrete models inherit from here.
@@ -11,9 +13,74 @@ class TimeStamped(models.Model):
     class Meta: abstract=True
 
 class OrganizationNode(TimeStamped):
+    """A node in the organisation tree: country, company, factory, unit, store.
+
+    This modelled the hierarchy from the start but almost nothing referenced it,
+    so no record could be attributed to a site. It is now the scoping backbone -
+    see portal/tenancy.py and TECHNICAL_ASSESSMENT.md 6.2.
+    """
     TYPES=[(x,x) for x in ['Country','Company','Factory','Production Unit','Area','Branch','Department','Warehouse','Retail Store','Franchise Store']]
-    name=models.CharField(max_length=180); node_type=models.CharField(max_length=40,choices=TYPES); parent=models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='children')
-    def __str__(self): return f'{self.node_type}: {self.name}'
+    name=models.CharField(max_length=180); node_type=models.CharField(max_length=40,choices=TYPES,db_index=True); parent=models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='children')
+    #: Materialised path, e.g. '/1/4/9/'. Subtree membership is then one indexed
+    #: prefix match rather than a recursive walk. Maintained by save().
+    path=models.CharField(max_length=255,blank=True,db_index=True)
+    depth=models.PositiveSmallIntegerField(default=0)
+    #: Local operating clock for this site. Blank means inherit from the parent,
+    #: and ultimately settings.TIME_ZONE. Payroll depends on this: attendance
+    #: anchors must resolve in the timezone the workforce actually works in.
+    timezone=models.CharField(max_length=64,blank=True,
+        help_text="IANA name, e.g. Asia/Dhaka. Blank inherits from the parent site.")
+    active=models.BooleanField(default=True)
+
+    class Meta:
+        indexes=[models.Index(fields=['path'],name='idx_org_node_path')]
+
+    def compute_path(self):
+        return f'{self.parent.path}{self.pk}/' if self.parent_id and self.parent.path else f'/{self.pk}/'
+
+    @property
+    def effective_timezone(self):
+        """This site's timezone, inherited from ancestors when not set."""
+        node=self
+        seen=0
+        while node is not None and seen < 20:
+            if node.timezone:
+                return node.timezone
+            node=node.parent
+            seen += 1
+        from django.conf import settings as _settings
+        return _settings.TIME_ZONE
+
+    def ancestors(self):
+        ids=[int(x) for x in (self.path or '').strip('/').split('/') if x]
+        return OrganizationNode.objects.filter(pk__in=ids).exclude(pk=self.pk).order_by('depth')
+
+    def descendants(self):
+        if not self.path:
+            return OrganizationNode.objects.none()
+        return OrganizationNode.objects.filter(path__startswith=self.path).exclude(pk=self.pk)
+
+    @property
+    def full_path_name(self):
+        names=[n.name for n in self.ancestors()]+[self.name]
+        return ' / '.join(names)
+
+    def save(self,*args,**kwargs):
+        creating=self.pk is None
+        super().save(*args,**kwargs)
+        path=self.compute_path()
+        depth=max(0,len(path.strip('/').split('/'))-1)
+        if path!=self.path or depth!=self.depth:
+            OrganizationNode.objects.filter(pk=self.pk).update(path=path,depth=depth)
+            self.path=path; self.depth=depth
+            if not creating:
+                # Re-path the subtree: a moved node changes every descendant.
+                for child in OrganizationNode.objects.filter(parent_id=self.pk):
+                    child.save()
+
+    def __str__(self):
+        return f'{self.node_type}: {self.name}'
+
 
 class Department(TimeStamped):
     name=models.CharField(max_length=120,unique=True); code=models.CharField(max_length=20,unique=True); active=models.BooleanField(default=True,db_index=True)
@@ -24,9 +91,19 @@ class UserProfile(TimeStamped):
 
 class DashboardPage(TimeStamped):
     page_id=models.PositiveIntegerField(unique=True); title=models.CharField(max_length=220); slug=models.SlugField(unique=True); group=models.CharField(max_length=80); enabled=models.BooleanField(default=True,db_index=True)
+    #: Slug of the module that replaced this page. 20 registry entries are legacy
+    #: stubs duplicating a real module, so the dashboard offered two of everything -
+    #: one working, one empty. Those are disabled and redirect here rather than
+    #: 404ing a bookmarked link. See TECHNICAL_ASSESSMENT.md 3.1.
+    superseded_by=models.SlugField(blank=True)
     def __str__(self): return f'{self.page_id}. {self.title}'
 
 class Employee(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     CATEGORIES=[(x,x.title()) for x in ['STAFF','OPERATOR','HELPER']]
     employee_id=models.CharField(max_length=50,unique=True)
     name=models.CharField(max_length=160)
@@ -39,11 +116,19 @@ class Employee(TimeStamped):
     factory_unit=models.CharField(max_length=160,blank=True)
     shift_code=models.CharField(max_length=40,blank=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class AttendanceEvent(TimeStamped):
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE); event=models.CharField(max_length=30); occurred_at=models.DateTimeField(default=timezone.now,db_index=True); source=models.CharField(max_length=50,default='Manual'); device_ref=models.CharField(max_length=100,blank=True)
 
 class MasterOrder(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     # 'COMPLETED' was written by the buyer-delivery module but was absent from
     # this list, so an invalid status was persisted silently (nothing in the
     # project ever calls full_clean). v10 defines completion as a distinct step
@@ -52,8 +137,21 @@ class MasterOrder(TimeStamped):
     STATUS=[(s,s) for s in ['OPPORTUNITY','CONFIRMED','PLANNING','PRODUCTION','QC','PACKING','READY_TO_SHIP','SHIPPED','DELIVERED','COMPLETED','HOLD']]
     master_order_id=models.CharField(max_length=60,unique=True); buyer=models.CharField(max_length=180); product=models.CharField(max_length=180); quantity=models.PositiveIntegerField(default=0); order_value=models.DecimalField(max_digits=16,decimal_places=2,default=0); currency=models.CharField(max_length=10,default='USD',help_text='Currency of order_value. Consolidated reporting converts to settings.BASE_CURRENCY.'); confirmed_at=models.DateTimeField(null=True,blank=True); delivery_due=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='OPPORTUNITY',db_index=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class StockItem(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     sku=models.CharField(max_length=80,unique=True); name=models.CharField(max_length=180); category=models.CharField(max_length=60); unit=models.CharField(max_length=20,default='PCS'); qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); reserved_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); unit_cost=models.DecimalField(max_digits=14,decimal_places=4,default=0); currency=models.CharField(max_length=10,default='BDT',help_text='Currency of unit_cost.')
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class StockMovement(TimeStamped):
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT); movement_type=models.CharField(max_length=30,db_index=True); quantity=models.DecimalField(max_digits=16,decimal_places=3); reference=models.CharField(max_length=100,blank=True,db_index=True); barcode=models.CharField(max_length=160,blank=True,db_index=True); performed_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
@@ -62,13 +160,36 @@ class FormDefinition(TimeStamped):
     form_id=models.PositiveIntegerField(unique=True); code=models.CharField(max_length=30,unique=True); name=models.CharField(max_length=220); department=models.CharField(max_length=120); category=models.CharField(max_length=60); version=models.CharField(max_length=20,default='1.0'); status=models.CharField(max_length=20,default='ACTIVE',db_index=True); requires_approval=models.BooleanField(default=False); red_alert_enabled=models.BooleanField(default=True)
 
 class FormSubmission(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     definition=models.ForeignKey(FormDefinition,on_delete=models.PROTECT); reference=models.CharField(max_length=120,blank=True,db_index=True); submitted_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL); status=models.CharField(max_length=30,default='DRAFT',db_index=True); data=models.JSONField(default=dict); approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approved_forms'); approved_at=models.DateTimeField(null=True,blank=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class Alert(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     LEVELS=[(x,x) for x in ['INFO','WARNING','RED']]
     title=models.CharField(max_length=180); message=models.TextField(blank=True); level=models.CharField(max_length=20,choices=LEVELS,default='INFO',db_index=True); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); actioned=models.BooleanField(default=False,db_index=True); actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); actioned_at=models.DateTimeField(null=True,blank=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class ActionItem(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     # status had no choices, so three vocabularies coexisted: writers used
     # 'OPEN' and 'COMPLETED', while the global control strip and the Celery
     # snapshot excluded 'DONE' - a value nothing ever wrote. The header counter
@@ -81,20 +202,51 @@ class ActionItem(TimeStamped):
     OPEN_STATUSES=['OPEN','IN_PROGRESS','BLOCKED']
     title=models.CharField(max_length=180); assigned_to=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); department=models.CharField(max_length=120,blank=True); due_at=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True); priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL',db_index=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class Communication(TimeStamped):
     CHANNELS=[(x,x) for x in ['CHAT','WHATSAPP','EMAIL','IP_PHONE']]
     channel=models.CharField(max_length=20,choices=CHANNELS); sender=models.CharField(max_length=180,blank=True); recipient=models.CharField(max_length=180,blank=True); subject=models.CharField(max_length=220,blank=True); body=models.TextField(blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); status=models.CharField(max_length=30,default='NEW',db_index=True)
 
 class DocumentRecord(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     document_id=models.CharField(max_length=80,unique=True); title=models.CharField(max_length=220); category=models.CharField(max_length=100); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); version=models.CharField(max_length=20,default='1.0'); file=models.FileField(upload_to='documents/%Y/%m/',blank=True); confidential=models.BooleanField(default=False); expires_at=models.DateTimeField(null=True,blank=True); uploaded_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class BarcodeAsset(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     TYPES=[(x,x) for x in ['BUNDLE','MATERIAL','STOCK','PRODUCT','CARTON','EMPLOYEE','ASSET','DOCUMENT']]
     code=models.CharField(max_length=180,unique=True); asset_type=models.CharField(max_length=30,choices=TYPES); reference=models.CharField(max_length=120,blank=True,db_index=True); payload=models.JSONField(default=dict); active=models.BooleanField(default=True,db_index=True)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class FinanceTransaction(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     TYPES=[(x,x) for x in ['INCOME','EXPENSE','RECEIVABLE','PAYABLE','INCENTIVE_RECEIVABLE','INCENTIVE_APPROVED','INCENTIVE_PAID']]
     transaction_type=models.CharField(max_length=40,choices=TYPES); country=models.CharField(max_length=80,default='Ireland'); currency=models.CharField(max_length=10,default='EUR'); amount=models.DecimalField(max_digits=16,decimal_places=2); reference=models.CharField(max_length=120,blank=True,db_index=True); overseas_receipt=models.BooleanField(default=False); incentive_rate=models.DecimalField(max_digits=6,decimal_places=3,default=0); incentive_amount=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class ExchangeRate(TimeStamped):
     """Effective-dated FX rates for consolidated reporting.
@@ -135,6 +287,11 @@ class AuditLog(models.Model):
     user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); method=models.CharField(max_length=10); path=models.CharField(max_length=500); status_code=models.PositiveIntegerField(default=200); ip=models.GenericIPAddressField(null=True,blank=True); created_at=models.DateTimeField(auto_now_add=True)
 
 class ApprovalRequest(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x) for x in ['PENDING','APPROVED','REJECTED','CANCELLED']]
     approval_type=models.CharField(max_length=60)
     reference=models.CharField(max_length=120,db_index=True)
@@ -145,6 +302,10 @@ class ApprovalRequest(TimeStamped):
     approved_at=models.DateTimeField(null=True,blank=True)
     reason=models.TextField(blank=True)
     payload=models.JSONField(default=dict)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class ApprovalDecisionLog(models.Model):
     """Append-only record of every decision taken on an ApprovalRequest.
@@ -185,6 +346,11 @@ class StockScan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
 class ValueVariance(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     reference=models.CharField(max_length=120,db_index=True)
     department=models.CharField(max_length=120,blank=True)
     currency=models.CharField(max_length=10,default='BDT')
@@ -195,7 +361,16 @@ class ValueVariance(TimeStamped):
     status=models.CharField(max_length=30,default='OPEN',db_index=True)
     recorded_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class DeviceIntegration(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     TYPES=[(x,x) for x in ['ATTENDANCE','CCTV','NVR','IP_PHONE','OTHER']]
     name=models.CharField(max_length=160)
     device_type=models.CharField(max_length=30,choices=TYPES)
@@ -207,6 +382,10 @@ class DeviceIntegration(TimeStamped):
     active=models.BooleanField(default=True,db_index=True)
     config=models.JSONField(default=dict,blank=True)
     last_seen_at=models.DateTimeField(null=True,blank=True)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class AttendanceDailySummary(TimeStamped):
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE)
@@ -235,6 +414,11 @@ class AttendanceDailySummary(TimeStamped):
 
 # Project 1 - Stock & Material Master
 class MaterialMaster(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     CATEGORIES=[(x,x) for x in ['FABRIC','ACCESSORY','RAW_MATERIAL','PACKAGING','LABEL','THREAD','POLY','CHEMICAL','OTHER']]
     STATUSES=[(x,x) for x in ['ACTIVE','HOLD','INACTIVE']]
     material_code=models.CharField(max_length=80,unique=True)
@@ -256,6 +440,10 @@ class MaterialMaster(TimeStamped):
     status=models.CharField(max_length=20,choices=STATUSES,default='ACTIVE',db_index=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='materials_created')
     def __str__(self): return f'{self.material_code} - {self.name}'
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class MaterialLot(TimeStamped):
     STOCK_STATUSES=[(x,x) for x in ['RAW_MATERIAL','ACCESSORIES','WASTAGE','REJECT','FINISHED_PRODUCT','READY_FOR_SHIPMENT','RETURN']]
@@ -320,6 +508,11 @@ class MaterialMovement(TimeStamped):
 
 
 class AssetMachine(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     ASSET_TYPES=[(x,x) for x in ['MACHINE','EQUIPMENT','TOOL','VEHICLE','IT_EQUIPMENT','FURNITURE','OTHER']]
     STATUSES=[(x,x) for x in ['ACTIVE','IDLE','UNDER_MAINTENANCE','BREAKDOWN','HOLD','RETIRED','DISPOSED']]
     CONDITIONS=[(x,x) for x in ['NEW','EXCELLENT','GOOD','FAIR','POOR','UNSERVICEABLE']]
@@ -365,6 +558,10 @@ class AssetMachine(TimeStamped):
     def daily_effective_minutes(self):
         return int(self.available_minutes_per_day * float(self.efficiency_percent) / 100)
     def __str__(self): return f'{self.asset_code} - {self.name}'
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class AssetMaintenance(TimeStamped):
     TYPES=[(x,x) for x in ['PREVENTIVE','CORRECTIVE','BREAKDOWN','CALIBRATION','INSPECTION','SERVICE']]
@@ -420,6 +617,11 @@ class AssetMovement(TimeStamped):
 
 
 class BuyerOpportunity(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STAGES=[(x,x.replace('_',' ').title()) for x in ['NEW_ENQUIRY','QUALIFICATION','FEASIBILITY_CHECK','COSTING','QUOTATION_SENT','SAMPLE_DEVELOPMENT','SAMPLE_SENT','BUYER_REVIEW','NEGOTIATION','AWAITING_CONFIRMATION','WON','LOST','HOLD','CANCELLED']]
     PRIORITIES=[(x,x.title()) for x in ['LOW','NORMAL','HIGH','URGENT']]
     enquiry_no=models.CharField(max_length=60,unique=True)
@@ -448,6 +650,10 @@ class BuyerOpportunity(TimeStamped):
     def follow_up_overdue(self): return bool(self.follow_up_date and self.follow_up_date < timezone.localdate() and self.stage not in {'WON','LOST','CANCELLED'})
     def __str__(self): return f'{self.opportunity_no} - {self.buyer_company}'
 
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
+
 class OpportunityQuotation(TimeStamped):
     STATUS=[(x,x.title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','SENT','ACCEPTED','REJECTED','EXPIRED']]
     opportunity=models.ForeignKey(BuyerOpportunity,on_delete=models.CASCADE,related_name='quotations')
@@ -466,6 +672,11 @@ class OpportunityActivity(TimeStamped):
 
 
 class CommunicationThread(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     TYPES=[(x,x.replace('_',' ').title()) for x in ['INTERNAL','BUYER','ORDER','SUPPLIER','HR','PRODUCTION','ALERT','SUPPORT']]
     PRIORITIES=[(x,x.title()) for x in ['LOW','NORMAL','HIGH','URGENT']]
     thread_no=models.CharField(max_length=70,unique=True)
@@ -483,6 +694,10 @@ class CommunicationThread(TimeStamped):
     last_message_at=models.DateTimeField(default=timezone.now,db_index=True)
     closed_at=models.DateTimeField(null=True,blank=True)
     def __str__(self): return f'{self.thread_no} - {self.subject}'
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class CommunicationMessage(TimeStamped):
     CHANNELS=[(x,x.replace('_',' ').title()) for x in ['CHAT_24_7','INTERNAL_CHAT','EMAIL','WHATSAPP','SMS','VOICE_CALL','VIDEO_CALL','VIDEO_CONFERENCE','SOCIAL_DM','NOTICE','BROADCAST','SYSTEM_ALERT']]
@@ -1200,6 +1415,11 @@ class AttendanceManualAdjustment(TimeStamped):
 
 
 class CuttingPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','QC','COMPLETED','HOLD']]
     plan_no=models.CharField(max_length=80,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='cutting_plans')
@@ -1212,6 +1432,10 @@ class CuttingPlan(TimeStamped):
     status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class CuttingFabricIssue(TimeStamped):
     plan=models.ForeignKey(CuttingPlan,on_delete=models.CASCADE,related_name='fabric_issues')
@@ -1309,6 +1533,11 @@ class CuttingAutoReport(TimeStamped):
 
 
 class EmbroideryPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','SAMPLE','IN_PROGRESS','QC','COMPLETED','HOLD']]
     plan_no=models.CharField(max_length=80,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='embroidery_plans')
@@ -1326,6 +1555,10 @@ class EmbroideryPlan(TimeStamped):
     artwork=models.FileField(upload_to='embroidery/artwork/%Y/%m/',blank=True)
     program_file=models.FileField(upload_to='embroidery/programs/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class EmbroideryBundleScan(TimeStamped):
     DIRECTIONS=[('IN','BUNDLE IN SCAN'),('OUT','BUNDLE OUT SCAN')]
@@ -1441,6 +1674,11 @@ class EmbroideryAutoReport(TimeStamped):
 
 
 class LabelPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','SAMPLE','IN_PROGRESS','QC','READY','COMPLETED','HOLD']]
     LABEL_TYPES=[(x,x.replace('_',' ').title()) for x in [
         'MAIN_BRAND','SIZE','CARE_WASH','COMPOSITION','COUNTRY_OF_ORIGIN','WOVEN','PRINTED',
@@ -1465,6 +1703,10 @@ class LabelPlan(TimeStamped):
     artwork=models.FileField(upload_to='label/artwork/%Y/%m/',blank=True)
     specification=models.FileField(upload_to='label/specification/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class LabelProof(TimeStamped):
     STATUS=[(x,x.title()) for x in ['PENDING','APPROVED','REJECTED','REVISE']]
@@ -1579,6 +1821,11 @@ class LabelAutoReport(TimeStamped):
 
 
 class QCInspectionPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STAGES=[(x,x.replace('_',' ').title()) for x in [
         'INCOMING_MATERIAL','CUTTING','EMBROIDERY','SEWING_INLINE','LABEL_ACCESSORY',
         'FINISHING','FINAL_INSPECTION','PACKING','PRE_SHIPMENT'
@@ -1603,6 +1850,10 @@ class QCInspectionPlan(TimeStamped):
     specification_file=models.FileField(upload_to='qc/specifications/%Y/%m/',blank=True)
     approved_sample_file=models.FileField(upload_to='qc/approved-samples/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class QCBundleScan(TimeStamped):
     DIRECTIONS=[('IN','QC BUNDLE IN SCAN'),('OUT','QC BUNDLE OUT SCAN')]
@@ -1744,6 +1995,11 @@ class QCAutoReport(TimeStamped):
 
 
 class HandIronPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','QC','COMPLETED','HOLD']]
     plan_no=models.CharField(max_length=80,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='hand_iron_plans')
@@ -1761,6 +2017,10 @@ class HandIronPlan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to='hand-iron/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class HandIronBundleScan(TimeStamped):
     DIRECTIONS=[('IN','BUNDLE IN SCAN'),('OUT','BUNDLE OUT SCAN')]
@@ -1857,6 +2117,11 @@ class HandIronAutoReport(TimeStamped):
 
 
 class PolyPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','QC','READY','COMPLETED','HOLD']]
     POLY_TYPES=[(x,x.replace('_',' ').title()) for x in [
         'INDIVIDUAL_POLY','PRINTED_POLY','PLAIN_POLY','RECYCLED_POLY','RECYCLABLE_POLY',
@@ -1885,6 +2150,10 @@ class PolyPlan(TimeStamped):
     packing_specification=models.FileField(upload_to='poly/specifications/%Y/%m/',blank=True)
     artwork=models.FileField(upload_to='poly/artwork/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class PolyStockIssue(TimeStamped):
     plan=models.ForeignKey(PolyPlan,on_delete=models.CASCADE,related_name='stock_issues')
@@ -1997,6 +2266,11 @@ class PolyAutoReport(TimeStamped):
 
 
 class IronPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','QC','COMPLETED','HOLD']]
     plan_no=models.CharField(max_length=80,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='iron_plans')
@@ -2016,6 +2290,10 @@ class IronPlan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to='iron/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class IronBundleScan(TimeStamped):
     DIRECTIONS=[('IN','BUNDLE IN SCAN'),('OUT','BUNDLE OUT SCAN')]
@@ -2129,6 +2407,11 @@ class IronAutoReport(TimeStamped):
 
 
 class FinalQCPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','HOLD','REWORK','PASSED','REJECTED','CLOSED']]
     plan_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='final_qc_plans')
@@ -2150,6 +2433,10 @@ class FinalQCPlan(TimeStamped):
     approved_sample_file=models.FileField(upload_to='final-qc/approved-samples/%Y/%m/',blank=True)
     packing_spec_file=models.FileField(upload_to='final-qc/packing-specs/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class FinalQCUnitScan(TimeStamped):
     DIRECTIONS=[('IN','FINAL QC IN SCAN'),('OUT','FINAL QC OUT SCAN')]
@@ -2291,6 +2578,11 @@ class FinalQCAutoReport(TimeStamped):
         constraints=[models.UniqueConstraint(fields=['report_date','slot'],name='unique_final_qc_auto_report_slot')]
 
 class FinishingPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     plan_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name="finishing_plans")
     planned_qty=models.PositiveIntegerField(default=0); target_date=models.DateField(null=True,blank=True)
@@ -2298,6 +2590,10 @@ class FinishingPlan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to="finishing/instructions/%Y/%m/",blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class FinishingScan(TimeStamped):
     plan=models.ForeignKey(FinishingPlan,on_delete=models.CASCADE,related_name="scans")
@@ -2341,6 +2637,11 @@ class FinishingAutoReport(TimeStamped):
 
 
 class PackingPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','QC','READY','HOLD','COMPLETED']]
     plan_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='packing_plans')
@@ -2358,6 +2659,10 @@ class PackingPlan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     packing_spec_file=models.FileField(upload_to='packing/specifications/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class PackingScan(TimeStamped):
     DIRECTIONS=[('IN','PACKING IN SCAN'),('OUT','PACKING OUT SCAN')]
@@ -2456,6 +2761,11 @@ class PackingAutoReport(TimeStamped):
 
 
 class ShippingPlan(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in [
         'DRAFT','PENDING_APPROVAL','APPROVED','READY','BOOKED','LOADING',
         'DISPATCHED','IN_TRANSIT','OUT_FOR_DELIVERY','DELIVERED','CLOSED','HOLD'
@@ -2492,6 +2802,10 @@ class ShippingPlan(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     shipping_instruction=models.FileField(upload_to='shipping/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class ShippingCartonScan(TimeStamped):
     SCAN_TYPES=[(x,x.replace('_',' ').title()) for x in ['SHIPPING_IN','CARTON_VERIFY','LOADING','GATE_OUT','DELIVERY']]
@@ -2574,6 +2888,11 @@ class ShippingAutoReport(TimeStamped):
 
 
 class SupplierMaster(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['PENDING_KYC','PENDING_APPROVAL','APPROVED','ON_HOLD','BLOCKED','BLACKLISTED','INACTIVE']]
     supplier_id=models.CharField(max_length=60,unique=True)
     company_name=models.CharField(max_length=220)
@@ -2589,6 +2908,10 @@ class SupplierMaster(TimeStamped):
     status=models.CharField(max_length=30,choices=STATUS,default='PENDING_KYC',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class SupplierDocument(TimeStamped):
     TYPES=[(x,x.replace('_',' ').title()) for x in ['KYC','TRADE_LICENSE','VAT_TAX_TIN','BANK','CERTIFICATE','COMPLIANCE','CONTRACT','INSURANCE','AUDIT','OTHER']]
@@ -2659,6 +2982,11 @@ class SupplierAutoReport(TimeStamped):
 
 
 class ProcurementRequest(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','STOCK_CHECK','RFQ','EVALUATION','PENDING_APPROVAL','APPROVED','ORDERED','PART_RECEIVED','RECEIVED','CLOSED','HOLD']]
     request_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,null=True,blank=True,on_delete=models.SET_NULL,related_name='procurement_requests')
@@ -2674,6 +3002,10 @@ class ProcurementRequest(TimeStamped):
     status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     requested_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class ProcurementComparison(TimeStamped):
     request=models.ForeignKey(ProcurementRequest,on_delete=models.CASCADE,related_name='comparisons')
@@ -2782,6 +3114,11 @@ class ProcurementAutoReport(TimeStamped):
 
 
 class PurchaseTransaction(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in ['OPEN','ACKNOWLEDGED','PART_DELIVERED','DELIVERED','INSPECTION','MATCH_PENDING','PAYMENT_PENDING','PAID','CLOSED','HOLD','CANCELLED']]
     po=models.OneToOneField(SupplierPurchaseOrder,on_delete=models.PROTECT,related_name='purchase_transaction')
     procurement_request=models.ForeignKey(ProcurementRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='purchase_transactions')
@@ -2795,6 +3132,10 @@ class PurchaseTransaction(TimeStamped):
     status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     notes=models.TextField(blank=True)
     managed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class PurchaseAmendment(TimeStamped):
     TYPES=[(x,x.replace('_',' ').title()) for x in ['QUANTITY','PRICE','DELIVERY_DATE','TERMS','CANCEL','OTHER']]
@@ -2839,6 +3180,11 @@ class PurchaseAutoReport(TimeStamped):
 
 
 class SourcingRequest(TimeStamped):
+    #: Organisation site this record belongs to. Null means unassigned and,
+    #: until TENANCY_STRICT is enabled, visible to every scope.
+    scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
+    all_objects=models.Manager()
+    objects=ScopedManager()
     STATUS=[(x,x.replace('_',' ').title()) for x in [
         'DRAFT','STOCK_CHECK','SUPPLIER_SEARCH','RFQ','SAMPLE','EVALUATION',
         'NEGOTIATION','PENDING_APPROVAL','NOMINATED','HANDED_TO_PROCUREMENT','CLOSED','HOLD'
@@ -2865,6 +3211,10 @@ class SourcingRequest(TimeStamped):
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     specification_file=models.FileField(upload_to='sourcing/specifications/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
+    class Meta:
+        base_manager_name='all_objects'
+        default_manager_name='all_objects'
 
 class SourcingCandidate(TimeStamped):
     SOURCE_TYPES=[('EXISTING','Existing Approved Supplier'),('NEW','New Supplier')]

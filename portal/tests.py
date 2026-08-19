@@ -1140,3 +1140,303 @@ class AuditRetentionTests(TestCase):
         self.assertFalse(AuditLog.objects.filter(pk=old.pk).exists())
         self.assertTrue(AuditLog.objects.filter(pk=recent.pk).exists())
         self.assertEqual(FileAccessLog.objects.count(), 1)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 - organisation scoping
+# ---------------------------------------------------------------------------
+
+class OrganisationTreeTests(TestCase):
+    """The materialised path is what subtree scoping matches on, so it has to be
+    right after every insert and move."""
+
+    def setUp(self):
+        from portal.models import OrganizationNode
+        self.country = OrganizationNode.objects.create(name='Bangladesh', node_type='Country')
+        self.company = OrganizationNode.objects.create(name='Rozalia BD', node_type='Company',
+                                                       parent=self.country)
+        self.factory_a = OrganizationNode.objects.create(name='Dhaka Factory',
+                                                         node_type='Factory', parent=self.company)
+        self.factory_b = OrganizationNode.objects.create(name='Chattogram Factory',
+                                                         node_type='Factory', parent=self.company)
+        self.unit = OrganizationNode.objects.create(name='Unit 1',
+                                                    node_type='Production Unit',
+                                                    parent=self.factory_a)
+
+    def test_paths_and_depths_are_maintained_on_save(self):
+        for node in (self.country, self.company, self.factory_a, self.unit):
+            node.refresh_from_db()
+        self.assertEqual(self.country.path, f'/{self.country.pk}/')
+        self.assertEqual(self.country.depth, 0)
+        self.assertEqual(self.unit.path,
+                         f'/{self.country.pk}/{self.company.pk}/{self.factory_a.pk}/{self.unit.pk}/')
+        self.assertEqual(self.unit.depth, 3)
+
+    def test_descendants_and_ancestors(self):
+        self.assertIn(self.unit, list(self.factory_a.descendants()))
+        self.assertNotIn(self.unit, list(self.factory_b.descendants()))
+        self.assertEqual([n.pk for n in self.unit.ancestors()],
+                         [self.country.pk, self.company.pk, self.factory_a.pk])
+
+    def test_moving_a_node_repaths_its_subtree(self):
+        self.factory_a.parent = self.factory_b
+        self.factory_a.save()
+        self.unit.refresh_from_db()
+        self.assertTrue(self.unit.path.startswith(self.factory_b.path))
+        self.assertIn(self.unit, list(self.factory_b.descendants()))
+
+    def test_rebuild_command_repairs_a_corrupted_path(self):
+        from django.core.management import call_command
+        from portal.models import OrganizationNode
+        OrganizationNode.objects.filter(pk=self.unit.pk).update(path='/wrong/', depth=99)
+        call_command('rebuild_org_paths', verbosity=0)
+        self.unit.refresh_from_db()
+        self.assertTrue(self.unit.path.startswith(self.factory_a.path))
+        self.assertEqual(self.unit.depth, 3)
+
+    def test_timezone_is_inherited_from_the_nearest_ancestor_that_sets_one(self):
+        from django.conf import settings
+        self.assertEqual(self.unit.effective_timezone, settings.TIME_ZONE)
+        self.country.timezone = 'Asia/Dhaka'
+        self.country.save()
+        self.unit.refresh_from_db()
+        self.assertEqual(self.unit.effective_timezone, 'Asia/Dhaka')
+        self.factory_a.timezone = 'Asia/Kolkata'
+        self.factory_a.save()
+        self.unit.refresh_from_db()
+        self.assertEqual(self.unit.effective_timezone, 'Asia/Kolkata')
+
+
+class ScopedQueryTests(TestCase):
+    """Cross-site isolation. TECHNICAL_ASSESSMENT.md 6.2."""
+
+    def setUp(self):
+        from decimal import Decimal as D
+        from portal.models import MasterOrder, OrganizationNode
+        self.company = OrganizationNode.objects.create(name='Rozalia', node_type='Company')
+        self.dhaka = OrganizationNode.objects.create(name='Dhaka', node_type='Factory',
+                                                     parent=self.company)
+        self.dhaka_unit = OrganizationNode.objects.create(name='Dhaka Unit 1',
+                                                          node_type='Production Unit',
+                                                          parent=self.dhaka)
+        self.ctg = OrganizationNode.objects.create(name='Chattogram', node_type='Factory',
+                                                    parent=self.company)
+        self.dhaka_order = MasterOrder.objects.create(
+            master_order_id='MO-DHK-1', buyer='B', product='Cap', quantity=1,
+            order_value=D('100'), scope=self.dhaka)
+        self.unit_order = MasterOrder.objects.create(
+            master_order_id='MO-DHK-UNIT', buyer='B', product='Cap', quantity=1,
+            order_value=D('100'), scope=self.dhaka_unit)
+        self.ctg_order = MasterOrder.objects.create(
+            master_order_id='MO-CTG-1', buyer='B', product='Cap', quantity=1,
+            order_value=D('100'), scope=self.ctg)
+        self.unassigned = MasterOrder.objects.create(
+            master_order_id='MO-NONE', buyer='B', product='Cap', quantity=1,
+            order_value=D('100'))
+
+    def _user_at(self, username, node, role=None):
+        from portal import roles
+        from portal.models import UserProfile
+        from django.contrib.auth.models import Group
+        user = User.objects.create_user(username=username, password='pw-for-tests-1234')
+        UserProfile.objects.create(user=user, role=role or roles.UNIT_MANAGER, scope=node)
+        group, _ = Group.objects.get_or_create(name=role or roles.UNIT_MANAGER)
+        user.groups.add(group)
+        return user
+
+    def test_a_factory_scope_sees_itself_and_below_but_not_a_sibling(self):
+        from portal.models import MasterOrder
+        from portal.tenancy import scope_context
+        with scope_context(self.dhaka):
+            visible = set(MasterOrder.objects.values_list('master_order_id', flat=True))
+        self.assertIn('MO-DHK-1', visible)
+        self.assertIn('MO-DHK-UNIT', visible)          # descendant
+        self.assertNotIn('MO-CTG-1', visible)          # sibling factory
+        self.assertIn('MO-NONE', visible)              # unassigned, strict mode off
+
+    def test_a_parent_scope_sees_both_factories(self):
+        from portal.models import MasterOrder
+        from portal.tenancy import scope_context
+        with scope_context(self.company):
+            visible = set(MasterOrder.objects.values_list('master_order_id', flat=True))
+        self.assertIn('MO-DHK-1', visible)
+        self.assertIn('MO-CTG-1', visible)
+
+    def test_no_active_scope_means_no_filtering(self):
+        """Management commands, Celery tasks and the shell are system contexts."""
+        from portal.models import MasterOrder
+        self.assertEqual(MasterOrder.objects.count(), 4)
+
+    def test_strict_mode_hides_unassigned_records(self):
+        from django.test import override_settings
+        from portal.models import MasterOrder
+        from portal.tenancy import scope_context
+        with override_settings(TENANCY_STRICT=True):
+            with scope_context(self.dhaka):
+                visible = set(MasterOrder.objects.values_list('master_order_id', flat=True))
+        self.assertIn('MO-DHK-1', visible)
+        self.assertNotIn('MO-NONE', visible)
+
+    def test_unscoped_block_bypasses_the_active_scope(self):
+        from portal.models import MasterOrder
+        from portal.tenancy import scope_context, unscoped
+        with scope_context(self.dhaka):
+            self.assertNotIn('MO-CTG-1',
+                             set(MasterOrder.objects.values_list('master_order_id', flat=True)))
+            with unscoped():
+                self.assertEqual(MasterOrder.objects.count(), 4)
+            # The scope is restored after the block.
+            self.assertNotIn('MO-CTG-1',
+                             set(MasterOrder.objects.values_list('master_order_id', flat=True)))
+
+    def test_all_objects_is_never_scoped(self):
+        from portal.models import MasterOrder
+        from portal.tenancy import scope_context
+        with scope_context(self.dhaka):
+            self.assertEqual(MasterOrder.all_objects.count(), 4)
+
+    def test_related_access_and_deletes_are_not_scoped(self):
+        """_base_manager must stay unscoped or reverse accessors go silently
+        incomplete and cascade deletes leave orphans."""
+        from portal.models import CuttingPlan, MasterOrder
+        CuttingPlan.objects.create(plan_no='CP-CTG-1', order=self.ctg_order,
+                                   product='Cap', scope=self.ctg)
+        self.assertEqual(MasterOrder._meta.base_manager_name, 'all_objects')
+        from portal.tenancy import scope_context
+        with scope_context(self.dhaka):
+            # Reached through the parent, so the sibling factory's plan is still
+            # visible to a legitimate traversal.
+            self.assertEqual(self.ctg_order.cutting_plans.count(), 1)
+
+    def test_the_view_layer_is_scoped_through_the_middleware(self):
+        from portal import roles
+        user = self._user_at('dhaka-mgr', self.dhaka, roles.OPERATION_MANAGER)
+        client = Client()
+        self.assertTrue(client.login(username=user.username, password='pw-for-tests-1234'))
+        body = client.get('/cutting-dashboard/').content.decode('utf8', 'replace')
+        self.assertIn('MO-DHK-1', body)
+        self.assertNotIn('MO-CTG-1', body)
+
+    def test_a_user_without_a_scope_sees_everything(self):
+        from portal import roles
+        user = self._user_at('hq-mgr', None, roles.OPERATION_MANAGER)
+        client = Client()
+        client.login(username=user.username, password='pw-for-tests-1234')
+        body = client.get('/cutting-dashboard/').content.decode('utf8', 'replace')
+        self.assertIn('MO-DHK-1', body)
+        self.assertIn('MO-CTG-1', body)
+
+    def test_a_superuser_is_never_scoped(self):
+        from portal.tenancy import resolve_user_scope
+        from portal.models import UserProfile
+        root = User.objects.create_user(username='root4', password='pw-for-tests-1234',
+                                        is_superuser=True, is_staff=True)
+        UserProfile.objects.create(user=root, role='CEO', scope=self.dhaka)
+        self.assertIsNone(resolve_user_scope(root))
+
+    def test_scope_does_not_leak_between_requests(self):
+        """gunicorn reuses threads, so a leaked scope would apply to whoever was
+        served next on that worker."""
+        from portal import roles
+        from portal.models import MasterOrder
+        from portal.tenancy import current_scope
+        user = self._user_at('leak-mgr', self.dhaka, roles.OPERATION_MANAGER)
+        client = Client()
+        client.login(username=user.username, password='pw-for-tests-1234')
+        client.get('/cutting-dashboard/')
+        self.assertIsNone(current_scope())
+        self.assertEqual(MasterOrder.objects.count(), 4)
+
+
+class ScopeCoverageTests(TestCase):
+    """Guards on the shape of the scoping layer itself."""
+
+    def test_the_aggregate_roots_are_scoped(self):
+        from portal import models as m
+        expected = [
+            m.Employee, m.MasterOrder, m.StockItem, m.Alert, m.ActionItem,
+            m.DocumentRecord, m.FinanceTransaction, m.ApprovalRequest,
+            m.MaterialMaster, m.AssetMachine, m.SupplierMaster, m.BuyerOpportunity,
+            m.CommunicationThread, m.CuttingPlan, m.EmbroideryPlan, m.LabelPlan,
+            m.QCInspectionPlan, m.HandIronPlan, m.PolyPlan, m.IronPlan,
+            m.FinalQCPlan, m.FinishingPlan, m.PackingPlan, m.ShippingPlan,
+            m.ProcurementRequest, m.SourcingRequest, m.PurchaseTransaction,
+        ]
+        from portal.tenancy import is_scoped_model
+        for model in expected:
+            with self.subTest(model=model.__name__):
+                self.assertTrue(is_scoped_model(model),
+                                f'{model.__name__} holds business data but has no scope')
+
+    def test_every_scoped_model_pins_its_base_manager(self):
+        """A scoped _base_manager breaks related descriptors and cascade deletes."""
+        from portal.tenancy import scoped_models
+        offenders = [model.__name__ for model in scoped_models()
+                     if model._meta.base_manager_name != 'all_objects']
+        self.assertEqual(offenders, [],
+                         f'scoped models with an unpinned base manager: {offenders}')
+
+    def test_report_unscoped_counts_what_is_left_to_assign(self):
+        from io import StringIO
+        from decimal import Decimal as D
+        from django.core.management import call_command
+        from portal.models import MasterOrder
+        MasterOrder.objects.create(master_order_id='MO-U1', buyer='B', product='Cap',
+                                   quantity=1, order_value=D('1'))
+        out = StringIO()
+        call_command('report_unscoped', stdout=out)
+        report = out.getvalue()
+        self.assertIn('MasterOrder', report)
+        self.assertIn('no site', report)
+
+
+class SiteTimezonePayrollTests(TestCase):
+    """Per-site clocks are the reason the workforce needed a scope."""
+
+    def test_attendance_uses_the_site_clock_not_the_server_clock(self):
+        from datetime import datetime, time as t
+        from decimal import Decimal as D
+        from django.utils import timezone as tz
+        import zoneinfo
+        from portal.models import AttendanceEvent, OrganizationNode
+        from portal.services import employee_timezone
+
+        site = OrganizationNode.objects.create(name='Kolkata Unit', node_type='Factory',
+                                               timezone='Asia/Kolkata')
+        employee = Employee.objects.create(employee_id='OP-TZ4', name='Cross Border',
+                                           role='Operator', category='OPERATOR',
+                                           daily_cost=D('480'), scope=site)
+        self.assertEqual(employee_timezone(employee), zoneinfo.ZoneInfo('Asia/Kolkata'))
+
+        # A local 08:00-17:00 day in the site's own clock is a full shift.
+        day = _working_day()
+        zone = zoneinfo.ZoneInfo('Asia/Kolkata')
+        for name, at in [('CHECK_IN', t(8, 0)), ('BREAK_IN', t(13, 0)),
+                         ('BREAK_OUT', t(14, 0)), ('CHECK_OUT', t(17, 0))]:
+            AttendanceEvent.objects.create(
+                employee=employee, event=name,
+                occurred_at=datetime.combine(day, at).replace(tzinfo=zone))
+        summary = calculate_attendance_day(employee, day)
+        self.assertEqual(summary.worked_minutes, 480)
+        self.assertEqual(summary.late_minutes, 0)
+
+    def test_an_unscoped_employee_falls_back_to_the_project_clock(self):
+        from decimal import Decimal as D
+        from django.utils import timezone as tz
+        from portal.services import employee_timezone
+        employee = Employee.objects.create(employee_id='OP-TZ5', name='No Site',
+                                           role='Operator', category='OPERATOR',
+                                           daily_cost=D('480'))
+        self.assertEqual(employee_timezone(employee), tz.get_current_timezone())
+
+    def test_an_invalid_timezone_does_not_stop_payroll(self):
+        from decimal import Decimal as D
+        from django.utils import timezone as tz
+        from portal.models import OrganizationNode
+        from portal.services import employee_timezone
+        site = OrganizationNode.objects.create(name='Typo Site', node_type='Factory',
+                                               timezone='Not/AZone')
+        employee = Employee.objects.create(employee_id='OP-TZ6', name='Typo',
+                                           role='Operator', category='OPERATOR',
+                                           daily_cost=D('480'), scope=site)
+        self.assertEqual(employee_timezone(employee), tz.get_current_timezone())
