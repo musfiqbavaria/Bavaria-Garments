@@ -4,22 +4,79 @@ from celery.schedules import crontab
 from dotenv import load_dotenv
 BASE_DIR=Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR/'.env')
-SECRET_KEY=os.getenv('DJANGO_SECRET_KEY','unsafe-dev')
-DEBUG=os.getenv('DJANGO_DEBUG','0')=='1'
-ALLOWED_HOSTS=[x.strip() for x in os.getenv('DJANGO_ALLOWED_HOSTS','localhost').split(',') if x.strip()]
-CSRF_TRUSTED_ORIGINS=[x.strip() for x in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS','').split(',') if x.strip()]
+
+
+def env(*names, default=''):
+    """First non-empty value among ``names``.
+
+    Several names are accepted per setting because two vocabularies are in use:
+    the DJANGO_-prefixed names this project has always read, and the shorter
+    unprefixed names (SECRET_KEY, DEBUG, ALLOWED_HOSTS, DB_*) that a hand-written
+    .env is likely to use. The prefixed name wins where both are set. The
+    canonical spelling for each setting is the one documented in .env.example.
+    """
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip() != '':
+            return value.strip()
+    return default
+
+
+def _flag(*names, default='0'):
+    """Read a boolean flag. Accepts 1/true/yes/on in any case.
+
+    Plain equality against '1' rejected DEBUG=True, which is the spelling most
+    people write.
+    """
+    return env(*names, default=default).lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _csv(*names, default=''):
+    return [item.strip() for item in env(*names, default=default).split(',') if item.strip()]
+
+
+def _int(*names, default=0):
+    try:
+        return int(env(*names, default=str(default)))
+    except ValueError:
+        return default
+
+
+SECRET_KEY=env('DJANGO_SECRET_KEY','SECRET_KEY',default='unsafe-dev')
+DEBUG=_flag('DJANGO_DEBUG','DEBUG')
+ALLOWED_HOSTS=_csv('DJANGO_ALLOWED_HOSTS','ALLOWED_HOSTS',default='localhost')
+CSRF_TRUSTED_ORIGINS=_csv('DJANGO_CSRF_TRUSTED_ORIGINS','CSRF_TRUSTED_ORIGINS')
 INSTALLED_APPS=['django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles','portal']
 MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','portal.middleware.TenancyMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
 ROOT_URLCONF='core.urls'
 TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal']}}]
 WSGI_APPLICATION='core.wsgi.application'
 ASGI_APPLICATION='core.asgi.application'
-DATABASES={'default':{'ENGINE':'django.db.backends.postgresql','NAME':os.getenv('POSTGRES_DB'),'USER':os.getenv('POSTGRES_USER'),'PASSWORD':os.getenv('POSTGRES_PASSWORD'),'HOST':os.getenv('POSTGRES_HOST','db'),'PORT':os.getenv('POSTGRES_PORT','5432')}}
-
-def _flag(name, default='0'):
-    """Read a boolean environment flag."""
-    return os.getenv(name, default).strip().lower() in {'1', 'true', 'yes', 'on'}
-
+# --- database ---------------------------------------------------------------
+# Postgres is the deployment target and stays the default. SQLite is selectable
+# for local work, because the project previously could not run at all without a
+# Postgres instance and the psycopg driver - which made it awkward to try
+# anything without Docker.
+#
+# SQLite is for development only: it has no concurrent-write story, and the
+# scoping and reporting queries are written for Postgres.
+DB_ENGINE=env('DJANGO_DB_ENGINE','DB_ENGINE',default='postgres').lower()
+if DB_ENGINE in {'sqlite','sqlite3','django.db.backends.sqlite3'}:
+    DATABASES={'default':{
+        'ENGINE':'django.db.backends.sqlite3',
+        'NAME':BASE_DIR/env('DB_NAME','POSTGRES_DB',default='db.sqlite3'),
+    }}
+else:
+    DATABASES={'default':{
+        'ENGINE':'django.db.backends.postgresql',
+        'NAME':env('POSTGRES_DB','DB_NAME'),
+        'USER':env('POSTGRES_USER','DB_USER'),
+        'PASSWORD':env('POSTGRES_PASSWORD','DB_PASSWORD'),
+        'HOST':env('POSTGRES_HOST','DB_HOST',default='db'),
+        'PORT':env('POSTGRES_PORT','DB_PORT',default='5432'),
+        # Reuse connections between requests instead of reconnecting each time.
+        'CONN_MAX_AGE':_int('DJANGO_CONN_MAX_AGE',default=60),
+    }}
 
 # --- passwords --------------------------------------------------------------
 # Validation was disabled entirely, so any user could set "1" as a password on a
@@ -35,7 +92,8 @@ AUTH_PASSWORD_VALIDATORS=[
 # .env shipped inside the delivered package with this exact key, so it must be
 # treated as public. Failing loudly here is the only reliable way to stop a
 # deploy that would otherwise silently sign sessions with a known secret.
-_PUBLISHED_DEV_SECRETS={'unsafe-dev','local-dev-change-before-production'}
+_PUBLISHED_DEV_SECRETS={'unsafe-dev','local-dev-change-before-production',
+                       'CHANGE_THIS_TO_A_LONG_RANDOM_SECRET','changeme','secret'}
 if not DEBUG and SECRET_KEY in _PUBLISHED_DEV_SECRETS:
     from django.core.exceptions import ImproperlyConfigured
     raise ImproperlyConfigured(
@@ -52,7 +110,7 @@ SECURE_SSL_ENABLED=_flag('DJANGO_SECURE_SSL')
 SECURE_SSL_REDIRECT=SECURE_SSL_ENABLED
 SESSION_COOKIE_SECURE=SECURE_SSL_ENABLED
 CSRF_COOKIE_SECURE=SECURE_SSL_ENABLED
-SECURE_HSTS_SECONDS=int(os.getenv('DJANGO_HSTS_SECONDS','31536000')) if SECURE_SSL_ENABLED else 0
+SECURE_HSTS_SECONDS=_int('DJANGO_HSTS_SECONDS',default=31536000) if SECURE_SSL_ENABLED else 0
 SECURE_HSTS_INCLUDE_SUBDOMAINS=SECURE_SSL_ENABLED
 SECURE_HSTS_PRELOAD=SECURE_SSL_ENABLED
 
@@ -61,7 +119,7 @@ SESSION_COOKIE_HTTPONLY=True
 CSRF_COOKIE_HTTPONLY=False          # the CSRF token must be readable by forms
 SESSION_COOKIE_SAMESITE='Lax'
 CSRF_COOKIE_SAMESITE='Lax'
-SESSION_COOKIE_AGE=int(os.getenv('DJANGO_SESSION_AGE','43200'))   # 12 hours
+SESSION_COOKIE_AGE=_int('DJANGO_SESSION_AGE',default=43200)   # 12 hours
 SESSION_EXPIRE_AT_BROWSER_CLOSE=True
 SESSION_SAVE_EVERY_REQUEST=True     # sliding expiry on an operational console
 
@@ -74,7 +132,7 @@ X_FRAME_OPTIONS='DENY'
 # --- upload limits ----------------------------------------------------------
 # nginx caps the body at 50M; keep Django's own limits in step so a large upload
 # fails cleanly instead of exhausting worker memory.
-DATA_UPLOAD_MAX_MEMORY_SIZE=int(os.getenv('DJANGO_MAX_UPLOAD_BYTES', str(52428800)))
+DATA_UPLOAD_MAX_MEMORY_SIZE=_int('DJANGO_MAX_UPLOAD_BYTES',default=52428800)
 FILE_UPLOAD_MAX_MEMORY_SIZE=5242880
 DATA_UPLOAD_MAX_NUMBER_FIELDS=2000
 
@@ -82,7 +140,7 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS=2000
 # Backs the login throttle. Redis is shared across gunicorn workers, so a
 # per-process LocMemCache would let the throttle be bypassed by hitting a
 # different worker. Falls back to LocMemCache when no Redis URL is configured.
-_REDIS_URL=os.getenv('REDIS_URL','').strip()
+_REDIS_URL=env('REDIS_URL')
 if _REDIS_URL:
     # Short socket timeouts matter: without them a Redis outage makes every
     # login hang on the throttle lookup instead of failing open immediately.
@@ -96,8 +154,8 @@ else:
 
 # --- login throttle ---------------------------------------------------------
 # There was no rate limiting on /login/ or any API endpoint.
-LOGIN_ATTEMPT_LIMIT=int(os.getenv('DJANGO_LOGIN_ATTEMPT_LIMIT','10'))
-LOGIN_ATTEMPT_WINDOW_SECONDS=int(os.getenv('DJANGO_LOGIN_ATTEMPT_WINDOW','900'))
+LOGIN_ATTEMPT_LIMIT=_int('DJANGO_LOGIN_ATTEMPT_LIMIT',default=10)
+LOGIN_ATTEMPT_WINDOW_SECONDS=_int('DJANGO_LOGIN_ATTEMPT_WINDOW',default=900)
 
 # --- logging ----------------------------------------------------------------
 # LOGGING was not configured at all, so no failure anywhere in the platform was
@@ -112,12 +170,12 @@ LOGGING={
  'handlers':{
    'console':{'class':'logging.StreamHandler','formatter':'standard'},
  },
- 'root':{'handlers':['console'],'level':os.getenv('DJANGO_LOG_LEVEL','INFO')},
+ 'root':{'handlers':['console'],'level':env('DJANGO_LOG_LEVEL',default='INFO')},
  'loggers':{
    'django.request':{'handlers':['console'],'level':'WARNING','propagate':False},
    # Refused access attempts. Worth shipping to a SIEM.
    'portal.authorization':{'handlers':['console'],'level':'INFO','propagate':False},
-   'portal':{'handlers':['console'],'level':os.getenv('DJANGO_LOG_LEVEL','INFO'),'propagate':False},
+   'portal':{'handlers':['console'],'level':env('DJANGO_LOG_LEVEL',default='INFO'),'propagate':False},
  },
 }
 LANGUAGE_CODE='en-gb'
@@ -134,13 +192,13 @@ LANGUAGE_CODE='en-gb'
 # Per-site timezones for genuine multi-country operation need OrganizationNode
 # to carry its own zone and the report models to be scoped to a factory; see
 # TECHNICAL_ASSESSMENT.md 5.5.
-TIME_ZONE=os.getenv('TIME_ZONE','Asia/Dhaka')
+TIME_ZONE=env('TIME_ZONE',default='Asia/Dhaka')
 USE_I18N=True; USE_TZ=True
 STATIC_URL='/static/'; STATIC_ROOT=BASE_DIR/'staticfiles'; STATICFILES_DIRS=[BASE_DIR/'static']
 MEDIA_URL='/media/'; MEDIA_ROOT=BASE_DIR/'media'
 DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
 LOGIN_URL='/login/'; LOGIN_REDIRECT_URL='/dashboard/'; LOGOUT_REDIRECT_URL='/login/'
-CELERY_BROKER_URL=os.getenv('REDIS_URL','redis://redis:6379/0'); CELERY_RESULT_BACKEND=CELERY_BROKER_URL
+CELERY_BROKER_URL=env('REDIS_URL',default='redis://redis:6379/0'); CELERY_RESULT_BACKEND=CELERY_BROKER_URL
 # Celery reads only CELERY_* keys, so Django's TIME_ZONE does not reach it.
 # Unset, beat defaulted to UTC and the three "Bangladesh" slots actually fired at
 # 08:00/13:00/20:00 UTC - 14:00/19:00/02:00 Dhaka, the last on the wrong date.
@@ -161,19 +219,19 @@ CELERY_BEAT_SCHEDULE={
 # Consolidated reporting currency, signed off for Phase 3. Rozalia Limited is the
 # Irish parent, so EUR is the base; BDT production costs and USD buyer values
 # convert into it for any figure that spans entities.
-BASE_CURRENCY=os.getenv('BASE_CURRENCY','EUR')
+BASE_CURRENCY=env('BASE_CURRENCY','DEFAULT_CURRENCY',default='EUR')
 
 # Daily rate feed. Deliberately empty by default so no outbound request is made
 # until it is configured: the endpoint is an external service and must be
 # authorised before use. Any provider returning {"base": "EUR", "rates": {...}}
 # works, e.g. https://api.frankfurter.app/latest (ECB rates, no key required).
 # The fetched rates are public reference data; no company data is transmitted.
-EXCHANGE_RATE_API_URL=os.getenv('EXCHANGE_RATE_API_URL','').strip()
-EXCHANGE_RATE_API_KEY=os.getenv('EXCHANGE_RATE_API_KEY','').strip()
-EXCHANGE_RATE_TIMEOUT_SECONDS=int(os.getenv('EXCHANGE_RATE_TIMEOUT','10'))
+EXCHANGE_RATE_API_URL=env('EXCHANGE_RATE_API_URL')
+EXCHANGE_RATE_API_KEY=env('EXCHANGE_RATE_API_KEY')
+EXCHANGE_RATE_TIMEOUT_SECONDS=_int('EXCHANGE_RATE_TIMEOUT',default=10)
 # Refuse to convert with a rate older than this, rather than silently reporting
 # stale figures as current.
-EXCHANGE_RATE_MAX_AGE_DAYS=int(os.getenv('EXCHANGE_RATE_MAX_AGE_DAYS','7'))
+EXCHANGE_RATE_MAX_AGE_DAYS=_int('EXCHANGE_RATE_MAX_AGE_DAYS',default=7)
 
 # --- organisation scoping ---------------------------------------------------
 # Off means records with no site assigned stay visible to every scope, which is
@@ -182,7 +240,50 @@ EXCHANGE_RATE_MAX_AGE_DAYS=int(os.getenv('EXCHANGE_RATE_MAX_AGE_DAYS','7'))
 # Turn this on once `manage.py report_unscoped` comes back clean.
 TENANCY_STRICT=_flag('TENANCY_STRICT')
 
+# --- email ------------------------------------------------------------------
+# Nothing in the project configured email at all, so the Communication Center's
+# EMAIL channel and every notification had no transport. The console backend is
+# the default so a misconfigured server prints instead of silently failing, and
+# so development never mails a real buyer or member of staff by accident.
+EMAIL_BACKEND=env('EMAIL_BACKEND',default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST=env('EMAIL_HOST')
+EMAIL_PORT=_int('EMAIL_PORT',default=587)
+EMAIL_HOST_USER=env('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD=env('EMAIL_HOST_PASSWORD')
+EMAIL_USE_TLS=_flag('EMAIL_USE_TLS',default='1')
+EMAIL_USE_SSL=_flag('EMAIL_USE_SSL')
+EMAIL_TIMEOUT=_int('EMAIL_TIMEOUT',default=15)
+DEFAULT_FROM_EMAIL=env('DEFAULT_FROM_EMAIL',default='no-reply@emeraldrozalia.com')
+SERVER_EMAIL=env('SERVER_EMAIL',default=DEFAULT_FROM_EMAIL)
+
+# --- external integrations --------------------------------------------------
+# Credentials are read here so they live in the environment rather than in
+# source or in a CommunicationConnector row. NOTE: no code sends through these
+# yet - the WhatsApp and email channels are represented by connector-backed
+# message queues, and an actual delivery implementation is still outstanding.
+# Declaring them does not enable them.
+#
+# Company policy requires written authorisation before any external service is
+# used, and before any company data is sent to one. That applies to every value
+# in this block. The OpenAI key in particular would send whatever is passed to it
+# outside the estate, so treat wiring it up as a decision that needs sign-off,
+# not a configuration change.
+WHATSAPP_ACCESS_TOKEN=env('WHATSAPP_ACCESS_TOKEN')
+WHATSAPP_PHONE_NUMBER_ID=env('WHATSAPP_PHONE_NUMBER_ID')
+WHATSAPP_BUSINESS_ACCOUNT_ID=env('WHATSAPP_BUSINESS_ACCOUNT_ID')
+WHATSAPP_API_VERSION=env('WHATSAPP_API_VERSION',default='v21.0')
+OPENAI_API_KEY=env('OPENAI_API_KEY')
+
+# --- first-run administrator ------------------------------------------------
+# Consumed by manage.py seed_project1.
+DEFAULT_ADMIN_USERNAME=env('DEFAULT_ADMIN_USERNAME',default='admin')
+DEFAULT_ADMIN_EMAIL=env('DEFAULT_ADMIN_EMAIL',default='admin@example.com')
+DEFAULT_ADMIN_PASSWORD=env('DEFAULT_ADMIN_PASSWORD',default='')
+
+# --- business rules ---------------------------------------------------------
+BANGLADESH_OVERSEAS_INCENTIVE_RATE=env('BANGLADESH_OVERSEAS_INCENTIVE_RATE',default='2.5')
+
 # --- audit retention --------------------------------------------------------
 # AuditMiddleware writes a row per authenticated request, with no retention.
-AUDIT_LOG_RETENTION_DAYS=int(os.getenv('AUDIT_LOG_RETENTION_DAYS','365'))
+AUDIT_LOG_RETENTION_DAYS=_int('AUDIT_LOG_RETENTION_DAYS',default=365)
 SECURE_PROXY_SSL_HEADER=('HTTP_X_FORWARDED_PROTO','https')

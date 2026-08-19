@@ -1440,3 +1440,105 @@ class SiteTimezonePayrollTests(TestCase):
                                            role='Operator', category='OPERATOR',
                                            daily_cost=D('480'), scope=site)
         self.assertEqual(employee_timezone(employee), tz.get_current_timezone())
+
+
+class EnvironmentConfigTests(TestCase):
+    """Configuration wiring. Every value in .env must actually reach a setting.
+
+    The proposed .env used a second vocabulary - SECRET_KEY, DEBUG, DB_ENGINE,
+    DEFAULT_CURRENCY - and asked for email, WhatsApp and OpenAI settings that
+    nothing in the project read. Writing those names into the file alone would
+    have left all of them inert, so settings.py accepts both spellings and these
+    tests hold that contract.
+    """
+
+    def test_env_prefers_the_canonical_name_then_falls_back(self):
+        import os
+        from unittest.mock import patch
+        from core.settings import env
+        with patch.dict(os.environ, {'DJANGO_SECRET_KEY': 'canonical',
+                                     'SECRET_KEY': 'short'}, clear=False):
+            self.assertEqual(env('DJANGO_SECRET_KEY', 'SECRET_KEY'), 'canonical')
+        with patch.dict(os.environ, {'SECRET_KEY': 'short'}, clear=False):
+            os.environ.pop('DJANGO_SECRET_KEY', None)
+            self.assertEqual(env('DJANGO_SECRET_KEY', 'SECRET_KEY'), 'short')
+
+    def test_env_treats_an_empty_value_as_unset(self):
+        import os
+        from unittest.mock import patch
+        from core.settings import env
+        with patch.dict(os.environ, {'A_TEST_VAR': '   '}, clear=False):
+            self.assertEqual(env('A_TEST_VAR', default='fallback'), 'fallback')
+
+    def test_boolean_flags_accept_the_spellings_people_write(self):
+        import os
+        from unittest.mock import patch
+        from core.settings import _flag
+        for value in ('1', 'true', 'True', 'TRUE', 'yes', 'on'):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {'A_TEST_FLAG': value}, clear=False):
+                    self.assertTrue(_flag('A_TEST_FLAG'))
+        for value in ('0', 'false', 'False', 'no', 'off', ''):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {'A_TEST_FLAG': value}, clear=False):
+                    self.assertFalse(_flag('A_TEST_FLAG'))
+
+    def test_int_falls_back_rather_than_crashing_on_junk(self):
+        import os
+        from unittest.mock import patch
+        from core.settings import _int
+        with patch.dict(os.environ, {'A_TEST_INT': 'not-a-number'}, clear=False):
+            self.assertEqual(_int('A_TEST_INT', default=42), 42)
+
+    def test_every_setting_the_example_declares_is_read_by_settings(self):
+        """A variable documented in .env.example but never read is a trap: it
+        looks configured and does nothing."""
+        import re
+        from pathlib import Path
+        from django.conf import settings
+
+        example = Path('.env.example').read_text(encoding='utf-8')
+        declared = {m.group(1) for m in
+                    re.finditer(r'^([A-Z][A-Z0-9_]*)=', example, re.M)}
+        source = Path('core/settings.py').read_text(encoding='utf-8')
+        seeder = Path('portal/management/commands/seed_project1.py').read_text(encoding='utf-8')
+        backup = Path('scripts/backup.sh').read_text(encoding='utf-8')
+        consumers = source + seeder + backup
+
+        unread = sorted(name for name in declared if name not in consumers)
+        self.assertEqual(unread, [],
+                         'documented in .env.example but read by nothing: '
+                         + ', '.join(unread))
+
+    def test_email_is_configured(self):
+        from django.conf import settings
+        # There was no email configuration at all, so the Communication Center's
+        # EMAIL channel had no transport.
+        self.assertTrue(settings.EMAIL_BACKEND)
+        self.assertTrue(settings.DEFAULT_FROM_EMAIL)
+        self.assertIsInstance(settings.EMAIL_PORT, int)
+        self.assertIsInstance(settings.EMAIL_USE_TLS, bool)
+
+    def test_the_integration_placeholders_exist_but_are_empty_by_default(self):
+        from django.conf import settings
+        # Declared so credentials live in the environment rather than in source,
+        # but nothing sends through them yet and none should be set by default.
+        for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
+                     'WHATSAPP_BUSINESS_ACCOUNT_ID', 'OPENAI_API_KEY'):
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(settings, name))
+
+    def test_placeholder_secrets_are_blocked_out_of_debug(self):
+        from core.settings import _PUBLISHED_DEV_SECRETS
+        for placeholder in ('unsafe-dev', 'local-dev-change-before-production',
+                            'CHANGE_THIS_TO_A_LONG_RANDOM_SECRET'):
+            with self.subTest(placeholder=placeholder):
+                self.assertIn(placeholder, _PUBLISHED_DEV_SECRETS)
+
+    def test_sqlite_is_selectable_without_postgres(self):
+        """The project previously could not run at all without Postgres and
+        psycopg, which made it awkward to try anything without Docker."""
+        from pathlib import Path
+        source = Path('core/settings.py').read_text(encoding='utf-8')
+        self.assertIn("django.db.backends.sqlite3", source)
+        self.assertIn("DB_ENGINE", source)
