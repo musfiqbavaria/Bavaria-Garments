@@ -1,0 +1,11 @@
+{
+  // Recommended for this workspace. The Django extension provides the
+  // django-html language support that files.associations in settings.json
+  // relies on to keep HTML formatters away from the templates.
+  "recommendations": ["batisteo.vscode-django", "ms-python.python"],
+
+  // Prettier must not be used on this project's templates. It is listed as
+  // unwanted so nobody installs it and re-breaks them. If you need it for
+  // non-template files, .prettierignore already excludes every *.html.
+  "unwantedRecommendations": ["esbenp.prettier-vscode"]
+}

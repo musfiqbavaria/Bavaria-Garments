@@ -1,0 +1,65 @@
+{
+  // -------------------------------------------------------------------------
+  // Emerald Rozalia - Project 1 : workspace guards
+  //
+  // The templates in this project were once reformatted by an HTML formatter.
+  // Prettier and VS Code's built-in HTML formatter both rewrite the inside of
+  // {% %} and {{ }} blocks, which silently breaks every affected template.
+  // That incident broke 30 of 39 templates. See TECHNICAL_ASSESSMENT.md 2.2.
+  //
+  // These settings stop it happening again. Do not relax them.
+  // -------------------------------------------------------------------------
+
+  // Re-label templates as django-html. This is the strongest guard: once the
+  // language id is not "html", neither Prettier nor the built-in HTML
+  // formatter claims the file at all.
+  "files.associations": {
+    "**/templates/**/*.html": "django-html"
+  },
+
+  // Belt and braces: NO tool may edit a template on save, whatever language
+  // id it ends up with. That includes whitespace trimming and newline
+  // insertion, which are also automatic rewrites of template bytes.
+  "[html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "files.trimTrailingWhitespace": false,
+    "files.insertFinalNewline": false
+  },
+  "[django-html]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "files.trimTrailingWhitespace": false,
+    "files.insertFinalNewline": false
+  },
+
+  // Emmet still needs to understand django-html for editing convenience.
+  "emmet.includeLanguages": {
+    "django-html": "html"
+  },
+
+  // Long single-line templates: leave them as they are on screen. Soft-wrap
+  // only, never a real reflow.
+  "editor.wordWrap": "off",
+
+  // Exclude heavy generated / binary trees from search so codebase-wide
+  // lookups stay fast (references/ alone is 82 MB).
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/staticfiles": true,
+    "**/media": true,
+    "**/backups": true,
+    "references": true,
+    "static/img": true,
+    "static/reference": true
+  },
+  "files.watcherExclude": {
+    "**/__pycache__/**": true,
+    "**/staticfiles/**": true,
+    "**/backups/**": true,
+    "references/**": true
+  },
+
+  "python.analysis.extraPaths": ["."],
+  "files.eol": "\n"
+}
