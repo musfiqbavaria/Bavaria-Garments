@@ -1,7 +1,34 @@
 from django.contrib import admin
 from .models import *
-for m in [OrganizationNode,Department,UserProfile,DashboardPage,Employee,AttendanceEvent,MasterOrder,StockItem,StockMovement,FormDefinition,FormSubmission,Alert,ActionItem,Communication,DocumentRecord,BarcodeAsset,FinanceTransaction,ReportSnapshot,AuditLog]:
+
+
+class ReadOnlyAuditAdmin(admin.ModelAdmin):
+    """Audit records are evidence: viewable, never editable.
+
+    AuditLog and FileAccessLog were registered bare, so any user with the Django
+    is_staff flag could edit or delete access history - which defeats the audit
+    trail the compliance requirement depends on. ApprovalDecisionLog is the
+    record of who authorised what, so it is locked the same way.
+    """
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+for m in [OrganizationNode,Department,UserProfile,DashboardPage,Employee,AttendanceEvent,MasterOrder,StockItem,StockMovement,FormDefinition,FormSubmission,Alert,ActionItem,Communication,DocumentRecord,BarcodeAsset,FinanceTransaction,ReportSnapshot]:
     admin.site.register(m)
+
+for m in [AuditLog, FileAccessLog, ApprovalDecisionLog]:
+    try: admin.site.register(m, ReadOnlyAuditAdmin)
+    except admin.sites.AlreadyRegistered: pass
 
 from .models import ApprovalRequest, StockScan, ValueVariance, DeviceIntegration, AttendanceDailySummary
 admin.site.register(ApprovalRequest)
@@ -33,11 +60,6 @@ except admin.sites.AlreadyRegistered:
 
 try:
     admin.site.register(FreeCapacityOpportunity)
-except admin.sites.AlreadyRegistered:
-    pass
-
-try:
-    admin.site.register(FileAccessLog)
 except admin.sites.AlreadyRegistered:
     pass
 

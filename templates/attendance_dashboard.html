@@ -820,7 +820,7 @@
           <div class="camera-grid">
             {% for c in cameras %}
             <div class="cam">
-              {% if c.thumbnail %}<img src="{{c.thumbnail.url}}" />{% else %}
+              {% if c.thumbnail %}<img src="{% url 'universal_file_action' 'attendance_cctv_thumbnail' c.id 'preview' %}" />{% else %}
               <div class="fallback">CCTV {{c.name}}</div>
               {% endif %}<span>{{c.location}} <b>● LIVE</b></span>
             </div>
