@@ -13,16 +13,30 @@ Server-ready Python/Django package for the approved Project 1 architecture.
 - PostgreSQL + Redis + Celery + Gunicorn + Nginx + Docker Compose.
 - Original uploaded Project 1 screenshots bundled under `references/` as visual targets.
 
-## Quick start (Docker)
-1. Copy `.env.example` to `.env` and replace all production secrets.
-2. `docker compose up -d --build`
-3. `docker compose exec web python manage.py makemigrations portal --noinput`
-4. `docker compose exec web python manage.py migrate --run-syncdb --noinput`
-5. `docker compose exec web python manage.py seed_project1`
-6. `docker compose exec web python manage.py collectstatic --noinput`
-7. Open `http://SERVER_IP/` (or the configured domain).
+## Quick start
 
-Default seed admin comes from `.env`; change it immediately.
+```bash
+cp .env.example .env      # only if you do not already have one
+./scripts/run_local.sh
+```
+
+Then open **http://localhost** and sign in with `DEFAULT_ADMIN_USERNAME` /
+`DEFAULT_ADMIN_PASSWORD` from `.env`. Change that password immediately.
+
+Full step-by-step, including running without Docker and what to do when something
+fails: **[RUNNING_LOCALLY.md](RUNNING_LOCALLY.md)**.
+
+> The previous quick start told you to run `makemigrations` inside the container.
+> Do not: migrations are generated and reviewed in development and committed to
+> the repository, and the container entrypoint now refuses to start if the models
+> have drifted from them. `--run-syncdb` is likewise no longer needed. Deploy to a
+> server with `scripts/deploy.sh`.
+
+## Current status
+
+This README describes what each development wave set out to build. For what the
+code actually does — measured rather than intended, with the known gaps — see
+**[TECHNICAL_ASSESSMENT.md](TECHNICAL_ASSESSMENT.md)**.
 
 ## Important
 This package provides a runnable unified core, data model, routing, dashboard framework, seeded page/form registry and shared operational engines. Specialized third-party integrations (WhatsApp Cloud API, Hikvision credentials, ZKTeco device access, SIP/PBX, payment gateway, SMTP) require real credentials/network endpoints before live use.
