@@ -39,6 +39,19 @@ services:
     restart: unless-stopped
     command: celery -A core worker -l INFO
     env_file: .env
+    # Only web migrates and seeds. Three containers racing the same migration is
+    # how a schema ends up half-applied.
+    environment:
+      DJANGO_AUTO_MIGRATE: "0"
+      DJANGO_AUTO_SEED: "0"
+    # The image healthcheck is an HTTP probe for web. A worker serves no HTTP, so
+    # ask celery whether it is responding on the broker instead.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A core inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -47,8 +60,23 @@ services:
   beat:
     build: .
     restart: unless-stopped
-    command: celery -A core beat -l INFO
+    # beat writes its schedule and pidfile to the working directory by default,
+    # which the unprivileged user must not need to write to. Keep both in
+    # /app/run, which is a volume, so the schedule survives a restart and beat
+    # does not re-fire slots it has already run.
+    command: >
+      celery -A core beat -l INFO
+      --schedule=/app/run/celerybeat-schedule
+      --pidfile=
     env_file: .env
+    environment:
+      DJANGO_AUTO_MIGRATE: "0"
+      DJANGO_AUTO_SEED: "0"
+    volumes: ["beat_data:/app/run"]
+    # A scheduler exposes nothing to probe, and the image's HTTP check would mark
+    # it permanently unhealthy.
+    healthcheck:
+      disable: true
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -73,3 +101,4 @@ volumes:
   postgres_data:
   static_data:
   media_data:
+  beat_data:

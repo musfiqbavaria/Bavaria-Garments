@@ -31,15 +31,26 @@ COPY --from=build /install /usr/local
 RUN useradd --create-home --uid 10001 appuser
 
 COPY --chown=appuser:appuser . .
+# /app itself is created root-owned by WORKDIR, and --chown only affects the files
+# copied into it. Without this the unprivileged user cannot create new files in
+# the working directory - which is exactly where celery beat writes its schedule.
+# /app/run holds runtime state that must survive a rebuild.
 RUN chmod +x scripts/*.sh \
-    && mkdir -p /app/media /app/staticfiles \
-    && chown -R appuser:appuser /app/media /app/staticfiles
+    && mkdir -p /app/media /app/staticfiles /app/run \
+    && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+# Waits for the database, migrates and collects static before the command runs,
+# so `docker compose up` yields a working application rather than 500s until
+# someone remembers to migrate. Gated by DJANGO_AUTO_MIGRATE / DJANGO_AUTO_SEED.
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+
+# Suits the web service. worker and beat serve no HTTP and override this in
+# docker-compose.yml; inheriting it would mark them permanently unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
   CMD curl -fsS http://127.0.0.1:8000/login/ >/dev/null || exit 1
 
 # --access-logfile - so request logs reach the container log, matching the
