@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.test import Client, TestCase
 from django.utils import timezone
 import json
-from .models import (DashboardPage,FormDefinition,StockItem,Alert,Employee,AttendanceEvent,ApprovalRequest,ApprovalDecisionLog)
+from .models import (DashboardPage,FormDefinition,StockItem,Alert,ActionItem,Employee,AttendanceEvent,ApprovalRequest,ApprovalDecisionLog)
 from .services import apply_stock_scan,record_variance,calculate_attendance_day
 
 class RegistryTests(TestCase):
@@ -591,3 +591,552 @@ class RoleSyncTests(TestCase):
         UserProfile.objects.create(user=user, role=roles.FINANCE_MANAGER)
         call_command('sync_roles', verbosity=0)
         self.assertTrue(user.groups.filter(name=roles.FINANCE_MANAGER).exists())
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 - correctness and performance
+# ---------------------------------------------------------------------------
+
+def _attendance_event(employee, name, day, at):
+    from django.utils import timezone as tz
+    from datetime import datetime
+    zone = tz.get_current_timezone()
+    AttendanceEvent.objects.create(
+        employee=employee, event=name,
+        occurred_at=tz.make_aware(datetime.combine(day, at), zone))
+
+
+def _full_operator_day(employee, day):
+    """08:00 start, 13:00-14:00 break, 17:00 finish - a complete 480-minute day."""
+    from datetime import time as t
+    _attendance_event(employee, 'CHECK_IN', day, t(8, 0))
+    _attendance_event(employee, 'BREAK_IN', day, t(13, 0))
+    _attendance_event(employee, 'BREAK_OUT', day, t(14, 0))
+    _attendance_event(employee, 'CHECK_OUT', day, t(17, 0))
+
+
+def _working_day():
+    """A date that is not Friday, the Project 1 weekly closed day."""
+    from django.utils import timezone as tz
+    from datetime import timedelta
+    day = tz.localdate()
+    while day.weekday() == 4:
+        day -= timedelta(days=1)
+    return day
+
+
+class PayrollArithmeticTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 5.1 to 5.4."""
+
+    def setUp(self):
+        from decimal import Decimal as D
+        self.day = _working_day()
+        self.operator = Employee.objects.create(
+            employee_id='OP-100', name='Cutter', role='Operator',
+            category='OPERATOR', daily_cost=D('480'))
+
+    def _gate_pass(self, pass_type, start, end, status='APPROVED'):
+        from django.utils import timezone as tz
+        from datetime import datetime
+        from portal.models import AttendanceGatePass
+        zone = tz.get_current_timezone()
+        return AttendanceGatePass.objects.create(
+            employee=self.operator, pass_type=pass_type, status=status, reason='test',
+            out_at=tz.make_aware(datetime.combine(self.day, start), zone),
+            in_at=tz.make_aware(datetime.combine(self.day, end), zone))
+
+    def test_role_alone_still_selects_the_operator_shift(self):
+        """category defaults to 'STAFF' and is always truthy, so the role must
+        still be consulted or most of the workforce gets the wrong shift."""
+        from decimal import Decimal as D
+        from portal.services import attendance_schedule
+        employee = Employee.objects.create(
+            employee_id='OP-101', name='No Category', role='Operator',
+            daily_cost=D('480'))
+        self.assertEqual(employee.category, 'STAFF')       # the default
+        schedule = attendance_schedule(employee.category, employee.role)
+        self.assertEqual(schedule['scheduled_minutes'], 480)
+
+    def test_an_approved_unpaid_gate_pass_is_deducted_from_paid_duty(self):
+        from datetime import time as t
+        from decimal import Decimal as D
+        _full_operator_day(self.operator, self.day)
+        self._gate_pass('UNPAID', t(9, 0), t(12, 0))       # three hours
+        summary = calculate_attendance_day(self.operator, self.day)
+        self.assertEqual(summary.gate_pass_unpaid_minutes, 180)
+        # 480 scheduled less 180 unpaid absence.
+        self.assertEqual(summary.worked_minutes, 300)
+        self.assertEqual(summary.unpaid_minutes, 180)
+        self.assertEqual(summary.worked_cost, D('300.00'))
+
+    def test_a_paid_gate_pass_does_not_reduce_or_inflate_pay(self):
+        """A paid pass sits inside check-in to check-out, so its minutes are
+        already counted. It is reported, never added."""
+        from datetime import time as t
+        from decimal import Decimal as D
+        _full_operator_day(self.operator, self.day)
+        self._gate_pass('PAID', t(10, 0), t(11, 0))
+        summary = calculate_attendance_day(self.operator, self.day)
+        self.assertEqual(summary.worked_minutes, 480)
+        self.assertEqual(summary.office_gate_pass_paid_minutes, 60)
+        self.assertEqual(summary.unpaid_minutes, 0)
+        # A full day costs exactly a full day.
+        self.assertEqual(summary.worked_cost, D('480.00'))
+        # The paid-pass figure is a subset of worked time, so it must never be
+        # added to worked_cost - that would bill 540 for a 480 day.
+        self.assertLessEqual(summary.gate_pass_paid_cost, summary.worked_cost)
+
+    def test_unpaid_minutes_no_longer_understated_by_a_paid_pass(self):
+        """Was `scheduled - min(worked + paid_gate, scheduled)`: a partial day
+        with a paid pass under-reported unpaid time by the length of the pass."""
+        from datetime import time as t
+        _attendance_event(self.operator, 'CHECK_IN', self.day, t(8, 0))
+        _attendance_event(self.operator, 'CHECK_OUT', self.day, t(14, 40))  # 400 min
+        self._gate_pass('PAID', t(10, 0), t(11, 0))
+        summary = calculate_attendance_day(self.operator, self.day)
+        self.assertEqual(summary.worked_minutes, 400)
+        self.assertEqual(summary.unpaid_minutes, 80)        # not 20
+
+    def test_a_pending_gate_pass_has_no_effect(self):
+        from datetime import time as t
+        _full_operator_day(self.operator, self.day)
+        self._gate_pass('UNPAID', t(9, 0), t(12, 0), status='PENDING')
+        summary = calculate_attendance_day(self.operator, self.day)
+        self.assertEqual(summary.worked_minutes, 480)
+        self.assertEqual(summary.gate_pass_unpaid_minutes, 0)
+
+    def test_gate_pass_minutes_are_clipped_to_the_shift(self):
+        """A pass running past scheduled checkout must not deduct time the
+        employee was never scheduled for."""
+        from datetime import time as t
+        _full_operator_day(self.operator, self.day)
+        self._gate_pass('UNPAID', t(16, 0), t(19, 0))       # 1h inside, 2h after
+        summary = calculate_attendance_day(self.operator, self.day)
+        self.assertEqual(summary.gate_pass_unpaid_minutes, 60)
+        self.assertEqual(summary.worked_minutes, 420)
+
+    def test_shift_is_read_from_attendanceshift(self):
+        """AttendanceShift was modelled, admin-registered and never read."""
+        from datetime import time as t
+        from portal.models import AttendanceShift
+        from portal.services import attendance_schedule, clear_shift_cache
+        AttendanceShift.objects.create(
+            code='SHIFT-TEST-OP', name='Short operator shift',
+            employee_category='OPERATOR', check_in=t(7, 0),
+            break1_in=t(12, 0), break1_out=t(12, 30),
+            check_out=t(15, 0), mandatory_minutes=450, grace_minutes=5,
+            ot_break_minutes=15, active=True)
+        clear_shift_cache()
+        schedule = attendance_schedule('OPERATOR')
+        self.assertEqual(schedule['scheduled_minutes'], 450)
+        self.assertEqual(schedule['start'], t(7, 0))
+        self.assertEqual(schedule['grace_minutes'], 5)
+        # ot_start is derived as checkout + ot_break_minutes.
+        self.assertEqual(schedule['ot_start'], t(15, 15))
+        self.assertIn('AttendanceShift', schedule['source'])
+        clear_shift_cache()
+
+    def test_editing_a_shift_takes_effect_without_a_restart(self):
+        from datetime import time as t
+        from portal.models import AttendanceShift
+        from portal.services import attendance_schedule
+        shift = AttendanceShift.objects.create(
+            code='SHIFT-TEST-ST', name='Staff', employee_category='STAFF',
+            check_in=t(9, 0), break1_in=t(13, 0), break1_out=t(14, 0),
+            check_out=t(18, 0), mandatory_minutes=480, grace_minutes=10,
+            ot_break_minutes=30, active=True)
+        self.assertEqual(attendance_schedule('STAFF')['scheduled_minutes'], 480)
+        shift.mandatory_minutes = 500
+        shift.save()                    # post_save clears the cache
+        self.assertEqual(attendance_schedule('STAFF')['scheduled_minutes'], 500)
+        from portal.services import clear_shift_cache
+        clear_shift_cache()
+
+    def test_friday_is_the_weekly_closed_day(self):
+        from datetime import timedelta
+        from django.utils import timezone as tz
+        friday = tz.localdate()
+        while friday.weekday() != 4:
+            friday -= timedelta(days=1)
+        summary = calculate_attendance_day(self.operator, friday)
+        self.assertEqual(summary.scheduled_minutes, 0)
+        self.assertEqual(summary.status, 'WEEKEND')
+
+
+class TimezoneTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 5.5."""
+
+    def test_the_operating_clock_is_dhaka(self):
+        from django.conf import settings
+        self.assertEqual(settings.TIME_ZONE, 'Asia/Dhaka',
+                         'TIME_ZONE in .env is overriding the Asia/Dhaka default. '
+                         'The attendance engine and the 08:00/13:00/20:00 report '
+                         'slots are only correct on the Bangladesh clock.')
+
+    def test_celery_shares_the_django_clock(self):
+        from django.conf import settings
+        # Celery reads only CELERY_* keys; unset, beat silently used UTC and the
+        # three "Bangladesh" slots fired four to six hours late.
+        self.assertEqual(settings.CELERY_TIMEZONE, settings.TIME_ZONE)
+
+    def test_attendance_anchors_resolve_in_the_configured_zone(self):
+        from decimal import Decimal as D
+        day = _working_day()
+        employee = Employee.objects.create(
+            employee_id='OP-TZ', name='Anchor', role='Operator',
+            category='OPERATOR', daily_cost=D('480'))
+        _full_operator_day(employee, day)
+        summary = calculate_attendance_day(employee, day)
+        # A local 08:00-17:00 day with a one-hour break is exactly the shift.
+        self.assertEqual(summary.worked_minutes, 480)
+        self.assertEqual(summary.late_minutes, 0)
+        self.assertEqual(summary.early_leave_minutes, 0)
+
+
+class CurrencyTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 5.6."""
+
+    def setUp(self):
+        from decimal import Decimal as D
+        from django.utils import timezone as tz
+        from portal.models import ExchangeRate
+        self.today = tz.localdate()
+        ExchangeRate.objects.create(base_currency='EUR', quote_currency='BDT',
+                                    rate=D('130'), rate_date=self.today, source='MANUAL')
+        ExchangeRate.objects.create(base_currency='EUR', quote_currency='USD',
+                                    rate=D('1.10'), rate_date=self.today, source='MANUAL')
+
+    def test_direct_inverse_and_cross_rates(self):
+        from decimal import Decimal as D
+        from portal.currency import convert
+        self.assertEqual(convert(D('100'), 'EUR', 'BDT'), D('13000.00'))
+        self.assertEqual(convert(D('13000'), 'BDT', 'EUR'), D('100.00'))
+        # BDT -> EUR -> USD
+        self.assertEqual(convert(D('13000'), 'BDT', 'USD'), D('110.00'))
+
+    def test_same_currency_is_identity(self):
+        from decimal import Decimal as D
+        from portal.currency import convert
+        self.assertEqual(convert(D('42.50'), 'EUR', 'EUR'), D('42.50'))
+
+    def test_a_missing_rate_raises_rather_than_guessing(self):
+        from decimal import Decimal as D
+        from portal.currency import RateUnavailable, convert
+        with self.assertRaises(RateUnavailable):
+            convert(D('100'), 'JPY', 'EUR')
+
+    def test_a_stale_rate_is_refused(self):
+        from datetime import timedelta
+        from decimal import Decimal as D
+        from portal.models import ExchangeRate
+        from portal.currency import RateUnavailable, convert
+        ExchangeRate.objects.all().delete()
+        ExchangeRate.objects.create(
+            base_currency='EUR', quote_currency='BDT', rate=D('130'),
+            rate_date=self.today - timedelta(days=400), source='MANUAL')
+        with self.assertRaises(RateUnavailable):
+            convert(D('100'), 'EUR', 'BDT')
+
+    def test_sum_converted_reports_what_it_could_not_convert(self):
+        from decimal import Decimal as D
+        from portal.currency import sum_converted
+        total, missing = sum_converted([(D('100'), 'EUR'), (D('1300'), 'BDT'),
+                                        (D('50'), 'JPY')], 'EUR')
+        self.assertEqual(total, D('110.00'))       # 100 EUR + 10 EUR
+        self.assertEqual(missing, ['JPY'])         # not silently dropped
+
+    def test_ceo_summary_reports_in_the_base_currency(self):
+        from decimal import Decimal as D
+        from portal.views import _ceo_summary
+        from portal.models import FinanceTransaction, MasterOrder
+        MasterOrder.objects.create(master_order_id='MO-CUR-1', buyer='B', product='Cap',
+                                   quantity=10, order_value=D('1300'), currency='BDT')
+        MasterOrder.objects.create(master_order_id='MO-CUR-2', buyer='B', product='Cap',
+                                   quantity=10, order_value=D('100'), currency='EUR')
+        FinanceTransaction.objects.create(transaction_type='INCOME', currency='EUR',
+                                          amount=D('1000'))
+        payload = _ceo_summary(self.today)
+        self.assertEqual(payload['base_currency'], 'EUR')
+        # 1300 BDT converts to 10 EUR, plus 100 EUR - not a raw sum of 1400.
+        self.assertEqual(payload['order_value'], '110.00')
+        self.assertEqual(payload['fx_unconvertible'], [])
+
+    def test_ceo_summary_flags_currencies_it_cannot_convert(self):
+        from decimal import Decimal as D
+        from portal.views import _ceo_summary
+        from portal.models import MasterOrder
+        MasterOrder.objects.create(master_order_id='MO-CUR-3', buyer='B', product='Cap',
+                                   quantity=1, order_value=D('999'), currency='JPY')
+        payload = _ceo_summary(self.today)
+        self.assertIn('JPY', payload['fx_unconvertible'])
+
+
+class ProcurementScoringTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 5.7 - price_score was hardcoded to 100."""
+
+    def test_the_cheapest_landed_cost_scores_highest(self):
+        from decimal import Decimal as D
+        from portal.models import (ProcurementComparison, ProcurementRequest,
+                                   SupplierMaster)
+        request = ProcurementRequest.objects.create(
+            request_no='PR-1', description='Fabric', required_qty=D('100'))
+        cheap = SupplierMaster.objects.create(supplier_id='S-CHEAP', company_name='Cheap Ltd')
+        dear = SupplierMaster.objects.create(supplier_id='S-DEAR', company_name='Dear Ltd')
+        low = ProcurementComparison.objects.create(
+            request=request, supplier=cheap, unit_price=D('10'))
+        high = ProcurementComparison.objects.create(
+            request=request, supplier=dear, unit_price=D('20'))
+        low.refresh_from_db(); high.refresh_from_db()
+        self.assertEqual(low.price_score, D('100.00'))
+        self.assertEqual(high.price_score, D('50.00'))       # twice the cost
+        self.assertGreater(low.total_score, high.total_score)
+
+    def test_adding_a_cheaper_quote_rescores_the_existing_ones(self):
+        from decimal import Decimal as D
+        from portal.models import (ProcurementComparison, ProcurementRequest,
+                                   SupplierMaster)
+        request = ProcurementRequest.objects.create(
+            request_no='PR-2', description='Trims', required_qty=D('10'))
+        first = ProcurementComparison.objects.create(
+            request=request,
+            supplier=SupplierMaster.objects.create(supplier_id='S-1', company_name='One'),
+            unit_price=D('100'))
+        first.refresh_from_db()
+        self.assertEqual(first.price_score, D('100.00'))
+        ProcurementComparison.objects.create(
+            request=request,
+            supplier=SupplierMaster.objects.create(supplier_id='S-2', company_name='Two'),
+            unit_price=D('50'))
+        first.refresh_from_db()
+        self.assertEqual(first.price_score, D('50.00'))      # no longer the best
+
+    def test_freight_and_duty_land_in_the_comparison(self):
+        from decimal import Decimal as D
+        from portal.models import (ProcurementComparison, ProcurementRequest,
+                                   SupplierMaster)
+        request = ProcurementRequest.objects.create(
+            request_no='PR-3', description='Yarn', required_qty=D('100'))
+        row = ProcurementComparison.objects.create(
+            request=request,
+            supplier=SupplierMaster.objects.create(supplier_id='S-3', company_name='Three'),
+            unit_price=D('10'), freight_cost=D('500'))
+        row.refresh_from_db()
+        # 10 + 500/100 = 15 landed.
+        self.assertEqual(row.landed_unit_cost, D('15.0000'))
+
+
+class DataIntegrityTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 5.8, 5.9, 6.5."""
+
+    def test_completed_is_a_declared_order_status(self):
+        """The buyer-delivery module wrote 'COMPLETED', which was not in choices,
+        so an invalid status was persisted silently."""
+        from portal.models import MasterOrder
+        valid = {code for code, _label in MasterOrder.STATUS}
+        self.assertIn('COMPLETED', valid)
+        self.assertIn('DELIVERED', valid)
+
+    def test_action_item_status_has_choices_and_one_open_definition(self):
+        self.assertTrue(ActionItem._meta.get_field('status').choices)
+        valid = {code for code, _label in ActionItem.STATUS}
+        self.assertTrue(set(ActionItem.OPEN_STATUSES) <= valid)
+        self.assertNotIn('COMPLETED', ActionItem.OPEN_STATUSES)
+        # 'DONE' was excluded by the header counter but never written by anything.
+        self.assertNotIn('DONE', valid)
+
+    def test_open_action_counts_agree_everywhere(self):
+        from portal.context_processors import _compute
+        ActionItem.objects.create(title='open', status='OPEN')
+        ActionItem.objects.create(title='doing', status='IN_PROGRESS')
+        ActionItem.objects.create(title='done', status='COMPLETED')
+        expected = ActionItem.objects.filter(
+            status__in=ActionItem.OPEN_STATUSES).count()
+        self.assertEqual(expected, 2)
+        # The global control strip previously excluded 'DONE' and so counted all
+        # three, disagreeing with every dashboard on the same screen.
+        self.assertEqual(_compute()['global_actions'], expected)
+
+    def test_dashboard_post_handlers_are_atomic(self):
+        """A failure part-way through a multi-model write must roll back."""
+        import ast
+        from pathlib import Path
+        source = Path('portal/views.py').read_text(encoding='utf-8')
+        tree = ast.parse(source)
+        unguarded = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try) or len(node.handlers) != 1:
+                continue
+            handler_src = ast.get_source_segment(source, node.handlers[0]) or ''
+            if '_handle_post_error' not in handler_src:
+                continue
+            if not (len(node.body) == 1 and isinstance(node.body[0], ast.With)):
+                unguarded.append(node.lineno)
+        self.assertEqual(unguarded, [],
+                         f'POST handlers not wrapped in transaction.atomic(): {unguarded}')
+
+    def test_expected_errors_reach_the_user_and_bugs_do_not(self):
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+        from portal.views import _handle_post_error
+        for exc, should_show in [(ValueError('Barcode is mandatory.'), True),
+                                 (PermissionError('Senior approval required.'), True),
+                                 (AttributeError("'NoneType' has no attribute 'x'"), False)]:
+            with self.subTest(exc=type(exc).__name__):
+                request = RequestFactory().post('/cutting-dashboard/')
+                request.user = User.objects.create_user(
+                    username=f'u{abs(hash(str(exc))) % 100000}', password='x')
+                request.session = {}
+                request._messages = FallbackStorage(request)
+                _handle_post_error(request, exc)
+                shown = [m.message for m in request._messages]
+                if should_show:
+                    self.assertIn(str(exc), shown)
+                else:
+                    # A defect must not be presented as if it were guidance.
+                    self.assertNotIn(str(exc), shown)
+                    self.assertTrue(any('logged for IT' in m for m in shown))
+
+
+class QueryEfficiencyTests(TestCase):
+    """TECHNICAL_ASSESSMENT.md 6.1 and 6.7."""
+
+    def test_filtered_columns_are_indexed(self):
+        from portal.models import (ActionItem, Alert, AttendanceDailySummary,
+                                   AttendanceEvent, CuttingProductionEntry,
+                                   MaterialMovement, StockScan)
+        expected = [
+            (Alert, 'actioned'), (Alert, 'level'), (ActionItem, 'status'),
+            (AttendanceDailySummary, 'work_date'), (AttendanceEvent, 'occurred_at'),
+            (CuttingProductionEntry, 'work_date'), (MaterialMovement, 'movement_type'),
+            (StockScan, 'direction'),
+        ]
+        for model, field_name in expected:
+            with self.subTest(model=model.__name__, field=field_name):
+                field = model._meta.get_field(field_name)
+                self.assertTrue(field.db_index or field.unique,
+                                f'{model.__name__}.{field_name} is filtered but not indexed')
+
+    def test_created_at_is_indexed_on_every_timestamped_model(self):
+        from portal.models import Alert, MasterOrder, StockItem
+        for model in (Alert, MasterOrder, StockItem):
+            with self.subTest(model=model.__name__):
+                self.assertTrue(model._meta.get_field('created_at').db_index)
+
+    def test_control_strip_does_not_filter_on_a_date_function(self):
+        """occurred_at__date=today applies a function to the column, so no index
+        on occurred_at can serve it."""
+        from pathlib import Path
+        source = Path('portal/context_processors.py').read_text(encoding='utf-8')
+        code = '\n'.join(line for line in source.split('\n')
+                          if not line.strip().startswith(('#', '``', '*')))
+        self.assertNotIn('occurred_at__date=', code)
+
+    def test_control_strip_sums_in_the_database(self):
+        from decimal import Decimal as D
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+        from portal.context_processors import _compute
+        day = _working_day()
+        for index in range(12):
+            employee = Employee.objects.create(
+                employee_id=f'CS-{index}', name=f'W{index}', role='Operator',
+                category='OPERATOR', daily_cost=D('100'))
+            _attendance_event(employee, 'CHECK_IN', day, __import__('datetime').time(8, 0))
+        with CaptureQueriesContext(connection) as captured:
+            payload = _compute()
+        # Constant query count regardless of headcount: the old version loaded
+        # every present employee and summed daily_cost in Python.
+        self.assertLess(len(captured), 8, f'{len(captured)} queries for the control strip')
+        self.assertEqual(payload['today_present_staff'], 12)
+        self.assertEqual(payload['today_staff_cost'], D('1200'))
+
+
+class ExchangeRateFeedTests(TestCase):
+    """The daily rate feed is opt-in and must never invent a rate."""
+
+    def test_it_is_a_no_op_until_configured(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from django.test import override_settings
+        from portal.models import ExchangeRate
+        out = StringIO()
+        with override_settings(EXCHANGE_RATE_API_URL=''):
+            call_command('fetch_exchange_rates', stdout=out)
+        self.assertIn('not set', out.getvalue())
+        self.assertEqual(ExchangeRate.objects.count(), 0)
+
+    def test_a_non_https_endpoint_is_refused(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        with self.assertRaises(CommandError) as caught:
+            call_command('fetch_exchange_rates', url='http://rates.example/latest')
+        self.assertIn('https', str(caught.exception))
+
+    def test_a_provider_response_is_stored_as_dated_rates(self):
+        import json as _json
+        from decimal import Decimal as D
+        from unittest.mock import patch
+        from django.core.management import call_command
+        from portal.models import ExchangeRate
+
+        class _Response:
+            def read(self):
+                return _json.dumps({'base': 'EUR', 'date': '2026-08-18',
+                                    'rates': {'BDT': 131.25, 'USD': 1.09,
+                                              'BAD': 'not-a-number'}}).encode()
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        with patch('portal.management.commands.fetch_exchange_rates.urlopen',
+                   return_value=_Response()):
+            call_command('fetch_exchange_rates', url='https://rates.example/latest',
+                         verbosity=0)
+        bdt = ExchangeRate.objects.get(quote_currency='BDT')
+        self.assertEqual(bdt.rate, D('131.25'))
+        self.assertEqual(str(bdt.rate_date), '2026-08-18')
+        self.assertEqual(bdt.source, 'AUTO')
+        self.assertEqual(bdt.provider, 'rates.example')
+        # An unparseable value is skipped, never stored as zero or one.
+        self.assertFalse(ExchangeRate.objects.filter(quote_currency='BAD').exists())
+
+    def test_a_transport_failure_raises_a_red_alert(self):
+        from unittest.mock import patch
+        from urllib.error import URLError
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        with patch('portal.management.commands.fetch_exchange_rates.urlopen',
+                   side_effect=URLError('dns failure')):
+            with self.assertRaises(CommandError):
+                call_command('fetch_exchange_rates', url='https://rates.example/latest',
+                             verbosity=0)
+        self.assertTrue(Alert.objects.filter(level='RED',
+                                             reference='EXCHANGE_RATE_FEED').exists())
+
+
+class AuditRetentionTests(TestCase):
+    """AuditMiddleware writes a row per request with no retention (6.7)."""
+
+    def test_only_expired_request_logs_are_purged(self):
+        from datetime import timedelta
+        from django.test import override_settings
+        from django.utils import timezone as tz
+        from portal.models import AuditLog, FileAccessLog
+        from portal.tasks import purge_expired_audit_logs
+
+        old = AuditLog.objects.create(method='GET', path='/old/', status_code=200)
+        recent = AuditLog.objects.create(method='GET', path='/recent/', status_code=200)
+        AuditLog.objects.filter(pk=old.pk).update(
+            created_at=tz.now() - timedelta(days=400))
+        # The file-access trail is evidence and must survive the purge.
+        FileAccessLog.objects.create(resource_type='document', resource_id=1,
+                                     file_name='x.pdf', action='VIEW')
+
+        with override_settings(AUDIT_LOG_RETENTION_DAYS=365):
+            result = purge_expired_audit_logs()
+
+        self.assertEqual(result['deleted'], 1)
+        self.assertFalse(AuditLog.objects.filter(pk=old.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(pk=recent.pk).exists())
+        self.assertEqual(FileAccessLog.objects.count(), 1)

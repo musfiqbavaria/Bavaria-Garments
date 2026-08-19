@@ -75,7 +75,25 @@ Two deliberate carry-overs: TLS is configured but **not enabled** (`DJANGO_SECUR
 
 ---
 
-**Still outstanding — nothing in Phases 3–4 has been started.** In particular the remaining payroll defects (§5.2 paid gate passes charged twice, §5.3 unpaid gate passes costing nothing, §5.4 `AttendanceShift` never read), the timezone problem (§5.5), the currency mixing (§5.6), the hardcoded supplier price score (§5.7), the missing database indexes (§6.1) and the absent tenancy backbone (§6.2) are all unchanged. **The platform now runs and enforces access control. Its payroll and financial figures are still wrong, so do not rely on them for pay or reporting until Phase 3 is done.**
+**Phase 3 — complete** (branch `phase-3/correctness-and-performance`)
+
+| # | Finding | Status |
+|---|---|---|
+| 5 | Payroll: unpaid gate passes never deducted, unpaid minutes understated, `AttendanceShift` never read (§5.1–5.4) | **Fixed** |
+| 6 | Reporting clock was Dublin/UTC, not Bangladesh (§5.5) | **Fixed** — `Asia/Dhaka`, `CELERY_TIMEZONE` pinned, `.env` updated |
+| 7 | CEO KPIs summed EUR and BDT with no FX (§5.6) | **Fixed** — `ExchangeRate` + conversion, EUR base, daily feed |
+| — | Supplier price score hardcoded to 100 (§5.7) | **Fixed** — relative to lowest landed cost |
+| — | Invalid `COMPLETED` order status; `ActionItem.status` had no choices (§5.8, §5.9) | **Fixed** — declared; `OPEN_STATUSES` used at 32 call sites |
+| — | No transactions on multi-write handlers; bugs shown as validation errors (§6.5, §6.6) | **Fixed** — 25 handlers atomic, typed error reporting |
+| 8 | Zero database indexes; per-request full employee scan (§6.1, §6.7) | **Fixed** — 235 indexes (483→896), cached aggregate control strip, audit retention |
+
+**Correction to §5.2.** This assessment described paid gate passes as a 12.5% payroll over-charge. That was overstated: no code summed `worked_cost` and `gate_pass_paid_cost` into a single total. The real defects were that the two figures *overlap* while the dashboard presented them as adjacent cost lines (so totalling the column over-pays — now labelled), and that `unpaid_minutes` was arithmetically wrong, understating unpaid time by the length of any paid pass. Both are fixed; the stronger claim was mine and was inaccurate.
+
+Test suite: **81 tests, all passing.** Migrations squashed to a single `0001_initial` — 173 `CreateModel`, 0 `AlterField`, 0 destructive operations. Nothing was deployed, so this is safe; if a database was created from the earlier `0001`, drop and re-migrate.
+
+---
+
+**Still outstanding — Phase 4 has not been started.** What remains is Phase 4: the tenancy backbone (§6.2 — no company, country or factory link on the transactional models, so authorisation cannot be scoped and per-site timezones are impossible), the design system (§3.6), the missing Sewing and Print departments (§3.2), Account Master (§3.3 — a static mock-up with no accounting models at all), the Forms Master schemas (§3.5), and the documentation reconciliation (§3.1, §5.11). **The platform runs, enforces access control, and its payroll and consolidated financial figures are now correct. It remains single-tenant in effect: any manager can see every factory's data, so do not onboard a second company or country until the tenancy work is done.**
 
 ---
 

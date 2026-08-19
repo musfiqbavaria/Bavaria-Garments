@@ -5,7 +5,9 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 
 class TimeStamped(models.Model):
-    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+    # created_at is indexed on the base class because almost every dashboard
+    # orders or filters by it, and 170-odd concrete models inherit from here.
+    created_at=models.DateTimeField(auto_now_add=True,db_index=True); updated_at=models.DateTimeField(auto_now=True)
     class Meta: abstract=True
 
 class OrganizationNode(TimeStamped):
@@ -14,14 +16,14 @@ class OrganizationNode(TimeStamped):
     def __str__(self): return f'{self.node_type}: {self.name}'
 
 class Department(TimeStamped):
-    name=models.CharField(max_length=120,unique=True); code=models.CharField(max_length=20,unique=True); active=models.BooleanField(default=True)
+    name=models.CharField(max_length=120,unique=True); code=models.CharField(max_length=20,unique=True); active=models.BooleanField(default=True,db_index=True)
     def __str__(self): return self.name
 
 class UserProfile(TimeStamped):
     user=models.OneToOneField(User,on_delete=models.CASCADE,related_name='profile'); employee_id=models.CharField(max_length=50,blank=True); role=models.CharField(max_length=80,default='Staff'); department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL); scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.SET_NULL)
 
 class DashboardPage(TimeStamped):
-    page_id=models.PositiveIntegerField(unique=True); title=models.CharField(max_length=220); slug=models.SlugField(unique=True); group=models.CharField(max_length=80); enabled=models.BooleanField(default=True)
+    page_id=models.PositiveIntegerField(unique=True); title=models.CharField(max_length=220); slug=models.SlugField(unique=True); group=models.CharField(max_length=80); enabled=models.BooleanField(default=True,db_index=True)
     def __str__(self): return f'{self.page_id}. {self.title}'
 
 class Employee(TimeStamped):
@@ -31,7 +33,7 @@ class Employee(TimeStamped):
     role=models.CharField(max_length=80)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     category=models.CharField(max_length=20,choices=CATEGORIES,default='STAFF')
-    status=models.CharField(max_length=20,default='ACTIVE')
+    status=models.CharField(max_length=20,default='ACTIVE',db_index=True)
     daily_cost=models.DecimalField(max_digits=12,decimal_places=2,default=0)
     monthly_gross_salary=models.DecimalField(max_digits=14,decimal_places=2,default=0)
     factory_unit=models.CharField(max_length=160,blank=True)
@@ -39,48 +41,95 @@ class Employee(TimeStamped):
 
 
 class AttendanceEvent(TimeStamped):
-    employee=models.ForeignKey(Employee,on_delete=models.CASCADE); event=models.CharField(max_length=30); occurred_at=models.DateTimeField(default=timezone.now); source=models.CharField(max_length=50,default='Manual'); device_ref=models.CharField(max_length=100,blank=True)
+    employee=models.ForeignKey(Employee,on_delete=models.CASCADE); event=models.CharField(max_length=30); occurred_at=models.DateTimeField(default=timezone.now,db_index=True); source=models.CharField(max_length=50,default='Manual'); device_ref=models.CharField(max_length=100,blank=True)
 
 class MasterOrder(TimeStamped):
-    STATUS=[(s,s) for s in ['OPPORTUNITY','CONFIRMED','PLANNING','PRODUCTION','QC','PACKING','READY_TO_SHIP','SHIPPED','DELIVERED','HOLD']]
-    master_order_id=models.CharField(max_length=60,unique=True); buyer=models.CharField(max_length=180); product=models.CharField(max_length=180); quantity=models.PositiveIntegerField(default=0); order_value=models.DecimalField(max_digits=16,decimal_places=2,default=0); confirmed_at=models.DateTimeField(null=True,blank=True); delivery_due=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='OPPORTUNITY')
+    # 'COMPLETED' was written by the buyer-delivery module but was absent from
+    # this list, so an invalid status was persisted silently (nothing in the
+    # project ever calls full_clean). v10 defines completion as a distinct step
+    # after delivery - shipping marks DELIVERED on proof of delivery, and buyer
+    # confirmation closes the order - so it is a real state, now declared.
+    STATUS=[(s,s) for s in ['OPPORTUNITY','CONFIRMED','PLANNING','PRODUCTION','QC','PACKING','READY_TO_SHIP','SHIPPED','DELIVERED','COMPLETED','HOLD']]
+    master_order_id=models.CharField(max_length=60,unique=True); buyer=models.CharField(max_length=180); product=models.CharField(max_length=180); quantity=models.PositiveIntegerField(default=0); order_value=models.DecimalField(max_digits=16,decimal_places=2,default=0); currency=models.CharField(max_length=10,default='USD',help_text='Currency of order_value. Consolidated reporting converts to settings.BASE_CURRENCY.'); confirmed_at=models.DateTimeField(null=True,blank=True); delivery_due=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='OPPORTUNITY',db_index=True)
 
 class StockItem(TimeStamped):
-    sku=models.CharField(max_length=80,unique=True); name=models.CharField(max_length=180); category=models.CharField(max_length=60); unit=models.CharField(max_length=20,default='PCS'); qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); reserved_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); unit_cost=models.DecimalField(max_digits=14,decimal_places=4,default=0)
+    sku=models.CharField(max_length=80,unique=True); name=models.CharField(max_length=180); category=models.CharField(max_length=60); unit=models.CharField(max_length=20,default='PCS'); qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); reserved_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); unit_cost=models.DecimalField(max_digits=14,decimal_places=4,default=0); currency=models.CharField(max_length=10,default='BDT',help_text='Currency of unit_cost.')
 
 class StockMovement(TimeStamped):
-    item=models.ForeignKey(StockItem,on_delete=models.PROTECT); movement_type=models.CharField(max_length=30); quantity=models.DecimalField(max_digits=16,decimal_places=3); reference=models.CharField(max_length=100,blank=True); barcode=models.CharField(max_length=160,blank=True); performed_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
+    item=models.ForeignKey(StockItem,on_delete=models.PROTECT); movement_type=models.CharField(max_length=30,db_index=True); quantity=models.DecimalField(max_digits=16,decimal_places=3); reference=models.CharField(max_length=100,blank=True,db_index=True); barcode=models.CharField(max_length=160,blank=True,db_index=True); performed_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
 
 class FormDefinition(TimeStamped):
-    form_id=models.PositiveIntegerField(unique=True); code=models.CharField(max_length=30,unique=True); name=models.CharField(max_length=220); department=models.CharField(max_length=120); category=models.CharField(max_length=60); version=models.CharField(max_length=20,default='1.0'); status=models.CharField(max_length=20,default='ACTIVE'); requires_approval=models.BooleanField(default=False); red_alert_enabled=models.BooleanField(default=True)
+    form_id=models.PositiveIntegerField(unique=True); code=models.CharField(max_length=30,unique=True); name=models.CharField(max_length=220); department=models.CharField(max_length=120); category=models.CharField(max_length=60); version=models.CharField(max_length=20,default='1.0'); status=models.CharField(max_length=20,default='ACTIVE',db_index=True); requires_approval=models.BooleanField(default=False); red_alert_enabled=models.BooleanField(default=True)
 
 class FormSubmission(TimeStamped):
-    definition=models.ForeignKey(FormDefinition,on_delete=models.PROTECT); reference=models.CharField(max_length=120,blank=True); submitted_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL); status=models.CharField(max_length=30,default='DRAFT'); data=models.JSONField(default=dict); approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approved_forms'); approved_at=models.DateTimeField(null=True,blank=True)
+    definition=models.ForeignKey(FormDefinition,on_delete=models.PROTECT); reference=models.CharField(max_length=120,blank=True,db_index=True); submitted_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL); status=models.CharField(max_length=30,default='DRAFT',db_index=True); data=models.JSONField(default=dict); approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approved_forms'); approved_at=models.DateTimeField(null=True,blank=True)
 
 class Alert(TimeStamped):
     LEVELS=[(x,x) for x in ['INFO','WARNING','RED']]
-    title=models.CharField(max_length=180); message=models.TextField(blank=True); level=models.CharField(max_length=20,choices=LEVELS,default='INFO'); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True); actioned=models.BooleanField(default=False); actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); actioned_at=models.DateTimeField(null=True,blank=True)
+    title=models.CharField(max_length=180); message=models.TextField(blank=True); level=models.CharField(max_length=20,choices=LEVELS,default='INFO',db_index=True); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); actioned=models.BooleanField(default=False,db_index=True); actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); actioned_at=models.DateTimeField(null=True,blank=True)
 
 class ActionItem(TimeStamped):
-    title=models.CharField(max_length=180); assigned_to=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); department=models.CharField(max_length=120,blank=True); due_at=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,default='OPEN'); priority=models.CharField(max_length=20,default='NORMAL')
+    # status had no choices, so three vocabularies coexisted: writers used
+    # 'OPEN' and 'COMPLETED', while the global control strip and the Celery
+    # snapshot excluded 'DONE' - a value nothing ever wrote. The header counter
+    # therefore counted completed items forever while the dashboards beside it
+    # showed the correct figure. See TECHNICAL_ASSESSMENT.md 5.9.
+    STATUS=[(x,x.title()) for x in ['OPEN','IN_PROGRESS','BLOCKED','COMPLETED','CANCELLED']]
+    PRIORITIES=[(x,x.title()) for x in ['LOW','NORMAL','HIGH','URGENT']]
+    #: The single definition of "not finished". Import this instead of writing
+    #: another exclude() with a hand-typed status string.
+    OPEN_STATUSES=['OPEN','IN_PROGRESS','BLOCKED']
+    title=models.CharField(max_length=180); assigned_to=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); department=models.CharField(max_length=120,blank=True); due_at=models.DateTimeField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True); priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL',db_index=True)
 
 class Communication(TimeStamped):
     CHANNELS=[(x,x) for x in ['CHAT','WHATSAPP','EMAIL','IP_PHONE']]
-    channel=models.CharField(max_length=20,choices=CHANNELS); sender=models.CharField(max_length=180,blank=True); recipient=models.CharField(max_length=180,blank=True); subject=models.CharField(max_length=220,blank=True); body=models.TextField(blank=True); reference=models.CharField(max_length=120,blank=True); status=models.CharField(max_length=30,default='NEW')
+    channel=models.CharField(max_length=20,choices=CHANNELS); sender=models.CharField(max_length=180,blank=True); recipient=models.CharField(max_length=180,blank=True); subject=models.CharField(max_length=220,blank=True); body=models.TextField(blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); status=models.CharField(max_length=30,default='NEW',db_index=True)
 
 class DocumentRecord(TimeStamped):
-    document_id=models.CharField(max_length=80,unique=True); title=models.CharField(max_length=220); category=models.CharField(max_length=100); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True); version=models.CharField(max_length=20,default='1.0'); file=models.FileField(upload_to='documents/%Y/%m/',blank=True); confidential=models.BooleanField(default=False); expires_at=models.DateTimeField(null=True,blank=True); uploaded_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
+    document_id=models.CharField(max_length=80,unique=True); title=models.CharField(max_length=220); category=models.CharField(max_length=100); department=models.CharField(max_length=120,blank=True); reference=models.CharField(max_length=120,blank=True,db_index=True); version=models.CharField(max_length=20,default='1.0'); file=models.FileField(upload_to='documents/%Y/%m/',blank=True); confidential=models.BooleanField(default=False); expires_at=models.DateTimeField(null=True,blank=True); uploaded_by=models.ForeignKey(User,null=True,on_delete=models.SET_NULL)
 
 class BarcodeAsset(TimeStamped):
     TYPES=[(x,x) for x in ['BUNDLE','MATERIAL','STOCK','PRODUCT','CARTON','EMPLOYEE','ASSET','DOCUMENT']]
-    code=models.CharField(max_length=180,unique=True); asset_type=models.CharField(max_length=30,choices=TYPES); reference=models.CharField(max_length=120,blank=True); payload=models.JSONField(default=dict); active=models.BooleanField(default=True)
+    code=models.CharField(max_length=180,unique=True); asset_type=models.CharField(max_length=30,choices=TYPES); reference=models.CharField(max_length=120,blank=True,db_index=True); payload=models.JSONField(default=dict); active=models.BooleanField(default=True,db_index=True)
 
 class FinanceTransaction(TimeStamped):
     TYPES=[(x,x) for x in ['INCOME','EXPENSE','RECEIVABLE','PAYABLE','INCENTIVE_RECEIVABLE','INCENTIVE_APPROVED','INCENTIVE_PAID']]
-    transaction_type=models.CharField(max_length=40,choices=TYPES); country=models.CharField(max_length=80,default='Ireland'); currency=models.CharField(max_length=10,default='EUR'); amount=models.DecimalField(max_digits=16,decimal_places=2); reference=models.CharField(max_length=120,blank=True); overseas_receipt=models.BooleanField(default=False); incentive_rate=models.DecimalField(max_digits=6,decimal_places=3,default=0); incentive_amount=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    transaction_type=models.CharField(max_length=40,choices=TYPES); country=models.CharField(max_length=80,default='Ireland'); currency=models.CharField(max_length=10,default='EUR'); amount=models.DecimalField(max_digits=16,decimal_places=2); reference=models.CharField(max_length=120,blank=True,db_index=True); overseas_receipt=models.BooleanField(default=False); incentive_rate=models.DecimalField(max_digits=6,decimal_places=3,default=0); incentive_amount=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+
+class ExchangeRate(TimeStamped):
+    """Effective-dated FX rates for consolidated reporting.
+
+    Cross-entity financial figures were computed by summing raw amounts across
+    records in different currencies, with no rate table anywhere in the project:
+    MasterOrder.order_value had no currency field at all, FinanceTransaction
+    defaulted to EUR while production and supplier models defaulted to BDT, and
+    the CEO dashboard added them together. At roughly 130 BDT to the euro the
+    headline "profit today" was wrong by orders of magnitude.
+    See TECHNICAL_ASSESSMENT.md 5.6.
+
+    One row means: on `rate_date`, one unit of `base_currency` buys `rate` units
+    of `quote_currency`.
+    """
+    SOURCES=[(x,x) for x in ['MANUAL','AUTO','SEED']]
+    base_currency=models.CharField(max_length=10)
+    quote_currency=models.CharField(max_length=10)
+    rate_date=models.DateField(default=timezone.localdate,db_index=True)
+    rate=models.DecimalField(max_digits=20,decimal_places=10)
+    source=models.CharField(max_length=20,choices=SOURCES,default='MANUAL')
+    provider=models.CharField(max_length=120,blank=True)
+    recorded_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+    class Meta:
+        constraints=[models.UniqueConstraint(
+            fields=['base_currency','quote_currency','rate_date'],
+            name='unique_exchange_rate_per_day')]
+        indexes=[models.Index(fields=['base_currency','quote_currency','-rate_date'],
+                              name='idx_exchange_rate_lookup')]
+        ordering=['-rate_date','base_currency','quote_currency']
+    def __str__(self):
+        return f'{self.rate_date} 1 {self.base_currency} = {self.rate} {self.quote_currency}'
 
 class ReportSnapshot(TimeStamped):
-    snapshot_type=models.CharField(max_length=60); generated_at=models.DateTimeField(default=timezone.now); data=models.JSONField(default=dict)
+    snapshot_type=models.CharField(max_length=60); generated_at=models.DateTimeField(default=timezone.now,db_index=True); data=models.JSONField(default=dict)
 
 class AuditLog(models.Model):
     user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); method=models.CharField(max_length=10); path=models.CharField(max_length=500); status_code=models.PositiveIntegerField(default=200); ip=models.GenericIPAddressField(null=True,blank=True); created_at=models.DateTimeField(auto_now_add=True)
@@ -88,10 +137,10 @@ class AuditLog(models.Model):
 class ApprovalRequest(TimeStamped):
     STATUS=[(x,x) for x in ['PENDING','APPROVED','REJECTED','CANCELLED']]
     approval_type=models.CharField(max_length=60)
-    reference=models.CharField(max_length=120)
+    reference=models.CharField(max_length=120,db_index=True)
     requested_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approval_requests')
-    requested_at=models.DateTimeField(default=timezone.now)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    requested_at=models.DateTimeField(default=timezone.now,db_index=True)
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='approval_decisions')
     approved_at=models.DateTimeField(null=True,blank=True)
     reason=models.TextField(blank=True)
@@ -123,27 +172,27 @@ class ApprovalDecisionLog(models.Model):
 class StockScan(TimeStamped):
     DIRECTIONS=[('IN','STOCK IN SCAN'),('OUT','STOCK OUT SCAN')]
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT)
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
     quantity=models.DecimalField(max_digits=16,decimal_places=3)
-    barcode=models.CharField(max_length=160)
-    reference=models.CharField(max_length=120)
+    barcode=models.CharField(max_length=160,db_index=True)
+    reference=models.CharField(max_length=120,db_index=True)
     source_location=models.CharField(max_length=220,blank=True)
     destination_location=models.CharField(max_length=220,blank=True)
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
     manual_override=models.BooleanField(default=False)
     override_reason=models.TextField(blank=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
 class ValueVariance(TimeStamped):
-    reference=models.CharField(max_length=120)
+    reference=models.CharField(max_length=120,db_index=True)
     department=models.CharField(max_length=120,blank=True)
     currency=models.CharField(max_length=10,default='BDT')
     expected_value=models.DecimalField(max_digits=16,decimal_places=2)
     actual_value=models.DecimalField(max_digits=16,decimal_places=2)
     variance_amount=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.TextField(blank=True)
-    status=models.CharField(max_length=30,default='OPEN')
+    status=models.CharField(max_length=30,default='OPEN',db_index=True)
     recorded_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class DeviceIntegration(TimeStamped):
@@ -155,13 +204,13 @@ class DeviceIntegration(TimeStamped):
     serial_number=models.CharField(max_length=120,blank=True)
     location=models.CharField(max_length=180,blank=True)
     endpoint=models.CharField(max_length=300,blank=True)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
     config=models.JSONField(default=dict,blank=True)
     last_seen_at=models.DateTimeField(null=True,blank=True)
 
 class AttendanceDailySummary(TimeStamped):
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE)
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     scheduled_minutes=models.PositiveIntegerField(default=0)
     worked_minutes=models.PositiveIntegerField(default=0)
     break_minutes=models.PositiveIntegerField(default=0)
@@ -179,7 +228,7 @@ class AttendanceDailySummary(TimeStamped):
     gate_pass_paid_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
     gate_pass_unpaid_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
     npt_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
-    status=models.CharField(max_length=30,default='PENDING')
+    status=models.CharField(max_length=30,default='PENDING',db_index=True)
     calculation=models.JSONField(default=dict)
     class Meta:
         constraints=[models.UniqueConstraint(fields=['employee','work_date'],name='unique_employee_attendance_day')]
@@ -204,7 +253,7 @@ class MaterialMaster(TimeStamped):
     min_stock=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     reorder_level=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     max_stock=models.DecimalField(max_digits=16,decimal_places=3,default=0)
-    status=models.CharField(max_length=20,choices=STATUSES,default='ACTIVE')
+    status=models.CharField(max_length=20,choices=STATUSES,default='ACTIVE',db_index=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='materials_created')
     def __str__(self): return f'{self.material_code} - {self.name}'
 
@@ -227,8 +276,8 @@ class MaterialLot(TimeStamped):
     reserved_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     unit_cost=models.DecimalField(max_digits=16,decimal_places=4,default=0)
     location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='material_lots')
-    stock_status=models.CharField(max_length=30,choices=STOCK_STATUSES,default='RAW_MATERIAL')
-    qc_status=models.CharField(max_length=20,choices=QC_STATUSES,default='PENDING')
+    stock_status=models.CharField(max_length=30,choices=STOCK_STATUSES,default='RAW_MATERIAL',db_index=True)
+    qc_status=models.CharField(max_length=20,choices=QC_STATUSES,default='PENDING',db_index=True)
     notes=models.TextField(blank=True)
     class Meta:
         constraints=[models.UniqueConstraint(fields=['material','lot_no'],name='unique_material_lot_no')]
@@ -244,7 +293,7 @@ class MaterialReservation(TimeStamped):
     lot=models.ForeignKey(MaterialLot,null=True,blank=True,on_delete=models.PROTECT,related_name='reservations')
     order_reference=models.CharField(max_length=120)
     quantity=models.DecimalField(max_digits=16,decimal_places=3)
-    status=models.CharField(max_length=20,choices=STATUS,default='ACTIVE')
+    status=models.CharField(max_length=20,choices=STATUS,default='ACTIVE',db_index=True)
     reserved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     released_at=models.DateTimeField(null=True,blank=True)
 
@@ -252,17 +301,17 @@ class MaterialMovement(TimeStamped):
     TYPES=[(x,x) for x in ['STOCK_IN_SCAN','STOCK_OUT_SCAN','TRANSFER','RESERVE','RELEASE','WASTAGE','REJECT','RETURN','ADJUSTMENT']]
     material=models.ForeignKey(MaterialMaster,on_delete=models.PROTECT,related_name='movements')
     lot=models.ForeignKey(MaterialLot,null=True,blank=True,on_delete=models.PROTECT,related_name='movements')
-    movement_type=models.CharField(max_length=30,choices=TYPES)
+    movement_type=models.CharField(max_length=30,choices=TYPES,db_index=True)
     quantity=models.DecimalField(max_digits=16,decimal_places=3)
     unit_cost=models.DecimalField(max_digits=16,decimal_places=4,default=0)
-    barcode=models.CharField(max_length=180)
-    reference=models.CharField(max_length=120)
+    barcode=models.CharField(max_length=180,db_index=True)
+    reference=models.CharField(max_length=120,db_index=True)
     order_reference=models.CharField(max_length=120,blank=True)
     purchase_order_no=models.CharField(max_length=120,blank=True)
     source_location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='material_movements_out')
     destination_location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='material_movements_in')
     performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    performed_at=models.DateTimeField(default=timezone.now)
+    performed_at=models.DateTimeField(default=timezone.now,db_index=True)
     manual_entry=models.BooleanField(default=False)
     reason=models.TextField(blank=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
@@ -295,7 +344,7 @@ class AssetMachine(TimeStamped):
     location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='assets')
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL,related_name='assets')
     assigned_to=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='assigned_assets')
-    status=models.CharField(max_length=30,choices=STATUSES,default='ACTIVE')
+    status=models.CharField(max_length=30,choices=STATUSES,default='ACTIVE',db_index=True)
     condition=models.CharField(max_length=30,choices=CONDITIONS,default='GOOD')
     operation_capabilities=models.JSONField(default=list,blank=True)
     standard_speed=models.DecimalField(max_digits=12,decimal_places=3,default=0)
@@ -322,10 +371,10 @@ class AssetMaintenance(TimeStamped):
     STATUS=[(x,x) for x in ['PLANNED','IN_PROGRESS','COMPLETED','CANCELLED']]
     asset=models.ForeignKey(AssetMachine,on_delete=models.PROTECT,related_name='maintenance_records')
     maintenance_type=models.CharField(max_length=30,choices=TYPES,default='PREVENTIVE')
-    reference=models.CharField(max_length=120)
+    reference=models.CharField(max_length=120,db_index=True)
     scheduled_date=models.DateField(null=True,blank=True)
-    started_at=models.DateTimeField(null=True,blank=True)
-    completed_at=models.DateTimeField(null=True,blank=True)
+    started_at=models.DateTimeField(null=True,blank=True,db_index=True)
+    completed_at=models.DateTimeField(null=True,blank=True,db_index=True)
     technician=models.CharField(max_length=160,blank=True)
     vendor=models.CharField(max_length=180,blank=True)
     description=models.TextField(blank=True)
@@ -334,7 +383,7 @@ class AssetMaintenance(TimeStamped):
     other_cost=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     currency=models.CharField(max_length=10,default='BDT')
     meter_reading=models.DecimalField(max_digits=16,decimal_places=3,null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='PLANNED')
+    status=models.CharField(max_length=30,choices=STATUS,default='PLANNED',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     @property
@@ -343,9 +392,9 @@ class AssetMaintenance(TimeStamped):
 class AssetDowntime(TimeStamped):
     REASONS=[(x,x) for x in ['BREAKDOWN','MAINTENANCE','POWER','NO_OPERATOR','NO_MATERIAL','QUALITY_HOLD','CHANGEOVER','OTHER']]
     asset=models.ForeignKey(AssetMachine,on_delete=models.PROTECT,related_name='downtime_records')
-    reference=models.CharField(max_length=120)
+    reference=models.CharField(max_length=120,db_index=True)
     reason=models.CharField(max_length=30,choices=REASONS,default='BREAKDOWN')
-    started_at=models.DateTimeField(default=timezone.now)
+    started_at=models.DateTimeField(default=timezone.now,db_index=True)
     ended_at=models.DateTimeField(null=True,blank=True)
     description=models.TextField(blank=True)
     production_impact_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
@@ -358,16 +407,16 @@ class AssetDowntime(TimeStamped):
 class AssetMovement(TimeStamped):
     TYPES=[(x,x) for x in ['ASSIGN','TRANSFER','RETURN','RELOCATE','RETIRE','DISPOSE']]
     asset=models.ForeignKey(AssetMachine,on_delete=models.PROTECT,related_name='movements')
-    movement_type=models.CharField(max_length=30,choices=TYPES)
-    reference=models.CharField(max_length=120)
+    movement_type=models.CharField(max_length=30,choices=TYPES,db_index=True)
+    reference=models.CharField(max_length=120,db_index=True)
     source_location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='asset_movements_out')
     destination_location=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='asset_movements_in')
     assigned_to=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
-    barcode=models.CharField(max_length=180)
+    barcode=models.CharField(max_length=180,db_index=True)
     reason=models.TextField(blank=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    performed_at=models.DateTimeField(default=timezone.now)
+    performed_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 
 class BuyerOpportunity(TimeStamped):
@@ -386,7 +435,7 @@ class BuyerOpportunity(TimeStamped):
     required_delivery_date=models.DateField(null=True,blank=True); enquiry_date=models.DateField(default=timezone.localdate); follow_up_date=models.DateField(null=True,blank=True)
     incoterms=models.CharField(max_length=40,blank=True); payment_terms=models.CharField(max_length=180,blank=True)
     fabric_requirements=models.TextField(blank=True); accessory_requirements=models.TextField(blank=True); sample_requirements=models.TextField(blank=True)
-    stage=models.CharField(max_length=40,choices=STAGES,default='NEW_ENQUIRY'); priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL')
+    stage=models.CharField(max_length=40,choices=STAGES,default='NEW_ENQUIRY',db_index=True); priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL',db_index=True)
     owner=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='buyer_opportunities')
     merchandiser=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     source=models.CharField(max_length=100,blank=True); competitor_info=models.TextField(blank=True); lost_reason=models.TextField(blank=True)
@@ -405,7 +454,7 @@ class OpportunityQuotation(TimeStamped):
     version=models.PositiveIntegerField(); quotation_no=models.CharField(max_length=80,unique=True)
     unit_price=models.DecimalField(max_digits=14,decimal_places=4); quantity=models.PositiveIntegerField(default=0); currency=models.CharField(max_length=10,default='USD')
     total_value=models.DecimalField(max_digits=16,decimal_places=2,default=0); valid_until=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT'); terms=models.TextField(blank=True)
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True); terms=models.TextField(blank=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL); created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     class Meta: unique_together=[('opportunity','version')]
 
@@ -413,7 +462,7 @@ class OpportunityActivity(TimeStamped):
     TYPES=[(x,x.title()) for x in ['CALL','EMAIL','WHATSAPP','MEETING','NOTE','FOLLOW_UP','SAMPLE','STATUS_CHANGE']]
     opportunity=models.ForeignKey(BuyerOpportunity,on_delete=models.CASCADE,related_name='activities'); activity_type=models.CharField(max_length=30,choices=TYPES)
     subject=models.CharField(max_length=220); details=models.TextField(blank=True); next_follow_up=models.DateField(null=True,blank=True)
-    performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); occurred_at=models.DateTimeField(default=timezone.now)
+    performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); occurred_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 
 class CommunicationThread(TimeStamped):
@@ -422,16 +471,16 @@ class CommunicationThread(TimeStamped):
     thread_no=models.CharField(max_length=70,unique=True)
     subject=models.CharField(max_length=240)
     thread_type=models.CharField(max_length=30,choices=TYPES,default='INTERNAL')
-    priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL')
-    reference=models.CharField(max_length=140,blank=True)
+    priority=models.CharField(max_length=20,choices=PRIORITIES,default='NORMAL',db_index=True)
+    reference=models.CharField(max_length=140,blank=True,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     buyer_opportunity=models.ForeignKey('BuyerOpportunity',null=True,blank=True,on_delete=models.SET_NULL,related_name='communication_threads')
     order=models.ForeignKey(MasterOrder,null=True,blank=True,on_delete=models.SET_NULL,related_name='communication_threads')
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='created_comm_threads')
     assigned_to=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='assigned_comm_threads')
     participants=models.ManyToManyField(User,blank=True,related_name='communication_threads')
-    status=models.CharField(max_length=30,default='OPEN')
-    last_message_at=models.DateTimeField(default=timezone.now)
+    status=models.CharField(max_length=30,default='OPEN',db_index=True)
+    last_message_at=models.DateTimeField(default=timezone.now,db_index=True)
     closed_at=models.DateTimeField(null=True,blank=True)
     def __str__(self): return f'{self.thread_no} - {self.subject}'
 
@@ -441,15 +490,15 @@ class CommunicationMessage(TimeStamped):
     STATUS=[(x,x.title()) for x in ['DRAFT','QUEUED','SENT','DELIVERED','READ','FAILED','RECEIVED']]
     thread=models.ForeignKey(CommunicationThread,on_delete=models.CASCADE,related_name='messages')
     channel=models.CharField(max_length=30,choices=CHANNELS,default='CHAT_24_7')
-    direction=models.CharField(max_length=20,choices=DIRECTIONS,default='INTERNAL')
+    direction=models.CharField(max_length=20,choices=DIRECTIONS,default='INTERNAL',db_index=True)
     sender_user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='comm_messages_sent')
     sender_address=models.CharField(max_length=220,blank=True)
     recipient_address=models.CharField(max_length=500,blank=True)
     subject=models.CharField(max_length=240,blank=True)
     body=models.TextField(blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='SENT')
+    status=models.CharField(max_length=20,choices=STATUS,default='SENT',db_index=True)
     external_message_id=models.CharField(max_length=180,blank=True)
-    sent_at=models.DateTimeField(default=timezone.now)
+    sent_at=models.DateTimeField(default=timezone.now,db_index=True)
     delivered_at=models.DateTimeField(null=True,blank=True)
     read_at=models.DateTimeField(null=True,blank=True)
     is_red_alert=models.BooleanField(default=False)
@@ -480,13 +529,13 @@ class CommunicationNotice(TimeStamped):
     starts_at=models.DateTimeField(default=timezone.now)
     expires_at=models.DateTimeField(null=True,blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
 
 class CommunicationConnector(TimeStamped):
     TYPES=[(x,x.replace('_',' ').title()) for x in ['EMAIL_SMTP','WHATSAPP_BUSINESS','SMS_GATEWAY','VOICE_PROVIDER','VIDEO_PROVIDER','SOCIAL_MEDIA']]
     name=models.CharField(max_length=120)
     connector_type=models.CharField(max_length=40,choices=TYPES)
-    enabled=models.BooleanField(default=False)
+    enabled=models.BooleanField(default=False,db_index=True)
     config=models.JSONField(default=dict,blank=True)
     last_checked_at=models.DateTimeField(null=True,blank=True)
     last_status=models.CharField(max_length=80,blank=True)
@@ -531,8 +580,8 @@ class ProfitFeasibilityGate(TimeStamped):
     commercial_risk=models.TextField(blank=True)
     remarks=models.TextField(blank=True)
 
-    system_recommendation=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
-    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
+    system_recommendation=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
+    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='profit_feasibility_gates')
     reviewed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='feasibility_reviews')
     reviewed_at=models.DateTimeField(null=True,blank=True)
@@ -617,8 +666,8 @@ class FreeCapacityOpportunity(TimeStamped):
     rush_risk_percent=models.DecimalField(max_digits=5,decimal_places=2,default=0)
     notes=models.TextField(blank=True)
 
-    system_recommendation=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
-    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
+    system_recommendation=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
+    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='free_capacity_opportunities')
     reviewed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     reviewed_at=models.DateTimeField(null=True,blank=True)
@@ -679,12 +728,12 @@ class FileAccessLog(models.Model):
     resource_id=models.PositiveBigIntegerField()
     file_name=models.CharField(max_length=255)
     action=models.CharField(max_length=20,choices=ACTIONS)
-    reference=models.CharField(max_length=180,blank=True)
+    reference=models.CharField(max_length=180,blank=True,db_index=True)
     ip=models.GenericIPAddressField(null=True,blank=True)
     user_agent=models.CharField(max_length=500,blank=True)
     # Refused attempts are the security-relevant ones. Previously the log was
     # written only after the permission check passed, so a denial left no trace.
-    granted=models.BooleanField(default=True)
+    granted=models.BooleanField(default=True,db_index=True)
     denial_reason=models.CharField(max_length=255,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 
@@ -725,7 +774,7 @@ class BuyerDeliverySLA(TimeStamped):
     courier=models.CharField(max_length=120,blank=True)
     tracking_number=models.CharField(max_length=180,blank=True)
     shipping_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
-    status=models.CharField(max_length=40,choices=STATUS,default='ORDER_CONFIRMED')
+    status=models.CharField(max_length=40,choices=STATUS,default='ORDER_CONFIRMED',db_index=True)
 
     exception_required=models.BooleanField(default=False)
     exception_reason=models.TextField(blank=True)
@@ -799,8 +848,8 @@ class ProfitBeforeSpendControl(TimeStamped):
     base_cost_snapshot=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     prior_approved_spend=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     minimum_margin_percent=models.DecimalField(max_digits=6,decimal_places=2,default=10)
-    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
-    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
+    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
+    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
     reason=models.TextField(blank=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='profit_before_spend_checks')
     requested_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='pre_spend_requested')
@@ -861,7 +910,7 @@ class StaffSelfServiceProfile(TimeStamped):
     emergency_contact=models.CharField(max_length=180,blank=True)
     phone=models.CharField(max_length=80,blank=True)
     email=models.EmailField(blank=True)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
 
 class StaffApplication(TimeStamped):
     TYPES=[(x,x.replace('_',' ').title()) for x in ['LEAVE','OVERTIME','EXPENSE','TRAINING','ASSET_EQUIPMENT','HR_SUPPORT','GRIEVANCE','OTHER']]
@@ -871,7 +920,7 @@ class StaffApplication(TimeStamped):
     application_type=models.CharField(max_length=40,choices=TYPES)
     subject=models.CharField(max_length=220)
     details=models.TextField(blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='SUBMITTED')
+    status=models.CharField(max_length=20,choices=STATUS,default='SUBMITTED',db_index=True)
     submitted_at=models.DateTimeField(default=timezone.now)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     attachment=models.FileField(upload_to='staff/applications/%Y/%m/',blank=True)
@@ -884,12 +933,12 @@ class StaffDocument(TimeStamped):
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='self_service_documents')
     document_type=models.CharField(max_length=40,choices=TYPES)
     title=models.CharField(max_length=220)
-    reference=models.CharField(max_length=120,blank=True)
+    reference=models.CharField(max_length=120,blank=True,db_index=True)
     version=models.CharField(max_length=20,default='1.0')
     issue_date=models.DateField(null=True,blank=True)
     effective_date=models.DateField(null=True,blank=True)
     expires_at=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,default='ACTIVE')
+    status=models.CharField(max_length=30,default='ACTIVE',db_index=True)
     file=models.FileField(upload_to='staff/documents/%Y/%m/',blank=True)
     confidential=models.BooleanField(default=True)
     uploaded_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -916,7 +965,7 @@ class StaffPayrollSummary(TimeStamped):
     net_pay=models.DecimalField(max_digits=14,decimal_places=2,default=0)
     currency=models.CharField(max_length=10,default='EUR')
     payout_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,default='PENDING')
+    status=models.CharField(max_length=30,default='PENDING',db_index=True)
     payslip=models.ForeignKey(StaffDocument,null=True,blank=True,on_delete=models.SET_NULL,related_name='payroll_records')
 
 class StaffScheduleEntry(TimeStamped):
@@ -928,15 +977,15 @@ class StaffScheduleEntry(TimeStamped):
     end_time=models.TimeField(null=True,blank=True)
     title=models.CharField(max_length=180,default='Work Shift')
     location=models.CharField(max_length=180,blank=True)
-    status=models.CharField(max_length=30,default='SCHEDULED')
+    status=models.CharField(max_length=30,default='SCHEDULED',db_index=True)
 
 class StaffNotification(TimeStamped):
     LEVELS=[(x,x) for x in ['INFO','SUCCESS','WARNING','RED']]
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='self_service_notifications')
     title=models.CharField(max_length=220)
     body=models.TextField(blank=True)
-    level=models.CharField(max_length=20,choices=LEVELS,default='INFO')
-    reference=models.CharField(max_length=120,blank=True)
+    level=models.CharField(max_length=20,choices=LEVELS,default='INFO',db_index=True)
+    reference=models.CharField(max_length=120,blank=True,db_index=True)
     read_at=models.DateTimeField(null=True,blank=True)
 
 class StaffAnnouncement(TimeStamped):
@@ -945,7 +994,7 @@ class StaffAnnouncement(TimeStamped):
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     starts_at=models.DateTimeField(default=timezone.now)
     expires_at=models.DateTimeField(null=True,blank=True)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class StaffEvent(TimeStamped):
@@ -965,7 +1014,7 @@ class HRRecruitment(TimeStamped):
     phone=models.CharField(max_length=80,blank=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     position=models.CharField(max_length=160)
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN')
+    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     joining_date=models.DateField(null=True,blank=True)
     cv=models.FileField(upload_to='hr/recruitment/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -977,7 +1026,7 @@ class HRLeaveRequest(TimeStamped):
     start_date=models.DateField()
     end_date=models.DateField()
     reason=models.TextField(blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     attachment=models.FileField(upload_to='hr/leave/%Y/%m/',blank=True)
 
@@ -988,7 +1037,7 @@ class HRTrainingRecord(TimeStamped):
     due_date=models.DateField(null=True,blank=True)
     completed_date=models.DateField(null=True,blank=True)
     cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
-    status=models.CharField(max_length=30,default='DUE')
+    status=models.CharField(max_length=30,default='DUE',db_index=True)
     certificate=models.FileField(upload_to='hr/training/%Y/%m/',blank=True)
 
 class HRPerformanceReview(TimeStamped):
@@ -1008,7 +1057,7 @@ class HRComplaintIncident(TimeStamped):
     subject=models.CharField(max_length=220)
     details=models.TextField(blank=True)
     severity=models.CharField(max_length=20,default='MEDIUM')
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN')
+    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     assigned_to=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     attachment=models.FileField(upload_to='hr/cases/%Y/%m/',blank=True)
 
@@ -1023,7 +1072,7 @@ class HRRecognitionReward(TimeStamped):
 class HRInternalMobility(TimeStamped):
     TYPES=[(x,x.title()) for x in ['TRANSFER','PROMOTION','DEPARTMENT_CHANGE','RELOCATION']]
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='mobility_records')
-    movement_type=models.CharField(max_length=30,choices=TYPES)
+    movement_type=models.CharField(max_length=30,choices=TYPES,db_index=True)
     from_department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL,related_name='+')
     to_department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL,related_name='+')
     effective_date=models.DateField()
@@ -1067,17 +1116,17 @@ class AttendanceShift(TimeStamped):
     mandatory_minutes=models.PositiveIntegerField()
     grace_minutes=models.PositiveIntegerField(default=10)
     ot_break_minutes=models.PositiveIntegerField(default=30)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
 
 class AttendanceGatePass(TimeStamped):
     TYPES=[('PAID','Office Gate Pass (Paid)'),('UNPAID','Gate Pass (Unpaid)')]
     STATUS=[(x,x.title()) for x in ['PENDING','APPROVED','REJECTED','RETURNED']]
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='gate_passes')
-    pass_type=models.CharField(max_length=20,choices=TYPES)
+    pass_type=models.CharField(max_length=20,choices=TYPES,db_index=True)
     out_at=models.DateTimeField()
     in_at=models.DateTimeField(null=True,blank=True)
     reason=models.CharField(max_length=255)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -1089,12 +1138,12 @@ class AttendanceGatePass(TimeStamped):
 class AttendanceOvertime(TimeStamped):
     STATUS=[(x,x.title()) for x in ['PENDING','APPROVED','REJECTED','PAID']]
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='overtime_records')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     start_at=models.DateTimeField()
     end_at=models.DateTimeField()
     minutes=models.PositiveIntegerField(default=0)
     reason=models.CharField(max_length=255,blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
 
     def save(self,*args,**kwargs):
@@ -1106,12 +1155,12 @@ class AttendanceNPT(TimeStamped):
     CATEGORIES=[(x,x.replace('_',' ').title()) for x in ['MACHINE_BREAKDOWN','POWER_OUTAGE','MATERIAL_SHORTAGE','QUALITY_HOLD','WAITING','OTHER']]
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='npt_records')
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     category=models.CharField(max_length=40,choices=CATEGORIES)
     minutes=models.PositiveIntegerField(default=0)
     reason=models.CharField(max_length=255)
     cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class AttendanceHoliday(TimeStamped):
@@ -1134,13 +1183,13 @@ class AttendanceCCTVFeed(TimeStamped):
     location=models.CharField(max_length=180)
     camera_ref=models.CharField(max_length=120,blank=True)
     stream_url=models.CharField(max_length=500,blank=True)
-    active=models.BooleanField(default=True)
+    active=models.BooleanField(default=True,db_index=True)
     thumbnail=models.FileField(upload_to='attendance/cctv/%Y/%m/',blank=True)
     last_seen_at=models.DateTimeField(null=True,blank=True)
 
 class AttendanceManualAdjustment(TimeStamped):
     employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name='attendance_adjustments')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     field_name=models.CharField(max_length=80)
     old_value=models.CharField(max_length=180,blank=True)
     new_value=models.CharField(max_length=180)
@@ -1160,7 +1209,7 @@ class CuttingPlan(TimeStamped):
     size_range=models.CharField(max_length=120,blank=True)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -1187,8 +1236,8 @@ class CuttingLay(TimeStamped):
     fabric_qty=models.DecimalField(max_digits=14,decimal_places=3,default=0)
     target_pieces=models.PositiveIntegerField(default=0)
     actual_pieces=models.PositiveIntegerField(default=0)
-    started_at=models.DateTimeField(null=True,blank=True)
-    completed_at=models.DateTimeField(null=True,blank=True)
+    started_at=models.DateTimeField(null=True,blank=True,db_index=True)
+    completed_at=models.DateTimeField(null=True,blank=True,db_index=True)
 
 class CuttingBundle(TimeStamped):
     STATUS=[(x,x.title()) for x in ['CREATED','QC','PASSED','REJECTED','TRANSFERRED']]
@@ -1202,14 +1251,14 @@ class CuttingBundle(TimeStamped):
     qc_pass_qty=models.PositiveIntegerField(default=0)
     reject_qty=models.PositiveIntegerField(default=0)
     recut_qty=models.PositiveIntegerField(default=0)
-    status=models.CharField(max_length=30,choices=STATUS,default='CREATED')
+    status=models.CharField(max_length=30,choices=STATUS,default='CREATED',db_index=True)
     stock_in_scan=models.CharField(max_length=180,blank=True)
     stock_out_scan=models.CharField(max_length=180,blank=True)
     next_department=models.CharField(max_length=100,default='Sewing')
 
 class CuttingProductionEntry(TimeStamped):
     plan=models.ForeignKey(CuttingPlan,on_delete=models.CASCADE,related_name='production_entries')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     process=models.CharField(max_length=100,default='Cutting')
@@ -1235,7 +1284,7 @@ class CuttingVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -1245,14 +1294,14 @@ class CuttingVariance(TimeStamped):
 
 class CuttingAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='cutting/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1272,7 +1321,7 @@ class EmbroideryPlan(TimeStamped):
     stitch_count=models.PositiveIntegerField(default=0)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     artwork=models.FileField(upload_to='embroidery/artwork/%Y/%m/',blank=True)
     program_file=models.FileField(upload_to='embroidery/programs/%Y/%m/',blank=True)
@@ -1283,8 +1332,8 @@ class EmbroideryBundleScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','WRONG_DESTINATION']]
     plan=models.ForeignKey(EmbroideryPlan,on_delete=models.CASCADE,related_name='bundle_scans')
     bundle=models.ForeignKey(CuttingBundle,on_delete=models.PROTECT,related_name='embroidery_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
@@ -1293,7 +1342,7 @@ class EmbroideryBundleScan(TimeStamped):
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class EmbroideryMaterialIssue(TimeStamped):
     plan=models.ForeignKey(EmbroideryPlan,on_delete=models.CASCADE,related_name='material_issues')
@@ -1314,7 +1363,7 @@ class EmbroiderySample(TimeStamped):
     sample_no=models.CharField(max_length=80)
     stitch_count=models.PositiveIntegerField(default=0)
     sample_qty=models.PositiveIntegerField(default=1)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     remarks=models.TextField(blank=True)
     approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     approved_at=models.DateTimeField(null=True,blank=True)
@@ -1323,7 +1372,7 @@ class EmbroiderySample(TimeStamped):
 class EmbroideryProductionEntry(TimeStamped):
     plan=models.ForeignKey(EmbroideryPlan,on_delete=models.CASCADE,related_name='production_entries')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='embroidery_production')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     machine_heads=models.PositiveIntegerField(default=1)
@@ -1354,7 +1403,7 @@ class EmbroideryQC(TimeStamped):
     reject_qty=models.PositiveIntegerField(default=0)
     repair_qty=models.PositiveIntegerField(default=0)
     rework_qty=models.PositiveIntegerField(default=0)
-    status=models.CharField(max_length=20,choices=STATUS,default='PASS')
+    status=models.CharField(max_length=20,choices=STATUS,default='PASS',db_index=True)
     defect_reason=models.CharField(max_length=255,blank=True)
     inspected_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -1367,7 +1416,7 @@ class EmbroideryVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -1377,14 +1426,14 @@ class EmbroideryVariance(TimeStamped):
 
 class EmbroideryAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='embroidery/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1411,7 +1460,7 @@ class LabelPlan(TimeStamped):
     version=models.CharField(max_length=30,default='1.0')
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     artwork=models.FileField(upload_to='label/artwork/%Y/%m/',blank=True)
     specification=models.FileField(upload_to='label/specification/%Y/%m/',blank=True)
@@ -1424,7 +1473,7 @@ class LabelProof(TimeStamped):
     version=models.CharField(max_length=30,default='1.0')
     proof_file=models.FileField(upload_to='label/proofs/%Y/%m/',blank=True)
     sample_image=models.FileField(upload_to='label/samples/%Y/%m/',blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     remarks=models.TextField(blank=True)
     approved_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     approved_at=models.DateTimeField(null=True,blank=True)
@@ -1444,7 +1493,7 @@ class LabelMaterialIssue(TimeStamped):
 
 class LabelProductionEntry(TimeStamped):
     plan=models.ForeignKey(LabelPlan,on_delete=models.CASCADE,related_name='production_entries')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     target_qty=models.PositiveIntegerField(default=0)
@@ -1471,7 +1520,7 @@ class LabelQC(TimeStamped):
     pass_qty=models.PositiveIntegerField(default=0)
     reject_qty=models.PositiveIntegerField(default=0)
     rework_qty=models.PositiveIntegerField(default=0)
-    status=models.CharField(max_length=20,choices=STATUS,default='PASS')
+    status=models.CharField(max_length=20,choices=STATUS,default='PASS',db_index=True)
     defect_reason=models.CharField(max_length=255,blank=True)
     checked_version=models.CharField(max_length=30,blank=True)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -1489,7 +1538,7 @@ class LabelAllocation(TimeStamped):
     label_in_scan=models.CharField(max_length=180,blank=True)
     label_out_scan=models.CharField(max_length=180,blank=True)
     destination_department=models.CharField(max_length=100,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='ALLOCATED')
+    status=models.CharField(max_length=30,choices=STATUS,default='ALLOCATED',db_index=True)
     issued_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
     @property
@@ -1505,7 +1554,7 @@ class LabelVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -1515,14 +1564,14 @@ class LabelVariance(TimeStamped):
 
 class LabelAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='label/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1537,7 +1586,7 @@ class QCInspectionPlan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','IN_PROGRESS','HOLD','COMPLETED','CLOSED']]
     plan_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name='qc_inspection_plans')
-    stage=models.CharField(max_length=40,choices=STAGES)
+    stage=models.CharField(max_length=40,choices=STAGES,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     buyer=models.CharField(max_length=180,blank=True)
     style_no=models.CharField(max_length=100,blank=True)
@@ -1549,7 +1598,7 @@ class QCInspectionPlan(TimeStamped):
     lot_size=models.PositiveIntegerField(default=0)
     sample_size=models.PositiveIntegerField(default=0)
     planned_inspection_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     specification_file=models.FileField(upload_to='qc/specifications/%Y/%m/',blank=True)
     approved_sample_file=models.FileField(upload_to='qc/approved-samples/%Y/%m/',blank=True)
@@ -1560,15 +1609,15 @@ class QCBundleScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','HOLD']]
     plan=models.ForeignKey(QCInspectionPlan,on_delete=models.CASCADE,related_name='bundle_scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='qc_scans')
-    barcode=models.CharField(max_length=180,blank=True)
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
     destination_department=models.CharField(max_length=100,blank=True)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class QCInspection(TimeStamped):
     RESULT=[(x,x.replace('_',' ').title()) for x in ['PASS','HOLD','REWORK','REJECT','CONDITIONAL_PASS']]
@@ -1587,11 +1636,11 @@ class QCInspection(TimeStamped):
     label_fail_qty=models.PositiveIntegerField(default=0)
     workmanship_fail_qty=models.PositiveIntegerField(default=0)
     packing_fail_qty=models.PositiveIntegerField(default=0)
-    result=models.CharField(max_length=30,choices=RESULT,default='HOLD')
+    result=models.CharField(max_length=30,choices=RESULT,default='HOLD',db_index=True)
     comments=models.TextField(blank=True)
     photo=models.FileField(upload_to='qc/inspection-photos/%Y/%m/',blank=True)
     inspection_sheet=models.FileField(upload_to='qc/inspection-sheets/%Y/%m/',blank=True)
-    completed_at=models.DateTimeField(default=timezone.now)
+    completed_at=models.DateTimeField(default=timezone.now,db_index=True)
 
     @property
     def total_defects(self):
@@ -1625,7 +1674,7 @@ class QCDefect(TimeStamped):
     corrective_action=models.TextField(blank=True)
     responsible_user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     due_at=models.DateTimeField(null=True,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
 class QCCAPA(TimeStamped):
@@ -1637,7 +1686,7 @@ class QCCAPA(TimeStamped):
     preventive_action=models.TextField(blank=True)
     responsible_user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     due_at=models.DateTimeField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN')
+    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     verified_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='verified_qc_capas')
     verified_at=models.DateTimeField(null=True,blank=True)
 
@@ -1645,8 +1694,8 @@ class QCReleaseGate(TimeStamped):
     DECISIONS=[(x,x.replace('_',' ').title()) for x in ['PENDING','RELEASE','RELEASE_WITH_APPROVAL','HOLD','REWORK','REJECT']]
     plan=models.OneToOneField(QCInspectionPlan,on_delete=models.CASCADE,related_name='release_gate')
     latest_inspection=models.ForeignKey(QCInspection,null=True,blank=True,on_delete=models.SET_NULL,related_name='release_gates')
-    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
-    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
+    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
+    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='qc_release_gates')
     decision_reason=models.TextField(blank=True)
     reviewed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -1680,14 +1729,14 @@ class QCReleaseGate(TimeStamped):
 
 class QCAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
-    stage=models.CharField(max_length=40,blank=True)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
+    stage=models.CharField(max_length=40,blank=True,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='qc/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1708,7 +1757,7 @@ class HandIronPlan(TimeStamped):
     max_temperature_c=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to='hand-iron/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -1718,8 +1767,8 @@ class HandIronBundleScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','QC_HOLD']]
     plan=models.ForeignKey(HandIronPlan,on_delete=models.CASCADE,related_name='bundle_scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='hand_iron_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
@@ -1728,12 +1777,12 @@ class HandIronBundleScan(TimeStamped):
     workstation=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class HandIronProductionEntry(TimeStamped):
     plan=models.ForeignKey(HandIronPlan,on_delete=models.CASCADE,related_name='production_entries')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='hand_iron_production')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     operator=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     workstation=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     target_qty=models.PositiveIntegerField(default=0)
@@ -1769,9 +1818,9 @@ class HandIronQC(TimeStamped):
     reiron_qty=models.PositiveIntegerField(default=0)
     defect_type=models.CharField(max_length=40,choices=DEFECTS,blank=True)
     defect_reason=models.CharField(max_length=255,blank=True)
-    result=models.CharField(max_length=20,choices=RESULT,default='PASS')
+    result=models.CharField(max_length=20,choices=RESULT,default='PASS',db_index=True)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    checked_at=models.DateTimeField(default=timezone.now)
+    checked_at=models.DateTimeField(default=timezone.now,db_index=True)
     qc_photo=models.FileField(upload_to='hand-iron/qc/%Y/%m/',blank=True)
 
 class HandIronVariance(TimeStamped):
@@ -1783,7 +1832,7 @@ class HandIronVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -1793,14 +1842,14 @@ class HandIronVariance(TimeStamped):
 
 class HandIronAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='hand-iron/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1831,7 +1880,7 @@ class PolyPlan(TimeStamped):
     barcode_required=models.BooleanField(default=True)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     packing_specification=models.FileField(upload_to='poly/specifications/%Y/%m/',blank=True)
     artwork=models.FileField(upload_to='poly/artwork/%Y/%m/',blank=True)
@@ -1855,20 +1904,20 @@ class PolyBundleScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','QC_HOLD']]
     plan=models.ForeignKey(PolyPlan,on_delete=models.CASCADE,related_name='bundle_scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='poly_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
     destination_department=models.CharField(max_length=100,blank=True)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class PolyPackingEntry(TimeStamped):
     plan=models.ForeignKey(PolyPlan,on_delete=models.CASCADE,related_name='packing_entries')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='poly_packing')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     target_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
@@ -1909,9 +1958,9 @@ class PolyQC(TimeStamped):
     rework_qty=models.PositiveIntegerField(default=0)
     defect_type=models.CharField(max_length=40,choices=DEFECTS,blank=True)
     defect_reason=models.CharField(max_length=255,blank=True)
-    result=models.CharField(max_length=20,choices=RESULT,default='PASS')
+    result=models.CharField(max_length=20,choices=RESULT,default='PASS',db_index=True)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    checked_at=models.DateTimeField(default=timezone.now)
+    checked_at=models.DateTimeField(default=timezone.now,db_index=True)
     qc_photo=models.FileField(upload_to='poly/qc/%Y/%m/',blank=True)
 
 class PolyVariance(TimeStamped):
@@ -1923,7 +1972,7 @@ class PolyVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -1933,14 +1982,14 @@ class PolyVariance(TimeStamped):
 
 class PolyAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='poly/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -1963,7 +2012,7 @@ class IronPlan(TimeStamped):
     max_steam_pressure_bar=models.DecimalField(max_digits=8,decimal_places=2,default=0)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to='iron/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -1973,8 +2022,8 @@ class IronBundleScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','QC_HOLD','MACHINE_HOLD']]
     plan=models.ForeignKey(IronPlan,on_delete=models.CASCADE,related_name='bundle_scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='iron_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
@@ -1983,12 +2032,12 @@ class IronBundleScan(TimeStamped):
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class IronProductionEntry(TimeStamped):
     plan=models.ForeignKey(IronPlan,on_delete=models.CASCADE,related_name='production_entries')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='iron_production')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     operator=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     helper=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='iron_helper_entries')
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
@@ -2039,9 +2088,9 @@ class IronQC(TimeStamped):
     rework_qty=models.PositiveIntegerField(default=0)
     defect_type=models.CharField(max_length=40,choices=DEFECTS,blank=True)
     defect_reason=models.CharField(max_length=255,blank=True)
-    result=models.CharField(max_length=20,choices=RESULT,default='PASS')
+    result=models.CharField(max_length=20,choices=RESULT,default='PASS',db_index=True)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    checked_at=models.DateTimeField(default=timezone.now)
+    checked_at=models.DateTimeField(default=timezone.now,db_index=True)
     qc_photo=models.FileField(upload_to='iron/qc/%Y/%m/',blank=True)
 
 class IronVariance(TimeStamped):
@@ -2055,7 +2104,7 @@ class IronVariance(TimeStamped):
     variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance_bdt=models.DecimalField(max_digits=16,decimal_places=2,default=0)
     reason=models.CharField(max_length=255,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
@@ -2065,14 +2114,14 @@ class IronVariance(TimeStamped):
 
 class IronAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='iron/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -2095,7 +2144,7 @@ class FinalQCPlan(TimeStamped):
     sample_size=models.PositiveIntegerField(default=0)
     shipment_qty=models.PositiveIntegerField(default=0)
     inspection_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     specification_file=models.FileField(upload_to='final-qc/specifications/%Y/%m/',blank=True)
     approved_sample_file=models.FileField(upload_to='final-qc/approved-samples/%Y/%m/',blank=True)
@@ -2107,15 +2156,15 @@ class FinalQCUnitScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','QC_HOLD']]
     plan=models.ForeignKey(FinalQCPlan,on_delete=models.CASCADE,related_name='unit_scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='final_qc_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     source_department=models.CharField(max_length=100,blank=True)
     destination_department=models.CharField(max_length=100,blank=True)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class FinalQCInspection(TimeStamped):
     RESULT=[(x,x.replace('_',' ').title()) for x in ['PASS','HOLD','REWORK','REJECT','CONDITIONAL_PASS']]
@@ -2138,12 +2187,12 @@ class FinalQCInspection(TimeStamped):
     quantity_fail_qty=models.PositiveIntegerField(default=0)
     rework_qty=models.PositiveIntegerField(default=0)
     reject_qty=models.PositiveIntegerField(default=0)
-    result=models.CharField(max_length=30,choices=RESULT,default='HOLD')
+    result=models.CharField(max_length=30,choices=RESULT,default='HOLD',db_index=True)
     buyer_inspection_result=models.CharField(max_length=80,blank=True)
     comments=models.TextField(blank=True)
     inspection_sheet=models.FileField(upload_to='final-qc/inspection-sheets/%Y/%m/',blank=True)
     photo=models.FileField(upload_to='final-qc/photos/%Y/%m/',blank=True)
-    completed_at=models.DateTimeField(default=timezone.now)
+    completed_at=models.DateTimeField(default=timezone.now,db_index=True)
 
     @property
     def total_defects(self):
@@ -2172,7 +2221,7 @@ class FinalQCDefect(TimeStamped):
     corrective_action=models.TextField(blank=True)
     responsible_user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     due_at=models.DateTimeField(null=True,blank=True)
-    actioned=models.BooleanField(default=False)
+    actioned=models.BooleanField(default=False,db_index=True)
     actioned_at=models.DateTimeField(null=True,blank=True)
 
 class FinalQCCAPA(TimeStamped):
@@ -2184,7 +2233,7 @@ class FinalQCCAPA(TimeStamped):
     preventive_action=models.TextField(blank=True)
     responsible_user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     due_at=models.DateTimeField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN')
+    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     verified_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='verified_final_qc_capas')
     verified_at=models.DateTimeField(null=True,blank=True)
 
@@ -2192,8 +2241,8 @@ class FinalQCRelease(TimeStamped):
     DECISIONS=[(x,x.replace('_',' ').title()) for x in ['PENDING','READY_TO_SHIP','CONDITIONAL_RELEASE','HOLD','REWORK','REJECT']]
     plan=models.OneToOneField(FinalQCPlan,on_delete=models.CASCADE,related_name='release')
     latest_inspection=models.ForeignKey(FinalQCInspection,null=True,blank=True,on_delete=models.SET_NULL,related_name='release_records')
-    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
-    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING')
+    system_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
+    final_decision=models.CharField(max_length=30,choices=DECISIONS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='final_qc_releases')
     pre_shipment_signoff_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='final_qc_signoffs')
     pre_shipment_signoff_at=models.DateTimeField(null=True,blank=True)
@@ -2229,13 +2278,13 @@ class FinalQCRelease(TimeStamped):
 
 class FinalQCAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
     escalated_items=models.PositiveIntegerField(default=0)
-    generated_at=models.DateTimeField(auto_now_add=True)
+    generated_at=models.DateTimeField(auto_now_add=True,db_index=True)
     generated_file=models.FileField(upload_to='final-qc/auto-reports/%Y/%m/',blank=True)
 
     class Meta:
@@ -2245,7 +2294,7 @@ class FinishingPlan(TimeStamped):
     plan_no=models.CharField(max_length=90,unique=True)
     order=models.ForeignKey(MasterOrder,on_delete=models.CASCADE,related_name="finishing_plans")
     planned_qty=models.PositiveIntegerField(default=0); target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,default="DRAFT")
+    status=models.CharField(max_length=30,default="DRAFT",db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     instruction_file=models.FileField(upload_to="finishing/instructions/%Y/%m/",blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -2253,15 +2302,15 @@ class FinishingPlan(TimeStamped):
 class FinishingScan(TimeStamped):
     plan=models.ForeignKey(FinishingPlan,on_delete=models.CASCADE,related_name="scans")
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name="finishing_scans")
-    direction=models.CharField(max_length=3); barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,db_index=True); barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0); actual_qty=models.PositiveIntegerField(default=0)
     scan_status=models.CharField(max_length=30,default="VALID")
-    scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class FinishingProduction(TimeStamped):
     plan=models.ForeignKey(FinishingPlan,on_delete=models.CASCADE,related_name="production")
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name="finishing_production")
-    work_date=models.DateField(); operator=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
+    work_date=models.DateField(db_index=True); operator=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     helper=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name="finishing_helper_entries")
     machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.SET_NULL)
     target_qty=models.PositiveIntegerField(default=0); actual_qty=models.PositiveIntegerField(default=0); wip_qty=models.PositiveIntegerField(default=0)
@@ -2281,11 +2330,11 @@ class FinishingQC(TimeStamped):
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name="finishing_qc")
     inspected_qty=models.PositiveIntegerField(default=0); pass_qty=models.PositiveIntegerField(default=0); rework_qty=models.PositiveIntegerField(default=0); reject_qty=models.PositiveIntegerField(default=0)
     defect_type=models.CharField(max_length=40,choices=DEFECTS,blank=True); defect_qty=models.PositiveIntegerField(default=0); comments=models.TextField(blank=True)
-    result=models.CharField(max_length=20,default="HOLD"); checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); checked_at=models.DateTimeField(default=timezone.now)
+    result=models.CharField(max_length=20,default="HOLD",db_index=True); checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); checked_at=models.DateTimeField(default=timezone.now,db_index=True)
     qc_photo=models.FileField(upload_to="finishing/qc/%Y/%m/",blank=True)
 
 class FinishingAutoReport(TimeStamped):
-    report_date=models.DateField(); slot=models.CharField(max_length=10); summary=models.JSONField(default=dict)
+    report_date=models.DateField(db_index=True); slot=models.CharField(max_length=10,db_index=True); summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0); pending_actions=models.PositiveIntegerField(default=0); escalated_items=models.PositiveIntegerField(default=0)
     generated_file=models.FileField(upload_to="finishing/auto-reports/%Y/%m/",blank=True)
     class Meta: constraints=[models.UniqueConstraint(fields=["report_date","slot"],name="unique_finishing_report_slot")]
@@ -2305,7 +2354,7 @@ class PackingPlan(TimeStamped):
     carton_marking=models.CharField(max_length=255,blank=True)
     planned_qty=models.PositiveIntegerField(default=0)
     target_date=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     packing_spec_file=models.FileField(upload_to='packing/specifications/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -2315,13 +2364,13 @@ class PackingScan(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['VALID','BLOCKED','DUPLICATE','MISMATCH','FINAL_QC_HOLD','PACKING_QC_HOLD']]
     plan=models.ForeignKey(PackingPlan,on_delete=models.CASCADE,related_name='scans')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='packing_scans')
-    direction=models.CharField(max_length=3,choices=DIRECTIONS)
-    barcode=models.CharField(max_length=180,blank=True)
+    direction=models.CharField(max_length=3,choices=DIRECTIONS,db_index=True)
+    barcode=models.CharField(max_length=180,blank=True,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class PackingCarton(TimeStamped):
     plan=models.ForeignKey(PackingPlan,on_delete=models.CASCADE,related_name='cartons')
@@ -2348,7 +2397,7 @@ class PackingProduction(TimeStamped):
     plan=models.ForeignKey(PackingPlan,on_delete=models.CASCADE,related_name='production')
     bundle=models.ForeignKey(CuttingBundle,null=True,blank=True,on_delete=models.SET_NULL,related_name='packing_production')
     carton=models.ForeignKey(PackingCarton,null=True,blank=True,on_delete=models.SET_NULL,related_name='production_entries')
-    work_date=models.DateField()
+    work_date=models.DateField(db_index=True)
     employee=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL)
     target_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
@@ -2388,15 +2437,15 @@ class PackingQC(TimeStamped):
     defect_type=models.CharField(max_length=50,choices=DEFECTS,blank=True)
     defect_qty=models.PositiveIntegerField(default=0)
     comments=models.TextField(blank=True)
-    result=models.CharField(max_length=20,choices=RESULT,default='HOLD')
+    result=models.CharField(max_length=20,choices=RESULT,default='HOLD',db_index=True)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    checked_at=models.DateTimeField(default=timezone.now)
+    checked_at=models.DateTimeField(default=timezone.now,db_index=True)
     qc_photo=models.FileField(upload_to='packing/qc/%Y/%m/',blank=True)
 
 class PackingAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
@@ -2439,7 +2488,7 @@ class ShippingPlan(TimeStamped):
     eta=models.DateTimeField(null=True,blank=True)
     actual_dispatch_at=models.DateTimeField(null=True,blank=True)
     actual_delivery_at=models.DateTimeField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     shipping_instruction=models.FileField(upload_to='shipping/instructions/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -2450,14 +2499,14 @@ class ShippingCartonScan(TimeStamped):
     plan=models.ForeignKey(ShippingPlan,on_delete=models.CASCADE,related_name='carton_scans')
     carton=models.ForeignKey(PackingCarton,null=True,blank=True,on_delete=models.SET_NULL,related_name='shipping_scans')
     scan_type=models.CharField(max_length=30,choices=SCAN_TYPES)
-    barcode=models.CharField(max_length=180)
+    barcode=models.CharField(max_length=180,db_index=True)
     expected_qty=models.PositiveIntegerField(default=0)
     actual_qty=models.PositiveIntegerField(default=0)
     expected_seal_no=models.CharField(max_length=120,blank=True)
     actual_seal_no=models.CharField(max_length=120,blank=True)
     scan_status=models.CharField(max_length=30,choices=STATUS,default='VALID')
     scanned_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
-    scanned_at=models.DateTimeField(default=timezone.now)
+    scanned_at=models.DateTimeField(default=timezone.now,db_index=True)
 
 class ShippingDocument(TimeStamped):
     DOC_TYPES=[(x,x.replace('_',' ').title()) for x in [
@@ -2513,8 +2562,8 @@ class ShippingPOD(TimeStamped):
 
 class ShippingAutoReport(TimeStamped):
     SLOTS=[('08:00','08:00'),('13:00','13:00'),('20:00','20:00')]
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10,choices=SLOTS)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,choices=SLOTS,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
@@ -2537,7 +2586,7 @@ class SupplierMaster(TimeStamped):
     bank_name=models.CharField(max_length=180,blank=True); bank_account_name=models.CharField(max_length=180,blank=True)
     bank_account_no=models.CharField(max_length=120,blank=True); bank_swift=models.CharField(max_length=80,blank=True)
     capacity_notes=models.TextField(blank=True); certifications=models.TextField(blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='PENDING_KYC')
+    status=models.CharField(max_length=30,choices=STATUS,default='PENDING_KYC',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -2558,7 +2607,7 @@ class SupplierRFQ(TimeStamped):
     unit=models.CharField(max_length=30,blank=True); quoted_unit_price=models.DecimalField(max_digits=16,decimal_places=4,default=0)
     currency=models.CharField(max_length=10,default='BDT'); quoted_lead_days=models.PositiveIntegerField(default=0)
     valid_until=models.DateField(null=True,blank=True); sample_approved=models.BooleanField(default=False); quality_approved=models.BooleanField(default=False)
-    status=models.CharField(max_length=20,choices=STATUS,default='DRAFT'); quotation_file=models.FileField(upload_to='suppliers/quotations/%Y/%m/',blank=True)
+    status=models.CharField(max_length=20,choices=STATUS,default='DRAFT',db_index=True); quotation_file=models.FileField(upload_to='suppliers/quotations/%Y/%m/',blank=True)
 
 class SupplierPurchaseOrder(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['DRAFT','PENDING_APPROVAL','APPROVED','SENT','PART_RECEIVED','RECEIVED','CLOSED','CANCELLED','HOLD']]
@@ -2569,7 +2618,7 @@ class SupplierPurchaseOrder(TimeStamped):
     description=models.CharField(max_length=255); quantity=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     unit=models.CharField(max_length=30,blank=True); unit_price=models.DecimalField(max_digits=16,decimal_places=4,default=0)
     currency=models.CharField(max_length=10,default='BDT'); total_value=models.DecimalField(max_digits=18,decimal_places=2,default=0)
-    expected_delivery=models.DateField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    expected_delivery=models.DateField(null=True,blank=True); status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     po_file=models.FileField(upload_to='suppliers/po/%Y/%m/',blank=True); created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     def save(self,*args,**kwargs):
@@ -2581,14 +2630,14 @@ class SupplierReceipt(TimeStamped):
     received_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); accepted_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     rejected_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0); stock_in_barcode=models.CharField(max_length=180,blank=True)
     stock_in_scanned=models.BooleanField(default=False); inspection_pass=models.BooleanField(default=False)
-    received_at=models.DateTimeField(default=timezone.now); received_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+    received_at=models.DateTimeField(default=timezone.now,db_index=True); received_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
     delivery_note=models.FileField(upload_to='suppliers/delivery-notes/%Y/%m/',blank=True); grn_file=models.FileField(upload_to='suppliers/grn/%Y/%m/',blank=True)
 
 class SupplierInvoice(TimeStamped):
     STATUS=[(x,x.replace('_',' ').title()) for x in ['PENDING','VERIFIED','APPROVED','PAID','HOLD','REJECTED']]
     supplier=models.ForeignKey(SupplierMaster,on_delete=models.PROTECT,related_name='invoices'); po=models.ForeignKey(SupplierPurchaseOrder,on_delete=models.PROTECT,related_name='invoices')
     invoice_no=models.CharField(max_length=120); invoice_date=models.DateField(); amount=models.DecimalField(max_digits=18,decimal_places=2,default=0)
-    currency=models.CharField(max_length=10,default='BDT'); status=models.CharField(max_length=20,choices=STATUS,default='PENDING')
+    currency=models.CharField(max_length=10,default='BDT'); status=models.CharField(max_length=20,choices=STATUS,default='PENDING',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     invoice_file=models.FileField(upload_to='suppliers/invoices/%Y/%m/',blank=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['supplier','invoice_no'],name='unique_supplier_invoice_no')]
@@ -2603,7 +2652,7 @@ class SupplierPerformance(TimeStamped):
     risk_level=models.CharField(max_length=20,default='NORMAL'); calculated_at=models.DateTimeField(default=timezone.now)
 
 class SupplierAutoReport(TimeStamped):
-    report_date=models.DateField(); slot=models.CharField(max_length=10); summary=models.JSONField(default=dict)
+    report_date=models.DateField(db_index=True); slot=models.CharField(max_length=10,db_index=True); summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0); pending_actions=models.PositiveIntegerField(default=0); escalated_items=models.PositiveIntegerField(default=0)
     generated_file=models.FileField(upload_to='suppliers/auto-reports/%Y/%m/',blank=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['report_date','slot'],name='unique_supplier_report_slot')]
@@ -2622,7 +2671,7 @@ class ProcurementRequest(TimeStamped):
     reserved_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     shortage_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     budget_value=models.DecimalField(max_digits=18,decimal_places=2,default=0)
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     requested_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -2637,11 +2686,46 @@ class ProcurementComparison(TimeStamped):
     landed_unit_cost=models.DecimalField(max_digits=16,decimal_places=4,default=0)
     lead_time_days=models.PositiveIntegerField(default=0)
     payment_terms=models.CharField(max_length=180,blank=True)
+    price_score=models.DecimalField(max_digits=6,decimal_places=2,default=0,
+        help_text='100 for the lowest landed cost quoted for this requirement; '
+                  'proportionally lower for dearer quotes. Recalculated across '
+                  'the whole comparison set whenever any row changes.')
     quality_score=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     delivery_score=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     total_score=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     selected=models.BooleanField(default=False)
     reason=models.TextField(blank=True)
+
+    PRICE_WEIGHT=Decimal('0.40')
+    QUALITY_WEIGHT=Decimal('0.35')
+    DELIVERY_WEIGHT=Decimal('0.25')
+
+    def _weighted_total(self,price_score):
+        return (price_score*self.PRICE_WEIGHT
+                +self.quality_score*self.QUALITY_WEIGHT
+                +self.delivery_score*self.DELIVERY_WEIGHT).quantize(Decimal('0.01'))
+
+    @classmethod
+    def rescore_request(cls,request_id):
+        """Recompute price and total scores across one requirement's quotes.
+
+        Price is inherently relative, so a row cannot be scored in isolation:
+        the cheapest landed cost for the requirement takes 100 and the rest score
+        in proportion. Uses bulk_update so rescoring siblings does not re-enter
+        save().
+        """
+        rows=list(cls.objects.filter(request_id=request_id))
+        costs=[r.landed_unit_cost for r in rows if r.landed_unit_cost and r.landed_unit_cost>0]
+        if not costs:
+            return
+        best=min(costs)
+        for row in rows:
+            if row.landed_unit_cost and row.landed_unit_cost>0:
+                row.price_score=(best/row.landed_unit_cost*100).quantize(Decimal('0.01'))
+            else:
+                row.price_score=Decimal('0.00')
+            row.total_score=row._weighted_total(row.price_score)
+        cls.objects.bulk_update(rows,['price_score','total_score'])
 
     def save(self,*args,**kwargs):
         qty=self.request.required_qty or Decimal('1')
@@ -2650,9 +2734,24 @@ class ProcurementComparison(TimeStamped):
         if perf:
             self.quality_score=perf.quality_pass_pct
             self.delivery_score=perf.on_time_delivery_pct
-        price_score=Decimal('100')
-        self.total_score=(price_score*Decimal('.40')+self.quality_score*Decimal('.35')+self.delivery_score*Decimal('.25')).quantize(Decimal('0.01'))
+        # price_score was hardcoded to Decimal('100'), so every supplier took the
+        # full 40 price points regardless of landed cost. The landed cost was
+        # computed and then discarded, and ranking was driven only by quality and
+        # delivery - so procurement would systematically fail to select the
+        # cheapest qualified supplier. See TECHNICAL_ASSESSMENT.md 5.7.
+        #
+        # Score provisionally against the quotes already recorded, then rescore
+        # the whole set below now that this row's landed cost is known.
+        existing=[c for c in type(self).objects.filter(request_id=self.request_id)
+                  .exclude(pk=self.pk).values_list('landed_unit_cost',flat=True) if c and c>0]
+        best=min(existing+[self.landed_unit_cost]) if self.landed_unit_cost>0 else (min(existing) if existing else None)
+        if best and self.landed_unit_cost>0:
+            self.price_score=(best/self.landed_unit_cost*100).quantize(Decimal('0.01'))
+        else:
+            self.price_score=Decimal('0.00')
+        self.total_score=self._weighted_total(self.price_score)
         super().save(*args,**kwargs)
+        type(self).rescore_request(self.request_id)
 
 class ProcurementCommitment(TimeStamped):
     request=models.OneToOneField(ProcurementRequest,on_delete=models.CASCADE,related_name='commitment')
@@ -2671,8 +2770,8 @@ class ProcurementCommitment(TimeStamped):
         super().save(*args,**kwargs)
 
 class ProcurementAutoReport(TimeStamped):
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
@@ -2693,7 +2792,7 @@ class PurchaseTransaction(TimeStamped):
     accepted_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     rejected_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     short_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN')
+    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
     notes=models.TextField(blank=True)
     managed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -2716,7 +2815,7 @@ class PurchaseThreeWayMatch(TimeStamped):
     invoice_value=models.DecimalField(max_digits=18,decimal_places=2,default=0)
     quantity_variance=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     value_variance=models.DecimalField(max_digits=18,decimal_places=2,default=0)
-    status=models.CharField(max_length=30,choices=STATUS,default='PENDING')
+    status=models.CharField(max_length=30,choices=STATUS,default='PENDING',db_index=True)
     exception_approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     checked_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
@@ -2729,11 +2828,11 @@ class PurchaseReturn(TimeStamped):
     value=models.DecimalField(max_digits=18,decimal_places=2,default=0)
     approval=models.ForeignKey(ApprovalRequest,on_delete=models.PROTECT)
     return_document=models.FileField(upload_to='purchases/returns/%Y/%m/',blank=True)
-    status=models.CharField(max_length=20,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=20,choices=STATUS,default='DRAFT',db_index=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class PurchaseAutoReport(TimeStamped):
-    report_date=models.DateField(); slot=models.CharField(max_length=10); summary=models.JSONField(default=dict)
+    report_date=models.DateField(db_index=True); slot=models.CharField(max_length=10,db_index=True); summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0); pending_actions=models.PositiveIntegerField(default=0); escalated_items=models.PositiveIntegerField(default=0)
     generated_file=models.FileField(upload_to='purchases/auto-reports/%Y/%m/',blank=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['report_date','slot'],name='unique_purchase_auto_report_slot')]
@@ -2762,7 +2861,7 @@ class SourcingRequest(TimeStamped):
     shortage_qty=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     target_price=models.DecimalField(max_digits=16,decimal_places=4,default=0)
     target_currency=models.CharField(max_length=10,default='BDT')
-    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT')
+    status=models.CharField(max_length=30,choices=STATUS,default='DRAFT',db_index=True)
     approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL)
     specification_file=models.FileField(upload_to='sourcing/specifications/%Y/%m/',blank=True)
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
@@ -2799,7 +2898,7 @@ class SourcingQuotation(TimeStamped):
     moq=models.DecimalField(max_digits=16,decimal_places=3,default=0)
     payment_terms=models.CharField(max_length=180,blank=True)
     valid_until=models.DateField(null=True,blank=True)
-    status=models.CharField(max_length=30,choices=STATUS,default='RECEIVED')
+    status=models.CharField(max_length=30,choices=STATUS,default='RECEIVED',db_index=True)
     quotation_file=models.FileField(upload_to='sourcing/quotations/%Y/%m/',blank=True)
 
     def save(self,*args,**kwargs):
@@ -2811,7 +2910,7 @@ class SourcingSample(TimeStamped):
     RESULT=[(x,x.replace('_',' ').title()) for x in ['PENDING','PASS','HOLD','REJECT']]
     quotation=models.ForeignKey(SourcingQuotation,on_delete=models.CASCADE,related_name='samples')
     sample_no=models.CharField(max_length=100,unique=True)
-    received_at=models.DateTimeField(null=True,blank=True)
+    received_at=models.DateTimeField(null=True,blank=True,db_index=True)
     quality_result=models.CharField(max_length=20,choices=RESULT,default='PENDING')
     compliance_result=models.CharField(max_length=20,choices=RESULT,default='PENDING')
     lab_test_result=models.CharField(max_length=20,choices=RESULT,default='PENDING')
@@ -2860,8 +2959,8 @@ class SourcingHandoff(TimeStamped):
     handed_off_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class SourcingAutoReport(TimeStamped):
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)
@@ -2871,8 +2970,8 @@ class SourcingAutoReport(TimeStamped):
         constraints=[models.UniqueConstraint(fields=['report_date','slot'],name='unique_sourcing_auto_report_slot')]
 
 class CEOAutoReport(TimeStamped):
-    report_date=models.DateField()
-    slot=models.CharField(max_length=10)
+    report_date=models.DateField(db_index=True)
+    slot=models.CharField(max_length=10,db_index=True)
     summary=models.JSONField(default=dict)
     outstanding_alerts=models.PositiveIntegerField(default=0)
     pending_actions=models.PositiveIntegerField(default=0)

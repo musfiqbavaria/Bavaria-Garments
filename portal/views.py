@@ -14,12 +14,43 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 import qrcode
 from .models import *
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from . import roles as roles_mod
+from .currency import RateUnavailable, base_currency as currency_base, convert, convert_or_none
 from .roles import can_decide_approval, has_any_role, user_roles
 from .services import apply_stock_scan, record_variance, calculate_attendance_day, attendance_schedule
 
 logger = logging.getLogger('portal.views')
+
+
+#: Errors that mean "the user or the data is wrong". These carry a message worth
+#: showing. Anything else is a defect and must be logged, not presented as
+#: guidance.
+EXPECTED_POST_ERRORS = (ValueError, PermissionError, ValidationError,
+                        IntegrityError, Http404)
+
+
+def _handle_post_error(request, exc):
+    """Report a failed dashboard action.
+
+    The dashboards previously caught bare Exception and passed str(exc) straight
+    to the operator, so a programming error arrived as if it were a validation
+    message and nothing was logged anywhere. LOGGING was also unconfigured, so
+    there was no server-side record of any failure at all.
+    """
+    from django.contrib import messages
+    if isinstance(exc, EXPECTED_POST_ERRORS):
+        messages.error(request, str(exc))
+        logger.info('rejected action: user=%s path=%s error=%s',
+                    getattr(request.user, 'username', 'anonymous'), request.path, exc)
+        return
+    # Unexpected: log the traceback and give the operator something actionable
+    # without leaking internals.
+    logger.exception('unhandled error in %s for user=%s',
+                     request.path, getattr(request.user, 'username', 'anonymous'))
+    messages.error(request, 'Something went wrong and the change was not saved. '
+                            'The error has been logged for IT.')
 
 # --- form field name lists rendered by the department dashboards ------------
 # Previously these lived in the templates as {% for n in "a b c".split %},
@@ -142,7 +173,7 @@ def page_view(request,slug):
     if slug=='hand-iron-dashboard': return redirect('hand_iron_dashboard')
     if slug=='poly-dashboard': return redirect('poly_dashboard')
     page=get_object_or_404(DashboardPage,slug=slug,enabled=True)
-    ctx={'page':page,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.exclude(status='DONE').order_by('due_at')[:10]}
+    ctx={'page':page,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
     return render(request,'page.html',ctx)
 
 @login_required
@@ -221,7 +252,7 @@ def _report_master_summary(today):
         'delivered':orders.filter(status='DELIVERED').count(),
         'alerts':Alert.objects.filter(actioned=False).count(),
         'red_alerts':Alert.objects.filter(actioned=False,level='RED').count(),
-        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
+        'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
         'pending_approvals':ApprovalRequest.objects.filter(status='PENDING').count(),
         'documents':DocumentRecord.objects.count(),
         'auto_reports_today':len(auto_rows),
@@ -238,23 +269,24 @@ def report_master(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='generate_snapshot':
-                slot=request.POST.get('slot','MANUAL')
-                payload=_report_master_summary(today)
-                payload['slot']=slot
-                payload['department_reports']=_report_master_auto_reports(today)
-                ReportSnapshot.objects.create(
-                    snapshot_type=f'REPORT_MASTER_{slot}',
-                    generated_at=timezone.now(),
-                    data=payload
-                )
-                messages.success(request,f'Report Master snapshot generated: {slot}.')
-            elif action=='action_alert':
-                alert=get_object_or_404(Alert,pk=request.POST.get('alert_id'))
-                alert.actioned=True;alert.actioned_by=request.user;alert.actioned_at=timezone.now();alert.save()
-                messages.success(request,'Alert marked Actioned.')
+            with transaction.atomic():
+                if action=='generate_snapshot':
+                    slot=request.POST.get('slot','MANUAL')
+                    payload=_report_master_summary(today)
+                    payload['slot']=slot
+                    payload['department_reports']=_report_master_auto_reports(today)
+                    ReportSnapshot.objects.create(
+                        snapshot_type=f'REPORT_MASTER_{slot}',
+                        generated_at=timezone.now(),
+                        data=payload
+                    )
+                    messages.success(request,f'Report Master snapshot generated: {slot}.')
+                elif action=='action_alert':
+                    alert=get_object_or_404(Alert,pk=request.POST.get('alert_id'))
+                    alert.actioned=True;alert.actioned_by=request.user;alert.actioned_at=timezone.now();alert.save()
+                    messages.success(request,'Alert marked Actioned.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('report_master')
 
     catalog=[]
@@ -284,7 +316,7 @@ def report_master(request):
         'snapshots':ReportSnapshot.objects.order_by('-generated_at')[:40],
         'orders':MasterOrder.objects.order_by('-created_at')[:100],
         'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:30],
-        'actions':ActionItem.objects.exclude(status='COMPLETED').order_by('-created_at')[:30],
+        'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('-created_at')[:30],
         'approvals':ApprovalRequest.objects.filter(status='PENDING').order_by('-created_at')[:30],
         'documents':DocumentRecord.objects.order_by('-created_at')[:30],
         'communications':Communication.objects.order_by('-created_at')[:30],
@@ -496,41 +528,42 @@ def stock_material_master(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='create_material':
-                composition={}
-                raw=request.POST.get('composition','').strip()
-                if raw:
-                    for part in raw.split(','):
-                        if ':' in part:
-                            k,v=part.split(':',1); composition[k.strip()]=Decimal(v.strip())
-                MaterialMaster.objects.create(
-                    material_code=request.POST.get('material_code','').strip(),
-                    name=request.POST.get('name','').strip(), category=request.POST.get('category','RAW_MATERIAL'),
-                    subcategory=request.POST.get('subcategory','').strip(), composition={k:float(v) for k,v in composition.items()},
-                    gsm=request.POST.get('gsm') or None, width=request.POST.get('width') or None,
-                    width_unit=request.POST.get('width_unit','INCH'), colour=request.POST.get('colour','').strip(),
-                    uom=request.POST.get('uom','PCS'), standard_cost=request.POST.get('standard_cost') or 0,
-                    currency=request.POST.get('currency','BDT'), min_stock=request.POST.get('min_stock') or 0,
-                    reorder_level=request.POST.get('reorder_level') or 0, max_stock=request.POST.get('max_stock') or 0,
-                    created_by=request.user)
-                messages.success(request,'Material master created.')
-            elif action=='create_lot':
-                material=get_object_or_404(MaterialMaster,pk=request.POST.get('material_id'))
-                location=OrganizationNode.objects.filter(pk=request.POST.get('location_id')).first()
-                qty=Decimal(request.POST.get('original_qty') or '0')
-                lot=MaterialLot.objects.create(material=material,lot_no=request.POST.get('lot_no','').strip(),roll_barcode=request.POST.get('roll_barcode','').strip(),purchase_order_no=request.POST.get('purchase_order_no','').strip(),customer_order_no=request.POST.get('customer_order_no','').strip(),supplier=request.POST.get('supplier','').strip(),length=request.POST.get('length') or 0,length_unit=request.POST.get('length_unit','METRE'),original_qty=qty,current_qty=0,unit_cost=request.POST.get('unit_cost') or material.standard_cost,location=location,stock_status=request.POST.get('stock_status','RAW_MATERIAL'),qc_status=request.POST.get('qc_status','PENDING'))
-                if qty>0:
-                    apply_material_movement(lot=lot,movement_type='STOCK_IN_SCAN',quantity=qty,barcode=lot.roll_barcode,reference=request.POST.get('purchase_order_no','').strip() or lot.lot_no,user=request.user,destination_location=location,purchase_order_no=lot.purchase_order_no)
-                messages.success(request,'Material lot/roll created and stock-in recorded.')
-            elif action=='movement':
-                lot=get_object_or_404(MaterialLot,pk=request.POST.get('lot_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
-                source=OrganizationNode.objects.filter(pk=request.POST.get('source_location_id')).first()
-                dest=OrganizationNode.objects.filter(pk=request.POST.get('destination_location_id')).first()
-                apply_material_movement(lot=lot,movement_type=request.POST.get('movement_type',''),quantity=request.POST.get('quantity') or 0,barcode=request.POST.get('barcode','').strip() or lot.roll_barcode,reference=request.POST.get('reference','').strip(),user=request.user,source_location=source,destination_location=dest,order_reference=request.POST.get('order_reference','').strip(),purchase_order_no=request.POST.get('purchase_order_no','').strip(),manual_entry=request.POST.get('manual_entry')=='on',reason=request.POST.get('reason','').strip(),approval=approval)
-                messages.success(request,'Material movement posted successfully.')
+            with transaction.atomic():
+                if action=='create_material':
+                    composition={}
+                    raw=request.POST.get('composition','').strip()
+                    if raw:
+                        for part in raw.split(','):
+                            if ':' in part:
+                                k,v=part.split(':',1); composition[k.strip()]=Decimal(v.strip())
+                    MaterialMaster.objects.create(
+                        material_code=request.POST.get('material_code','').strip(),
+                        name=request.POST.get('name','').strip(), category=request.POST.get('category','RAW_MATERIAL'),
+                        subcategory=request.POST.get('subcategory','').strip(), composition={k:float(v) for k,v in composition.items()},
+                        gsm=request.POST.get('gsm') or None, width=request.POST.get('width') or None,
+                        width_unit=request.POST.get('width_unit','INCH'), colour=request.POST.get('colour','').strip(),
+                        uom=request.POST.get('uom','PCS'), standard_cost=request.POST.get('standard_cost') or 0,
+                        currency=request.POST.get('currency','BDT'), min_stock=request.POST.get('min_stock') or 0,
+                        reorder_level=request.POST.get('reorder_level') or 0, max_stock=request.POST.get('max_stock') or 0,
+                        created_by=request.user)
+                    messages.success(request,'Material master created.')
+                elif action=='create_lot':
+                    material=get_object_or_404(MaterialMaster,pk=request.POST.get('material_id'))
+                    location=OrganizationNode.objects.filter(pk=request.POST.get('location_id')).first()
+                    qty=Decimal(request.POST.get('original_qty') or '0')
+                    lot=MaterialLot.objects.create(material=material,lot_no=request.POST.get('lot_no','').strip(),roll_barcode=request.POST.get('roll_barcode','').strip(),purchase_order_no=request.POST.get('purchase_order_no','').strip(),customer_order_no=request.POST.get('customer_order_no','').strip(),supplier=request.POST.get('supplier','').strip(),length=request.POST.get('length') or 0,length_unit=request.POST.get('length_unit','METRE'),original_qty=qty,current_qty=0,unit_cost=request.POST.get('unit_cost') or material.standard_cost,location=location,stock_status=request.POST.get('stock_status','RAW_MATERIAL'),qc_status=request.POST.get('qc_status','PENDING'))
+                    if qty>0:
+                        apply_material_movement(lot=lot,movement_type='STOCK_IN_SCAN',quantity=qty,barcode=lot.roll_barcode,reference=request.POST.get('purchase_order_no','').strip() or lot.lot_no,user=request.user,destination_location=location,purchase_order_no=lot.purchase_order_no)
+                    messages.success(request,'Material lot/roll created and stock-in recorded.')
+                elif action=='movement':
+                    lot=get_object_or_404(MaterialLot,pk=request.POST.get('lot_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
+                    source=OrganizationNode.objects.filter(pk=request.POST.get('source_location_id')).first()
+                    dest=OrganizationNode.objects.filter(pk=request.POST.get('destination_location_id')).first()
+                    apply_material_movement(lot=lot,movement_type=request.POST.get('movement_type',''),quantity=request.POST.get('quantity') or 0,barcode=request.POST.get('barcode','').strip() or lot.roll_barcode,reference=request.POST.get('reference','').strip(),user=request.user,source_location=source,destination_location=dest,order_reference=request.POST.get('order_reference','').strip(),purchase_order_no=request.POST.get('purchase_order_no','').strip(),manual_entry=request.POST.get('manual_entry')=='on',reason=request.POST.get('reason','').strip(),approval=approval)
+                    messages.success(request,'Material movement posted successfully.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('stock_material_master')
     q=request.GET.get('q','').strip(); category=request.GET.get('category','').strip(); status=request.GET.get('status','').strip()
     materials=MaterialMaster.objects.all().order_by('material_code')
@@ -577,50 +610,52 @@ def asset_machine_master(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='create_asset':
-                ops=[x.strip() for x in request.POST.get('operation_capabilities','').split(',') if x.strip()]
-                purchase_date=request.POST.get('purchase_date') or None
-                warranty_expiry=request.POST.get('warranty_expiry') or None
-                next_date=request.POST.get('next_maintenance_date') or None
-                location=OrganizationNode.objects.filter(pk=request.POST.get('location_id')).first()
-                dept=Department.objects.filter(pk=request.POST.get('department_id')).first()
-                employee=Employee.objects.filter(pk=request.POST.get('assigned_to_id')).first()
-                cost=Decimal(request.POST.get('purchase_cost') or '0')
-                obj=AssetMachine.objects.create(asset_code=request.POST.get('asset_code','').strip(),barcode=request.POST.get('barcode','').strip(),name=request.POST.get('name','').strip(),asset_type=request.POST.get('asset_type','MACHINE'),category=request.POST.get('category','').strip(),machine_type=request.POST.get('machine_type','').strip(),manufacturer=request.POST.get('manufacturer','').strip(),model=request.POST.get('model','').strip(),serial_number=request.POST.get('serial_number','').strip(),supplier=request.POST.get('supplier','').strip(),purchase_date=purchase_date,purchase_cost=cost,current_value=request.POST.get('current_value') or cost,currency=request.POST.get('currency','BDT'),depreciation_method=request.POST.get('depreciation_method','STRAIGHT_LINE'),depreciation_rate=request.POST.get('depreciation_rate') or 0,warranty_expiry=warranty_expiry,location=location,department=dept,assigned_to=employee,status=request.POST.get('status','ACTIVE'),condition=request.POST.get('condition','GOOD'),operation_capabilities=ops,standard_speed=request.POST.get('standard_speed') or 0,speed_unit=request.POST.get('speed_unit','').strip(),available_minutes_per_day=request.POST.get('available_minutes_per_day') or 480,efficiency_percent=request.POST.get('efficiency_percent') or 100,power_rating=request.POST.get('power_rating') or 0,power_unit=request.POST.get('power_unit','KW'),maintenance_interval_days=request.POST.get('maintenance_interval_days') or 30,next_maintenance_date=next_date,created_by=request.user)
-                BarcodeAsset.objects.get_or_create(code=obj.barcode,defaults={'asset_type':'ASSET','reference':obj.asset_code,'payload':{'name':obj.name,'serial_number':obj.serial_number}})
-                messages.success(request,'Asset / machine registered successfully.')
-            elif action=='maintenance':
-                asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
-                status=request.POST.get('maintenance_status','PLANNED')
-                scheduled=request.POST.get('scheduled_date') or None
-                started=timezone.now() if status in {'IN_PROGRESS','COMPLETED'} else None
-                completed=timezone.now() if status=='COMPLETED' else None
-                rec=AssetMaintenance.objects.create(asset=asset,maintenance_type=request.POST.get('maintenance_type','PREVENTIVE'),reference=request.POST.get('reference','').strip(),scheduled_date=scheduled,started_at=started,completed_at=completed,technician=request.POST.get('technician','').strip(),vendor=request.POST.get('vendor','').strip(),description=request.POST.get('description','').strip(),parts_cost=request.POST.get('parts_cost') or 0,labour_cost=request.POST.get('labour_cost') or 0,other_cost=request.POST.get('other_cost') or 0,currency=request.POST.get('currency','BDT'),status=status,approval=approval,performed_by=request.user)
-                if status=='COMPLETED':
-                    today=timezone.localdate(); asset.last_maintenance_date=today; asset.next_maintenance_date=today+timedelta(days=asset.maintenance_interval_days); asset.status='ACTIVE'; asset.save()
-                elif status=='IN_PROGRESS': asset.status='UNDER_MAINTENANCE'; asset.save(update_fields=['status','updated_at'])
-                messages.success(request,'Maintenance record saved.')
-            elif action=='downtime':
-                asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
-                AssetDowntime.objects.create(asset=asset,reference=request.POST.get('reference','').strip(),reason=request.POST.get('reason','BREAKDOWN'),description=request.POST.get('description','').strip(),production_impact_qty=request.POST.get('production_impact_qty') or 0,recorded_by=request.user)
-                asset.status='BREAKDOWN' if request.POST.get('reason')=='BREAKDOWN' else 'IDLE'; asset.save(update_fields=['status','updated_at'])
-                messages.success(request,'Downtime started.')
-            elif action=='close_downtime':
-                rec=get_object_or_404(AssetDowntime,pk=request.POST.get('downtime_id')); rec.ended_at=timezone.now(); rec.save(update_fields=['ended_at','updated_at']); rec.asset.status='ACTIVE'; rec.asset.save(update_fields=['status','updated_at']); messages.success(request,'Downtime closed and machine returned to ACTIVE.')
-            elif action=='movement':
-                asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
-                dest=OrganizationNode.objects.filter(pk=request.POST.get('destination_location_id')).first(); emp=Employee.objects.filter(pk=request.POST.get('assigned_to_id')).first()
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
-                mtype=request.POST.get('movement_type','TRANSFER')
-                if mtype in {'RETIRE','DISPOSE'} and (not approval or approval.status!='APPROVED'): raise PermissionError('Approved senior approval is required to retire or dispose an asset.')
-                AssetMovement.objects.create(asset=asset,movement_type=mtype,reference=request.POST.get('reference','').strip(),source_location=asset.location,destination_location=dest,assigned_to=emp,barcode=request.POST.get('barcode','').strip() or asset.barcode,reason=request.POST.get('reason','').strip(),approval=approval,performed_by=request.user)
-                if dest: asset.location=dest
-                if emp: asset.assigned_to=emp
-                if mtype=='RETIRE': asset.status='RETIRED'
-                if mtype=='DISPOSE': asset.status='DISPOSED'
-                asset.save(); messages.success(request,'Asset movement recorded.')
-        except Exception as exc: messages.error(request,str(exc))
+            with transaction.atomic():
+                if action=='create_asset':
+                    ops=[x.strip() for x in request.POST.get('operation_capabilities','').split(',') if x.strip()]
+                    purchase_date=request.POST.get('purchase_date') or None
+                    warranty_expiry=request.POST.get('warranty_expiry') or None
+                    next_date=request.POST.get('next_maintenance_date') or None
+                    location=OrganizationNode.objects.filter(pk=request.POST.get('location_id')).first()
+                    dept=Department.objects.filter(pk=request.POST.get('department_id')).first()
+                    employee=Employee.objects.filter(pk=request.POST.get('assigned_to_id')).first()
+                    cost=Decimal(request.POST.get('purchase_cost') or '0')
+                    obj=AssetMachine.objects.create(asset_code=request.POST.get('asset_code','').strip(),barcode=request.POST.get('barcode','').strip(),name=request.POST.get('name','').strip(),asset_type=request.POST.get('asset_type','MACHINE'),category=request.POST.get('category','').strip(),machine_type=request.POST.get('machine_type','').strip(),manufacturer=request.POST.get('manufacturer','').strip(),model=request.POST.get('model','').strip(),serial_number=request.POST.get('serial_number','').strip(),supplier=request.POST.get('supplier','').strip(),purchase_date=purchase_date,purchase_cost=cost,current_value=request.POST.get('current_value') or cost,currency=request.POST.get('currency','BDT'),depreciation_method=request.POST.get('depreciation_method','STRAIGHT_LINE'),depreciation_rate=request.POST.get('depreciation_rate') or 0,warranty_expiry=warranty_expiry,location=location,department=dept,assigned_to=employee,status=request.POST.get('status','ACTIVE'),condition=request.POST.get('condition','GOOD'),operation_capabilities=ops,standard_speed=request.POST.get('standard_speed') or 0,speed_unit=request.POST.get('speed_unit','').strip(),available_minutes_per_day=request.POST.get('available_minutes_per_day') or 480,efficiency_percent=request.POST.get('efficiency_percent') or 100,power_rating=request.POST.get('power_rating') or 0,power_unit=request.POST.get('power_unit','KW'),maintenance_interval_days=request.POST.get('maintenance_interval_days') or 30,next_maintenance_date=next_date,created_by=request.user)
+                    BarcodeAsset.objects.get_or_create(code=obj.barcode,defaults={'asset_type':'ASSET','reference':obj.asset_code,'payload':{'name':obj.name,'serial_number':obj.serial_number}})
+                    messages.success(request,'Asset / machine registered successfully.')
+                elif action=='maintenance':
+                    asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
+                    status=request.POST.get('maintenance_status','PLANNED')
+                    scheduled=request.POST.get('scheduled_date') or None
+                    started=timezone.now() if status in {'IN_PROGRESS','COMPLETED'} else None
+                    completed=timezone.now() if status=='COMPLETED' else None
+                    rec=AssetMaintenance.objects.create(asset=asset,maintenance_type=request.POST.get('maintenance_type','PREVENTIVE'),reference=request.POST.get('reference','').strip(),scheduled_date=scheduled,started_at=started,completed_at=completed,technician=request.POST.get('technician','').strip(),vendor=request.POST.get('vendor','').strip(),description=request.POST.get('description','').strip(),parts_cost=request.POST.get('parts_cost') or 0,labour_cost=request.POST.get('labour_cost') or 0,other_cost=request.POST.get('other_cost') or 0,currency=request.POST.get('currency','BDT'),status=status,approval=approval,performed_by=request.user)
+                    if status=='COMPLETED':
+                        today=timezone.localdate(); asset.last_maintenance_date=today; asset.next_maintenance_date=today+timedelta(days=asset.maintenance_interval_days); asset.status='ACTIVE'; asset.save()
+                    elif status=='IN_PROGRESS': asset.status='UNDER_MAINTENANCE'; asset.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Maintenance record saved.')
+                elif action=='downtime':
+                    asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
+                    AssetDowntime.objects.create(asset=asset,reference=request.POST.get('reference','').strip(),reason=request.POST.get('reason','BREAKDOWN'),description=request.POST.get('description','').strip(),production_impact_qty=request.POST.get('production_impact_qty') or 0,recorded_by=request.user)
+                    asset.status='BREAKDOWN' if request.POST.get('reason')=='BREAKDOWN' else 'IDLE'; asset.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Downtime started.')
+                elif action=='close_downtime':
+                    rec=get_object_or_404(AssetDowntime,pk=request.POST.get('downtime_id')); rec.ended_at=timezone.now(); rec.save(update_fields=['ended_at','updated_at']); rec.asset.status='ACTIVE'; rec.asset.save(update_fields=['status','updated_at']); messages.success(request,'Downtime closed and machine returned to ACTIVE.')
+                elif action=='movement':
+                    asset=get_object_or_404(AssetMachine,pk=request.POST.get('asset_id'))
+                    dest=OrganizationNode.objects.filter(pk=request.POST.get('destination_location_id')).first(); emp=Employee.objects.filter(pk=request.POST.get('assigned_to_id')).first()
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
+                    mtype=request.POST.get('movement_type','TRANSFER')
+                    if mtype in {'RETIRE','DISPOSE'} and (not approval or approval.status!='APPROVED'): raise PermissionError('Approved senior approval is required to retire or dispose an asset.')
+                    AssetMovement.objects.create(asset=asset,movement_type=mtype,reference=request.POST.get('reference','').strip(),source_location=asset.location,destination_location=dest,assigned_to=emp,barcode=request.POST.get('barcode','').strip() or asset.barcode,reason=request.POST.get('reason','').strip(),approval=approval,performed_by=request.user)
+                    if dest: asset.location=dest
+                    if emp: asset.assigned_to=emp
+                    if mtype=='RETIRE': asset.status='RETIRED'
+                    if mtype=='DISPOSE': asset.status='DISPOSED'
+                    asset.save(); messages.success(request,'Asset movement recorded.')
+        except Exception as exc:
+            _handle_post_error(request, exc)
         return redirect('asset_machine_master')
     qs=AssetMachine.objects.select_related('location','department','assigned_to').order_by('asset_code')
     q=request.GET.get('q','').strip(); status=request.GET.get('status','').strip(); typ=request.GET.get('asset_type','').strip()
@@ -664,44 +699,46 @@ def buyer_opportunity(request):
     if request.method=='POST':
         action=request.POST.get('action','create')
         try:
-            if action=='create':
-                now=timezone.now(); seq=BuyerOpportunity.objects.filter(created_at__date=timezone.localdate()).count()+1
-                enquiry=request.POST.get('enquiry_no','').strip() or f'ENQ-{now:%Y%m%d}-{seq:04d}'
-                oppno=request.POST.get('opportunity_no','').strip() or f'OPP-{now:%Y%m%d}-{seq:04d}'
-                qty=int(request.POST.get('target_quantity') or 0); price=Decimal(request.POST.get('target_unit_price') or '0')
-                expected=Decimal(request.POST.get('expected_order_value') or '0') or (Decimal(qty)*price)
-                obj=BuyerOpportunity.objects.create(enquiry_no=enquiry,opportunity_no=oppno,buyer_company=request.POST.get('buyer_company','').strip(),buyer_contact=request.POST.get('buyer_contact','').strip(),buyer_email=request.POST.get('buyer_email','').strip(),buyer_phone=request.POST.get('buyer_phone','').strip(),buyer_country=request.POST.get('buyer_country','').strip(),delivery_destination=request.POST.get('delivery_destination','').strip(),product=request.POST.get('product','').strip(),style_no=request.POST.get('style_no','').strip(),item_no=request.POST.get('item_no','').strip(),description=request.POST.get('description','').strip(),target_quantity=qty,target_unit_price=price,currency=request.POST.get('currency','USD'),expected_order_value=expected,probability_percent=request.POST.get('probability_percent') or 10,required_delivery_date=request.POST.get('required_delivery_date') or None,follow_up_date=request.POST.get('follow_up_date') or None,incoterms=request.POST.get('incoterms','').strip(),payment_terms=request.POST.get('payment_terms','').strip(),fabric_requirements=request.POST.get('fabric_requirements','').strip(),accessory_requirements=request.POST.get('accessory_requirements','').strip(),sample_requirements=request.POST.get('sample_requirements','').strip(),stage=request.POST.get('stage','NEW_ENQUIRY'),priority=request.POST.get('priority','NORMAL'),owner=request.user,merchandiser=Employee.objects.filter(pk=request.POST.get('merchandiser_id')).first(),source=request.POST.get('source','').strip(),competitor_info=request.POST.get('competitor_info','').strip(),notes=request.POST.get('notes','').strip())
-                OpportunityActivity.objects.create(opportunity=obj,activity_type='STATUS_CHANGE',subject='Buyer enquiry created',details=f'Stage: {obj.stage}',performed_by=request.user)
-                messages.success(request,f'{obj.opportunity_no} created.')
-            elif action=='stage':
-                obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); old=obj.stage; new=request.POST.get('stage',old)
-                if new=='WON' and not obj.converted_order:
-                    gate=ProfitFeasibilityGate.objects.filter(opportunity=obj).select_related('approval').first()
-                    if not gate or not gate.gate_passed:
-                        raise PermissionError('Profit + Feasibility Gate must be ACCEPT or ACCEPT WITH RISK and have an APPROVED senior approval before this opportunity can be accepted as WON.')
-                    approved=obj.quotations.filter(status__in=['APPROVED','ACCEPTED']).order_by('-version').first()
-                    if not approved: raise PermissionError('An approved/accepted quotation is required before converting a Won opportunity to Order Master.')
-                    oid=f'MO-{timezone.now():%Y%m%d}-{obj.pk:05d}'
-                    order=MasterOrder.objects.create(master_order_id=oid,buyer=obj.buyer_company,product=obj.product,quantity=obj.target_quantity,order_value=approved.total_value,confirmed_at=timezone.now(),delivery_due=timezone.make_aware(datetime.combine(obj.required_delivery_date,datetime.min.time())) if obj.required_delivery_date else None,status='CONFIRMED')
-                    obj.converted_order=order
-                obj.stage=new; obj.probability_percent=request.POST.get('probability_percent') or obj.probability_percent
-                obj.lost_reason=request.POST.get('lost_reason','').strip() if new=='LOST' else obj.lost_reason; obj.save()
-                OpportunityActivity.objects.create(opportunity=obj,activity_type='STATUS_CHANGE',subject=f'{old} → {new}',details=request.POST.get('details','').strip(),performed_by=request.user)
-                messages.success(request,'Opportunity stage updated.')
-            elif action=='quotation':
-                obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); ver=obj.quotation_version+1
-                qty=int(request.POST.get('quantity') or obj.target_quantity); price=Decimal(request.POST.get('unit_price') or obj.target_unit_price); total=Decimal(qty)*price
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
-                status=request.POST.get('quotation_status','DRAFT')
-                if status in {'APPROVED','SENT','ACCEPTED'} and (not approval or approval.status!='APPROVED'): raise PermissionError('Approved quotation approval request is required before approval/send/acceptance.')
-                OpportunityQuotation.objects.create(opportunity=obj,version=ver,quotation_no=f'QUO-{obj.opportunity_no}-{ver:02d}',unit_price=price,quantity=qty,currency=request.POST.get('currency',obj.currency),total_value=total,valid_until=request.POST.get('valid_until') or None,status=status,terms=request.POST.get('terms','').strip(),approval=approval,created_by=request.user)
-                obj.quotation_version=ver; obj.stage='QUOTATION_SENT' if status=='SENT' else obj.stage; obj.save(); messages.success(request,'Quotation version created.')
-            elif action=='activity':
-                obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); nxt=request.POST.get('next_follow_up') or None
-                OpportunityActivity.objects.create(opportunity=obj,activity_type=request.POST.get('activity_type','FOLLOW_UP'),subject=request.POST.get('subject','').strip(),details=request.POST.get('details','').strip(),next_follow_up=nxt,performed_by=request.user)
-                if nxt: obj.follow_up_date=nxt; obj.save(update_fields=['follow_up_date','updated_at'])
-                messages.success(request,'Buyer activity recorded.')
-        except Exception as exc: messages.error(request,str(exc))
+            with transaction.atomic():
+                if action=='create':
+                    now=timezone.now(); seq=BuyerOpportunity.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    enquiry=request.POST.get('enquiry_no','').strip() or f'ENQ-{now:%Y%m%d}-{seq:04d}'
+                    oppno=request.POST.get('opportunity_no','').strip() or f'OPP-{now:%Y%m%d}-{seq:04d}'
+                    qty=int(request.POST.get('target_quantity') or 0); price=Decimal(request.POST.get('target_unit_price') or '0')
+                    expected=Decimal(request.POST.get('expected_order_value') or '0') or (Decimal(qty)*price)
+                    obj=BuyerOpportunity.objects.create(enquiry_no=enquiry,opportunity_no=oppno,buyer_company=request.POST.get('buyer_company','').strip(),buyer_contact=request.POST.get('buyer_contact','').strip(),buyer_email=request.POST.get('buyer_email','').strip(),buyer_phone=request.POST.get('buyer_phone','').strip(),buyer_country=request.POST.get('buyer_country','').strip(),delivery_destination=request.POST.get('delivery_destination','').strip(),product=request.POST.get('product','').strip(),style_no=request.POST.get('style_no','').strip(),item_no=request.POST.get('item_no','').strip(),description=request.POST.get('description','').strip(),target_quantity=qty,target_unit_price=price,currency=request.POST.get('currency','USD'),expected_order_value=expected,probability_percent=request.POST.get('probability_percent') or 10,required_delivery_date=request.POST.get('required_delivery_date') or None,follow_up_date=request.POST.get('follow_up_date') or None,incoterms=request.POST.get('incoterms','').strip(),payment_terms=request.POST.get('payment_terms','').strip(),fabric_requirements=request.POST.get('fabric_requirements','').strip(),accessory_requirements=request.POST.get('accessory_requirements','').strip(),sample_requirements=request.POST.get('sample_requirements','').strip(),stage=request.POST.get('stage','NEW_ENQUIRY'),priority=request.POST.get('priority','NORMAL'),owner=request.user,merchandiser=Employee.objects.filter(pk=request.POST.get('merchandiser_id')).first(),source=request.POST.get('source','').strip(),competitor_info=request.POST.get('competitor_info','').strip(),notes=request.POST.get('notes','').strip())
+                    OpportunityActivity.objects.create(opportunity=obj,activity_type='STATUS_CHANGE',subject='Buyer enquiry created',details=f'Stage: {obj.stage}',performed_by=request.user)
+                    messages.success(request,f'{obj.opportunity_no} created.')
+                elif action=='stage':
+                    obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); old=obj.stage; new=request.POST.get('stage',old)
+                    if new=='WON' and not obj.converted_order:
+                        gate=ProfitFeasibilityGate.objects.filter(opportunity=obj).select_related('approval').first()
+                        if not gate or not gate.gate_passed:
+                            raise PermissionError('Profit + Feasibility Gate must be ACCEPT or ACCEPT WITH RISK and have an APPROVED senior approval before this opportunity can be accepted as WON.')
+                        approved=obj.quotations.filter(status__in=['APPROVED','ACCEPTED']).order_by('-version').first()
+                        if not approved: raise PermissionError('An approved/accepted quotation is required before converting a Won opportunity to Order Master.')
+                        oid=f'MO-{timezone.now():%Y%m%d}-{obj.pk:05d}'
+                        order=MasterOrder.objects.create(master_order_id=oid,buyer=obj.buyer_company,product=obj.product,quantity=obj.target_quantity,order_value=approved.total_value,confirmed_at=timezone.now(),delivery_due=timezone.make_aware(datetime.combine(obj.required_delivery_date,datetime.min.time())) if obj.required_delivery_date else None,status='CONFIRMED')
+                        obj.converted_order=order
+                    obj.stage=new; obj.probability_percent=request.POST.get('probability_percent') or obj.probability_percent
+                    obj.lost_reason=request.POST.get('lost_reason','').strip() if new=='LOST' else obj.lost_reason; obj.save()
+                    OpportunityActivity.objects.create(opportunity=obj,activity_type='STATUS_CHANGE',subject=f'{old} → {new}',details=request.POST.get('details','').strip(),performed_by=request.user)
+                    messages.success(request,'Opportunity stage updated.')
+                elif action=='quotation':
+                    obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); ver=obj.quotation_version+1
+                    qty=int(request.POST.get('quantity') or obj.target_quantity); price=Decimal(request.POST.get('unit_price') or obj.target_unit_price); total=Decimal(qty)*price
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first() if request.POST.get('approval_id') else None
+                    status=request.POST.get('quotation_status','DRAFT')
+                    if status in {'APPROVED','SENT','ACCEPTED'} and (not approval or approval.status!='APPROVED'): raise PermissionError('Approved quotation approval request is required before approval/send/acceptance.')
+                    OpportunityQuotation.objects.create(opportunity=obj,version=ver,quotation_no=f'QUO-{obj.opportunity_no}-{ver:02d}',unit_price=price,quantity=qty,currency=request.POST.get('currency',obj.currency),total_value=total,valid_until=request.POST.get('valid_until') or None,status=status,terms=request.POST.get('terms','').strip(),approval=approval,created_by=request.user)
+                    obj.quotation_version=ver; obj.stage='QUOTATION_SENT' if status=='SENT' else obj.stage; obj.save(); messages.success(request,'Quotation version created.')
+                elif action=='activity':
+                    obj=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id')); nxt=request.POST.get('next_follow_up') or None
+                    OpportunityActivity.objects.create(opportunity=obj,activity_type=request.POST.get('activity_type','FOLLOW_UP'),subject=request.POST.get('subject','').strip(),details=request.POST.get('details','').strip(),next_follow_up=nxt,performed_by=request.user)
+                    if nxt: obj.follow_up_date=nxt; obj.save(update_fields=['follow_up_date','updated_at'])
+                    messages.success(request,'Buyer activity recorded.')
+        except Exception as exc:
+            _handle_post_error(request, exc)
         return redirect('buyer_opportunity')
     qs=BuyerOpportunity.objects.select_related('owner','merchandiser','converted_order').order_by('-updated_at'); q=request.GET.get('q','').strip(); stage=request.GET.get('stage','').strip()
     if q: qs=qs.filter(Q(opportunity_no__icontains=q)|Q(enquiry_no__icontains=q)|Q(buyer_company__icontains=q)|Q(product__icontains=q)|Q(style_no__icontains=q))
@@ -734,101 +771,102 @@ def communication_center(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='new_thread':
-                seq=CommunicationThread.objects.filter(created_at__date=timezone.localdate()).count()+1
-                thread=CommunicationThread.objects.create(
-                    thread_no=f'COM-{timezone.now():%Y%m%d}-{seq:05d}',
-                    subject=request.POST.get('subject','').strip(),
-                    thread_type=request.POST.get('thread_type','INTERNAL'),
-                    priority=request.POST.get('priority','NORMAL'),
-                    reference=request.POST.get('reference','').strip(),
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer_opportunity=BuyerOpportunity.objects.filter(pk=request.POST.get('buyer_opportunity_id')).first(),
-                    order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first(),
-                    created_by=request.user,
-                    assigned_to=User.objects.filter(pk=request.POST.get('assigned_to')).first()
-                )
-                thread.participants.add(request.user)
-                if thread.assigned_to: thread.participants.add(thread.assigned_to)
-                body=request.POST.get('body','').strip()
-                if body:
-                    msg=CommunicationMessage.objects.create(thread=thread,channel=request.POST.get('channel','CHAT_24_7'),direction='INTERNAL',sender_user=request.user,body=body,status='SENT')
+            with transaction.atomic():
+                if action=='new_thread':
+                    seq=CommunicationThread.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    thread=CommunicationThread.objects.create(
+                        thread_no=f'COM-{timezone.now():%Y%m%d}-{seq:05d}',
+                        subject=request.POST.get('subject','').strip(),
+                        thread_type=request.POST.get('thread_type','INTERNAL'),
+                        priority=request.POST.get('priority','NORMAL'),
+                        reference=request.POST.get('reference','').strip(),
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer_opportunity=BuyerOpportunity.objects.filter(pk=request.POST.get('buyer_opportunity_id')).first(),
+                        order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first(),
+                        created_by=request.user,
+                        assigned_to=User.objects.filter(pk=request.POST.get('assigned_to')).first()
+                    )
+                    thread.participants.add(request.user)
+                    if thread.assigned_to: thread.participants.add(thread.assigned_to)
+                    body=request.POST.get('body','').strip()
+                    if body:
+                        msg=CommunicationMessage.objects.create(thread=thread,channel=request.POST.get('channel','CHAT_24_7'),direction='INTERNAL',sender_user=request.user,body=body,status='SENT')
+                        for f in request.FILES.getlist('attachments'):
+                            CommunicationAttachment.objects.create(message=msg,file=f,original_name=f.name,mime_type=getattr(f,'content_type',''),file_size=getattr(f,'size',0),uploaded_by=request.user)
+                    messages.success(request,f'{thread.thread_no} created.')
+                elif action=='send_message':
+                    thread=get_object_or_404(CommunicationThread,pk=request.POST.get('thread_id'))
+                    channel=request.POST.get('channel','CHAT_24_7')
+                    msg=CommunicationMessage.objects.create(
+                        thread=thread,channel=channel,
+                        direction='INTERNAL' if channel in {'CHAT_24_7','INTERNAL_CHAT'} else 'OUTBOUND',
+                        sender_user=request.user,sender_address=request.POST.get('sender_address','').strip(),
+                        recipient_address=request.POST.get('recipient_address','').strip(),
+                        subject=request.POST.get('message_subject','').strip(),
+                        body=request.POST.get('body','').strip(),
+                        status='SENT' if channel in {'CHAT_24_7','INTERNAL_CHAT','NOTICE','SYSTEM_ALERT'} else 'QUEUED',
+                        is_red_alert=request.POST.get('is_red_alert')=='on'
+                    )
                     for f in request.FILES.getlist('attachments'):
                         CommunicationAttachment.objects.create(message=msg,file=f,original_name=f.name,mime_type=getattr(f,'content_type',''),file_size=getattr(f,'size',0),uploaded_by=request.user)
-                messages.success(request,f'{thread.thread_no} created.')
-            elif action=='send_message':
-                thread=get_object_or_404(CommunicationThread,pk=request.POST.get('thread_id'))
-                channel=request.POST.get('channel','CHAT_24_7')
-                msg=CommunicationMessage.objects.create(
-                    thread=thread,channel=channel,
-                    direction='INTERNAL' if channel in {'CHAT_24_7','INTERNAL_CHAT'} else 'OUTBOUND',
-                    sender_user=request.user,sender_address=request.POST.get('sender_address','').strip(),
-                    recipient_address=request.POST.get('recipient_address','').strip(),
-                    subject=request.POST.get('message_subject','').strip(),
-                    body=request.POST.get('body','').strip(),
-                    status='SENT' if channel in {'CHAT_24_7','INTERNAL_CHAT','NOTICE','SYSTEM_ALERT'} else 'QUEUED',
-                    is_red_alert=request.POST.get('is_red_alert')=='on'
-                )
-                for f in request.FILES.getlist('attachments'):
-                    CommunicationAttachment.objects.create(message=msg,file=f,original_name=f.name,mime_type=getattr(f,'content_type',''),file_size=getattr(f,'size',0),uploaded_by=request.user)
-                thread.last_message_at=timezone.now(); thread.save(update_fields=['last_message_at','updated_at'])
-                if msg.is_red_alert:
-                    Alert.objects.create(level='RED',module='Communication Center',reference=thread.thread_no,message=msg.body or msg.subject,actioned=False)
-                messages.success(request,'Message recorded/queued.')
-            elif action=='mark_read':
-                msg=get_object_or_404(CommunicationMessage,pk=request.POST.get('message_id'))
-                CommunicationReadReceipt.objects.get_or_create(message=msg,user=request.user,defaults={'read_at':timezone.now()})
-                msg.status='READ'; msg.read_at=timezone.now(); msg.save(update_fields=['status','read_at','updated_at'])
-                messages.success(request,'Message marked read.')
-            elif action=='alert':
-                alert=Alert.objects.create(
-                    title=request.POST.get('title','').strip(),
-                    message=request.POST.get('body','').strip(),
-                    level=request.POST.get('level','INFO'),
-                    department=request.POST.get('department_name','').strip(),
-                    reference=request.POST.get('reference','').strip(),
-                    actioned=False
-                )
-                if request.POST.get('create_action')=='on':
+                    thread.last_message_at=timezone.now(); thread.save(update_fields=['last_message_at','updated_at'])
+                    if msg.is_red_alert:
+                        Alert.objects.create(level='RED',module='Communication Center',reference=thread.thread_no,message=msg.body or msg.subject,actioned=False)
+                    messages.success(request,'Message recorded/queued.')
+                elif action=='mark_read':
+                    msg=get_object_or_404(CommunicationMessage,pk=request.POST.get('message_id'))
+                    CommunicationReadReceipt.objects.get_or_create(message=msg,user=request.user,defaults={'read_at':timezone.now()})
+                    msg.status='READ'; msg.read_at=timezone.now(); msg.save(update_fields=['status','read_at','updated_at'])
+                    messages.success(request,'Message marked read.')
+                elif action=='alert':
+                    alert=Alert.objects.create(
+                        title=request.POST.get('title','').strip(),
+                        message=request.POST.get('body','').strip(),
+                        level=request.POST.get('level','INFO'),
+                        department=request.POST.get('department_name','').strip(),
+                        reference=request.POST.get('reference','').strip(),
+                        actioned=False
+                    )
+                    if request.POST.get('create_action')=='on':
+                        ActionItem.objects.create(
+                            title=request.POST.get('action_title','').strip() or f'Action for {alert.title}',
+                            assigned_to=User.objects.filter(pk=request.POST.get('assigned_to')).first(),
+                            department=request.POST.get('department_name','').strip(),
+                            due_at=request.POST.get('due_at') or None,
+                            status='OPEN',
+                            priority='URGENT' if alert.level=='RED' else 'NORMAL'
+                        )
+                    messages.success(request,'Alert created.')
+                elif action=='action_item':
                     ActionItem.objects.create(
-                        title=request.POST.get('action_title','').strip() or f'Action for {alert.title}',
+                        title=request.POST.get('title','').strip(),
                         assigned_to=User.objects.filter(pk=request.POST.get('assigned_to')).first(),
                         department=request.POST.get('department_name','').strip(),
                         due_at=request.POST.get('due_at') or None,
-                        status='OPEN',
-                        priority='URGENT' if alert.level=='RED' else 'NORMAL'
+                        status=request.POST.get('status','OPEN'),
+                        priority=request.POST.get('priority','NORMAL')
                     )
-                messages.success(request,'Alert created.')
-            elif action=='action_item':
-                ActionItem.objects.create(
-                    title=request.POST.get('title','').strip(),
-                    assigned_to=User.objects.filter(pk=request.POST.get('assigned_to')).first(),
-                    department=request.POST.get('department_name','').strip(),
-                    due_at=request.POST.get('due_at') or None,
-                    status=request.POST.get('status','OPEN'),
-                    priority=request.POST.get('priority','NORMAL')
-                )
-                messages.success(request,'Action item created.')
-            elif action=='action_complete':
-                item=get_object_or_404(ActionItem,pk=request.POST.get('action_id'))
-                item.status='COMPLETED'; item.save(update_fields=['status','updated_at'])
-                messages.success(request,'Action completed.')
-            elif action=='notice':
-                CommunicationNotice.objects.create(
-                    title=request.POST.get('title','').strip(),body=request.POST.get('body','').strip(),
-                    notice_type=request.POST.get('notice_type','NOTICE'),
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    target_role=request.POST.get('target_role','').strip(),
-                    target_all=request.POST.get('target_all')=='on',
-                    expires_at=request.POST.get('expires_at') or None,created_by=request.user,active=True
-                )
-                messages.success(request,'Notice/Broadcast created.')
-            elif action=='close_thread':
-                thread=get_object_or_404(CommunicationThread,pk=request.POST.get('thread_id'))
-                thread.status='CLOSED'; thread.closed_at=timezone.now(); thread.save(update_fields=['status','closed_at','updated_at'])
-                messages.success(request,'Thread closed.')
+                    messages.success(request,'Action item created.')
+                elif action=='action_complete':
+                    item=get_object_or_404(ActionItem,pk=request.POST.get('action_id'))
+                    item.status='COMPLETED'; item.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Action completed.')
+                elif action=='notice':
+                    CommunicationNotice.objects.create(
+                        title=request.POST.get('title','').strip(),body=request.POST.get('body','').strip(),
+                        notice_type=request.POST.get('notice_type','NOTICE'),
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        target_role=request.POST.get('target_role','').strip(),
+                        target_all=request.POST.get('target_all')=='on',
+                        expires_at=request.POST.get('expires_at') or None,created_by=request.user,active=True
+                    )
+                    messages.success(request,'Notice/Broadcast created.')
+                elif action=='close_thread':
+                    thread=get_object_or_404(CommunicationThread,pk=request.POST.get('thread_id'))
+                    thread.status='CLOSED'; thread.closed_at=timezone.now(); thread.save(update_fields=['status','closed_at','updated_at'])
+                    messages.success(request,'Thread closed.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('communication_center')
 
     q=request.GET.get('q','').strip()
@@ -889,59 +927,60 @@ def profit_feasibility_gate(request):
     if request.method=='POST':
         action=request.POST.get('action','save_gate')
         try:
-            if action=='save_gate':
-                opportunity=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id'))
-                gate,_=ProfitFeasibilityGate.objects.get_or_create(opportunity=opportunity)
-                decimal_fields=[
-                    'selling_price_per_unit','material_cost','accessory_cost','labour_cost','production_overhead',
-                    'finishing_packing_cost','logistics_freight_cost','finance_bank_cost','commission_cost',
-                    'compliance_testing_cost','contingency_cost','other_cost','minimum_margin_percent',
-                    'capacity_score','material_readiness_score','workforce_score','machine_score','lead_time_score',
-                    'quality_score','compliance_score','buyer_credit_score','commercial_risk_score'
-                ]
-                for fld in decimal_fields:
-                    val=request.POST.get(fld)
-                    if val not in [None,'']:
-                        setattr(gate,fld,Decimal(val))
-                gate.currency=request.POST.get('currency',opportunity.currency or 'USD')
-                gate.quantity=int(request.POST.get('quantity') or opportunity.target_quantity or 0)
-                if not request.POST.get('selling_price_per_unit'):
-                    gate.selling_price_per_unit=opportunity.target_unit_price
-                gate.production_days_required=int(request.POST.get('production_days_required') or 0)
-                gate.available_days=int(request.POST.get('available_days') or 0)
-                gate.critical_bottleneck=request.POST.get('critical_bottleneck','').strip()
-                gate.material_shortage=request.POST.get('material_shortage','').strip()
-                gate.capacity_risk=request.POST.get('capacity_risk','').strip()
-                gate.commercial_risk=request.POST.get('commercial_risk','').strip()
-                gate.remarks=request.POST.get('remarks','').strip()
-                gate.reviewed_by=request.user
-                gate.reviewed_at=timezone.now()
-                gate.save()
-                messages.success(request,f'Gate calculated for {opportunity.opportunity_no}: {gate.system_recommendation}.')
-            elif action=='decision':
-                gate=get_object_or_404(ProfitFeasibilityGate,pk=request.POST.get('gate_id'))
-                decision=request.POST.get('final_decision','PENDING')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if decision in {'ACCEPT','ACCEPT_WITH_RISK'}:
-                    if not approval or approval.status!='APPROVED':
-                        raise PermissionError('ACCEPT / ACCEPT WITH RISK requires an APPROVED senior Approval Request.')
-                    if decision=='ACCEPT' and gate.margin_percent < gate.minimum_margin_percent:
-                        raise PermissionError('Cannot ACCEPT below the minimum profit margin. Use HOLD/REJECT or revise costing.')
-                gate.final_decision=decision
-                gate.approval=approval
-                gate.reviewed_by=request.user
-                gate.reviewed_at=timezone.now()
-                gate.remarks=request.POST.get('decision_remarks','').strip() or gate.remarks
-                gate.save()
-                OpportunityActivity.objects.create(
-                    opportunity=gate.opportunity,activity_type='STATUS_CHANGE',
-                    subject=f'Profit + Feasibility Gate: {decision}',
-                    details=f'Recommendation={gate.system_recommendation}; Margin={gate.margin_percent}%; Feasibility={gate.feasibility_score}%',
-                    performed_by=request.user
-                )
-                messages.success(request,f'Final gate decision saved: {decision}.')
+            with transaction.atomic():
+                if action=='save_gate':
+                    opportunity=get_object_or_404(BuyerOpportunity,pk=request.POST.get('opportunity_id'))
+                    gate,_=ProfitFeasibilityGate.objects.get_or_create(opportunity=opportunity)
+                    decimal_fields=[
+                        'selling_price_per_unit','material_cost','accessory_cost','labour_cost','production_overhead',
+                        'finishing_packing_cost','logistics_freight_cost','finance_bank_cost','commission_cost',
+                        'compliance_testing_cost','contingency_cost','other_cost','minimum_margin_percent',
+                        'capacity_score','material_readiness_score','workforce_score','machine_score','lead_time_score',
+                        'quality_score','compliance_score','buyer_credit_score','commercial_risk_score'
+                    ]
+                    for fld in decimal_fields:
+                        val=request.POST.get(fld)
+                        if val not in [None,'']:
+                            setattr(gate,fld,Decimal(val))
+                    gate.currency=request.POST.get('currency',opportunity.currency or 'USD')
+                    gate.quantity=int(request.POST.get('quantity') or opportunity.target_quantity or 0)
+                    if not request.POST.get('selling_price_per_unit'):
+                        gate.selling_price_per_unit=opportunity.target_unit_price
+                    gate.production_days_required=int(request.POST.get('production_days_required') or 0)
+                    gate.available_days=int(request.POST.get('available_days') or 0)
+                    gate.critical_bottleneck=request.POST.get('critical_bottleneck','').strip()
+                    gate.material_shortage=request.POST.get('material_shortage','').strip()
+                    gate.capacity_risk=request.POST.get('capacity_risk','').strip()
+                    gate.commercial_risk=request.POST.get('commercial_risk','').strip()
+                    gate.remarks=request.POST.get('remarks','').strip()
+                    gate.reviewed_by=request.user
+                    gate.reviewed_at=timezone.now()
+                    gate.save()
+                    messages.success(request,f'Gate calculated for {opportunity.opportunity_no}: {gate.system_recommendation}.')
+                elif action=='decision':
+                    gate=get_object_or_404(ProfitFeasibilityGate,pk=request.POST.get('gate_id'))
+                    decision=request.POST.get('final_decision','PENDING')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if decision in {'ACCEPT','ACCEPT_WITH_RISK'}:
+                        if not approval or approval.status!='APPROVED':
+                            raise PermissionError('ACCEPT / ACCEPT WITH RISK requires an APPROVED senior Approval Request.')
+                        if decision=='ACCEPT' and gate.margin_percent < gate.minimum_margin_percent:
+                            raise PermissionError('Cannot ACCEPT below the minimum profit margin. Use HOLD/REJECT or revise costing.')
+                    gate.final_decision=decision
+                    gate.approval=approval
+                    gate.reviewed_by=request.user
+                    gate.reviewed_at=timezone.now()
+                    gate.remarks=request.POST.get('decision_remarks','').strip() or gate.remarks
+                    gate.save()
+                    OpportunityActivity.objects.create(
+                        opportunity=gate.opportunity,activity_type='STATUS_CHANGE',
+                        subject=f'Profit + Feasibility Gate: {decision}',
+                        details=f'Recommendation={gate.system_recommendation}; Margin={gate.margin_percent}%; Feasibility={gate.feasibility_score}%',
+                        performed_by=request.user
+                    )
+                    messages.success(request,f'Final gate decision saved: {decision}.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('profit_feasibility_gate')
 
     q=request.GET.get('q','').strip()
@@ -993,62 +1032,63 @@ def free_capacity_opportunity(request):
     if request.method=='POST':
         action=request.POST.get('action','save_check')
         try:
-            if action=='save_check':
-                opp=BuyerOpportunity.objects.filter(pk=request.POST.get('opportunity_id')).first()
-                seq=FreeCapacityOpportunity.objects.filter(created_at__date=timezone.localdate()).count()+1
-                ref=request.POST.get('reference','').strip() or f'FCO-{timezone.now():%Y%m%d}-{seq:04d}'
-                obj=FreeCapacityOpportunity.objects.filter(reference=ref).first() or FreeCapacityOpportunity(reference=ref)
-                obj.opportunity=opp
-                obj.product=request.POST.get('product','').strip() or (opp.product if opp else '')
-                obj.quantity=int(request.POST.get('quantity') or (opp.target_quantity if opp else 0) or 0)
-                obj.requested_delivery_date=request.POST.get('requested_delivery_date') or (opp.required_delivery_date if opp else None)
-                obj.required_minutes=int(request.POST.get('required_minutes') or 0)
-                obj.available_machine_minutes=int(request.POST.get('available_machine_minutes') or 0)
-                obj.available_workforce_minutes=int(request.POST.get('available_workforce_minutes') or 0)
-                obj.available_line_minutes=int(request.POST.get('available_line_minutes') or 0)
-                obj.reserved_minutes=int(request.POST.get('reserved_minutes') or 0)
-                obj.safety_buffer_minutes=int(request.POST.get('safety_buffer_minutes') or 0)
-                for fld in [
-                    'material_readiness_percent','accessories_readiness_percent','qc_readiness_percent',
-                    'finishing_readiness_percent','selling_value','incremental_cost',
-                    'minimum_margin_percent','current_confirmed_load_percent','rush_risk_percent'
-                ]:
-                    val=request.POST.get(fld)
-                    if val not in [None,'']:
-                        setattr(obj,fld,Decimal(val))
-                obj.notes=request.POST.get('notes','').strip()
-                obj.reviewed_by=request.user
-                obj.reviewed_at=timezone.now()
-                obj.save()
-                messages.success(request,f'{obj.reference}: {obj.system_recommendation}. Free capacity {obj.free_minutes} minutes.')
-            elif action=='decision':
-                obj=get_object_or_404(FreeCapacityOpportunity,pk=request.POST.get('capacity_id'))
-                decision=request.POST.get('final_decision','PENDING')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if decision in {'TAKE_QUICK_ORDER','TAKE_WITH_RISK'}:
-                    if not approval or approval.status!='APPROVED':
-                        raise PermissionError('Taking a quick order requires an APPROVED senior Approval Request.')
-                    if obj.free_minutes < obj.required_minutes:
-                        raise PermissionError('Quick order cannot be accepted because protected free capacity is below required minutes.')
-                    if obj.margin_percent < obj.minimum_margin_percent:
-                        raise PermissionError('Quick order cannot be accepted below the minimum incremental profit margin.')
-                obj.final_decision=decision
-                obj.approval=approval
-                obj.reviewed_by=request.user
-                obj.reviewed_at=timezone.now()
-                obj.notes=request.POST.get('decision_notes','').strip() or obj.notes
-                obj.save()
-                if obj.opportunity:
-                    OpportunityActivity.objects.create(
-                        opportunity=obj.opportunity,
-                        activity_type='STATUS_CHANGE',
-                        subject=f'Free Capacity Quick Order: {decision}',
-                        details=f'Free={obj.free_minutes} min; Required={obj.required_minutes} min; Margin={obj.margin_percent}%; Readiness={obj.readiness_score}%',
-                        performed_by=request.user
-                    )
-                messages.success(request,f'Capacity decision saved: {decision}.')
+            with transaction.atomic():
+                if action=='save_check':
+                    opp=BuyerOpportunity.objects.filter(pk=request.POST.get('opportunity_id')).first()
+                    seq=FreeCapacityOpportunity.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    ref=request.POST.get('reference','').strip() or f'FCO-{timezone.now():%Y%m%d}-{seq:04d}'
+                    obj=FreeCapacityOpportunity.objects.filter(reference=ref).first() or FreeCapacityOpportunity(reference=ref)
+                    obj.opportunity=opp
+                    obj.product=request.POST.get('product','').strip() or (opp.product if opp else '')
+                    obj.quantity=int(request.POST.get('quantity') or (opp.target_quantity if opp else 0) or 0)
+                    obj.requested_delivery_date=request.POST.get('requested_delivery_date') or (opp.required_delivery_date if opp else None)
+                    obj.required_minutes=int(request.POST.get('required_minutes') or 0)
+                    obj.available_machine_minutes=int(request.POST.get('available_machine_minutes') or 0)
+                    obj.available_workforce_minutes=int(request.POST.get('available_workforce_minutes') or 0)
+                    obj.available_line_minutes=int(request.POST.get('available_line_minutes') or 0)
+                    obj.reserved_minutes=int(request.POST.get('reserved_minutes') or 0)
+                    obj.safety_buffer_minutes=int(request.POST.get('safety_buffer_minutes') or 0)
+                    for fld in [
+                        'material_readiness_percent','accessories_readiness_percent','qc_readiness_percent',
+                        'finishing_readiness_percent','selling_value','incremental_cost',
+                        'minimum_margin_percent','current_confirmed_load_percent','rush_risk_percent'
+                    ]:
+                        val=request.POST.get(fld)
+                        if val not in [None,'']:
+                            setattr(obj,fld,Decimal(val))
+                    obj.notes=request.POST.get('notes','').strip()
+                    obj.reviewed_by=request.user
+                    obj.reviewed_at=timezone.now()
+                    obj.save()
+                    messages.success(request,f'{obj.reference}: {obj.system_recommendation}. Free capacity {obj.free_minutes} minutes.')
+                elif action=='decision':
+                    obj=get_object_or_404(FreeCapacityOpportunity,pk=request.POST.get('capacity_id'))
+                    decision=request.POST.get('final_decision','PENDING')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if decision in {'TAKE_QUICK_ORDER','TAKE_WITH_RISK'}:
+                        if not approval or approval.status!='APPROVED':
+                            raise PermissionError('Taking a quick order requires an APPROVED senior Approval Request.')
+                        if obj.free_minutes < obj.required_minutes:
+                            raise PermissionError('Quick order cannot be accepted because protected free capacity is below required minutes.')
+                        if obj.margin_percent < obj.minimum_margin_percent:
+                            raise PermissionError('Quick order cannot be accepted below the minimum incremental profit margin.')
+                    obj.final_decision=decision
+                    obj.approval=approval
+                    obj.reviewed_by=request.user
+                    obj.reviewed_at=timezone.now()
+                    obj.notes=request.POST.get('decision_notes','').strip() or obj.notes
+                    obj.save()
+                    if obj.opportunity:
+                        OpportunityActivity.objects.create(
+                            opportunity=obj.opportunity,
+                            activity_type='STATUS_CHANGE',
+                            subject=f'Free Capacity Quick Order: {decision}',
+                            details=f'Free={obj.free_minutes} min; Required={obj.required_minutes} min; Margin={obj.margin_percent}%; Readiness={obj.readiness_score}%',
+                            performed_by=request.user
+                        )
+                    messages.success(request,f'Capacity decision saved: {decision}.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('free_capacity_opportunity')
 
     q=request.GET.get('q','').strip()
@@ -1609,78 +1649,79 @@ def buyer_delivery_sla(request):
     if request.method=='POST':
         action=request.POST.get('action','create')
         try:
-            if action=='create':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                sla,_=BuyerDeliverySLA.objects.get_or_create(
-                    order=order,
-                    defaults={
-                        'buyer_name':order.buyer,
-                        'confirmed_at':order.confirmed_at or timezone.now(),
-                    }
-                )
-                sla.buyer_name=request.POST.get('buyer_name','').strip() or order.buyer
-                sla.contact_person=request.POST.get('contact_person','').strip()
-                sla.phone=request.POST.get('phone','').strip()
-                sla.email=request.POST.get('email','').strip()
-                sla.street=request.POST.get('street','').strip()
-                sla.city=request.POST.get('city','').strip()
-                sla.state=request.POST.get('state','').strip()
-                sla.postal_code=request.POST.get('postal_code','').strip()
-                sla.country=request.POST.get('country','').strip()
-                sla.location_text=request.POST.get('location_text','').strip()
-                sla.max_delivery_days=15
-                sla.expected_delivery_date=request.POST.get('expected_delivery_date') or None
-                sla.courier=request.POST.get('courier','').strip()
-                sla.tracking_number=request.POST.get('tracking_number','').strip()
-                sla.shipping_cost=Decimal(request.POST.get('shipping_cost') or '0')
-                sla.save()
-                messages.success(request,f'Delivery SLA created for {order.master_order_id}. Deadline: {sla.delivery_deadline}.')
-            elif action=='update_status':
-                sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
-                new=request.POST.get('status',sla.status)
-                if new=='DISPATCHED' and not sla.actual_dispatch_at:
-                    sla.actual_dispatch_at=timezone.now()
-                if new in {'DELIVERED','DELIVERY_CONFIRMED'} and not sla.actual_delivery_at:
-                    sla.actual_delivery_at=timezone.now()
-                sla.status=new
-                sla.courier=request.POST.get('courier','').strip() or sla.courier
-                sla.tracking_number=request.POST.get('tracking_number','').strip() or sla.tracking_number
-                sla.expected_delivery_date=request.POST.get('expected_delivery_date') or sla.expected_delivery_date
-                sla.save()
-                messages.success(request,'Delivery status updated.')
-            elif action=='exception':
-                sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if not approval or approval.status!='APPROVED':
-                    raise PermissionError('A senior APPROVED Approval Request is required for a delivery exception.')
-                sla.exception_required=True
-                sla.exception_reason=request.POST.get('exception_reason','').strip()
-                sla.exception_new_delivery_date=request.POST.get('exception_new_delivery_date') or None
-                sla.exception_approval=approval
-                sla.status='EXCEPTION_APPROVED'
-                sla.save()
-                Alert.objects.create(level='WARNING',title='Delivery SLA Exception Approved',message=f'{sla.order.master_order_id}: {sla.exception_reason}',reference=sla.order.master_order_id,actioned=False)
-                messages.success(request,'15-day delivery exception approved and recorded.')
-            elif action=='confirm_delivery':
-                sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
-                sla.receiver_name=request.POST.get('receiver_name','').strip()
-                sla.gps_location=request.POST.get('gps_location','').strip()
-                sla.courier_confirmation=request.POST.get('courier_confirmation','').strip()
-                if request.FILES.get('proof_of_delivery'): sla.proof_of_delivery=request.FILES['proof_of_delivery']
-                if request.FILES.get('buyer_signature'): sla.buyer_signature=request.FILES['buyer_signature']
-                if request.FILES.get('delivery_photo'): sla.delivery_photo=request.FILES['delivery_photo']
-                if not (sla.proof_of_delivery or sla.courier_confirmation):
-                    raise PermissionError('Proof of Delivery or courier confirmation is required.')
-                sla.status='DELIVERY_CONFIRMED'
-                sla.actual_delivery_at=sla.actual_delivery_at or timezone.now()
-                sla.confirmed_delivery_at=timezone.now()
-                sla.confirmed_by=request.user
-                sla.save()
-                sla.order.status='COMPLETED'
-                sla.order.save(update_fields=['status','updated_at'])
-                messages.success(request,'Buyer delivery confirmed and Order Master marked COMPLETED.')
+            with transaction.atomic():
+                if action=='create':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    sla,_=BuyerDeliverySLA.objects.get_or_create(
+                        order=order,
+                        defaults={
+                            'buyer_name':order.buyer,
+                            'confirmed_at':order.confirmed_at or timezone.now(),
+                        }
+                    )
+                    sla.buyer_name=request.POST.get('buyer_name','').strip() or order.buyer
+                    sla.contact_person=request.POST.get('contact_person','').strip()
+                    sla.phone=request.POST.get('phone','').strip()
+                    sla.email=request.POST.get('email','').strip()
+                    sla.street=request.POST.get('street','').strip()
+                    sla.city=request.POST.get('city','').strip()
+                    sla.state=request.POST.get('state','').strip()
+                    sla.postal_code=request.POST.get('postal_code','').strip()
+                    sla.country=request.POST.get('country','').strip()
+                    sla.location_text=request.POST.get('location_text','').strip()
+                    sla.max_delivery_days=15
+                    sla.expected_delivery_date=request.POST.get('expected_delivery_date') or None
+                    sla.courier=request.POST.get('courier','').strip()
+                    sla.tracking_number=request.POST.get('tracking_number','').strip()
+                    sla.shipping_cost=Decimal(request.POST.get('shipping_cost') or '0')
+                    sla.save()
+                    messages.success(request,f'Delivery SLA created for {order.master_order_id}. Deadline: {sla.delivery_deadline}.')
+                elif action=='update_status':
+                    sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
+                    new=request.POST.get('status',sla.status)
+                    if new=='DISPATCHED' and not sla.actual_dispatch_at:
+                        sla.actual_dispatch_at=timezone.now()
+                    if new in {'DELIVERED','DELIVERY_CONFIRMED'} and not sla.actual_delivery_at:
+                        sla.actual_delivery_at=timezone.now()
+                    sla.status=new
+                    sla.courier=request.POST.get('courier','').strip() or sla.courier
+                    sla.tracking_number=request.POST.get('tracking_number','').strip() or sla.tracking_number
+                    sla.expected_delivery_date=request.POST.get('expected_delivery_date') or sla.expected_delivery_date
+                    sla.save()
+                    messages.success(request,'Delivery status updated.')
+                elif action=='exception':
+                    sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if not approval or approval.status!='APPROVED':
+                        raise PermissionError('A senior APPROVED Approval Request is required for a delivery exception.')
+                    sla.exception_required=True
+                    sla.exception_reason=request.POST.get('exception_reason','').strip()
+                    sla.exception_new_delivery_date=request.POST.get('exception_new_delivery_date') or None
+                    sla.exception_approval=approval
+                    sla.status='EXCEPTION_APPROVED'
+                    sla.save()
+                    Alert.objects.create(level='WARNING',title='Delivery SLA Exception Approved',message=f'{sla.order.master_order_id}: {sla.exception_reason}',reference=sla.order.master_order_id,actioned=False)
+                    messages.success(request,'15-day delivery exception approved and recorded.')
+                elif action=='confirm_delivery':
+                    sla=get_object_or_404(BuyerDeliverySLA,pk=request.POST.get('sla_id'))
+                    sla.receiver_name=request.POST.get('receiver_name','').strip()
+                    sla.gps_location=request.POST.get('gps_location','').strip()
+                    sla.courier_confirmation=request.POST.get('courier_confirmation','').strip()
+                    if request.FILES.get('proof_of_delivery'): sla.proof_of_delivery=request.FILES['proof_of_delivery']
+                    if request.FILES.get('buyer_signature'): sla.buyer_signature=request.FILES['buyer_signature']
+                    if request.FILES.get('delivery_photo'): sla.delivery_photo=request.FILES['delivery_photo']
+                    if not (sla.proof_of_delivery or sla.courier_confirmation):
+                        raise PermissionError('Proof of Delivery or courier confirmation is required.')
+                    sla.status='DELIVERY_CONFIRMED'
+                    sla.actual_delivery_at=sla.actual_delivery_at or timezone.now()
+                    sla.confirmed_delivery_at=timezone.now()
+                    sla.confirmed_by=request.user
+                    sla.save()
+                    sla.order.status='COMPLETED'
+                    sla.order.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Buyer delivery confirmed and Order Master marked COMPLETED.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('buyer_delivery_sla')
 
     rows=BuyerDeliverySLA.objects.select_related('order','exception_approval','confirmed_by').order_by('delivery_deadline','-updated_at')
@@ -1756,73 +1797,74 @@ def profit_before_spend(request):
     if request.method=='POST':
         action=request.POST.get('action','check')
         try:
-            if action=='check':
-                order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
-                opp=BuyerOpportunity.objects.filter(pk=request.POST.get('opportunity_id')).first()
-                if not order and opp and opp.converted_order_id:
-                    order=opp.converted_order
-                gate=None
-                if opp:
-                    gate=ProfitFeasibilityGate.objects.filter(opportunity=opp).first()
-                elif order and hasattr(order,'source_opportunity'):
-                    opp=order.source_opportunity
-                    gate=ProfitFeasibilityGate.objects.filter(opportunity=opp).first()
+            with transaction.atomic():
+                if action=='check':
+                    order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
+                    opp=BuyerOpportunity.objects.filter(pk=request.POST.get('opportunity_id')).first()
+                    if not order and opp and opp.converted_order_id:
+                        order=opp.converted_order
+                    gate=None
+                    if opp:
+                        gate=ProfitFeasibilityGate.objects.filter(opportunity=opp).first()
+                    elif order and hasattr(order,'source_opportunity'):
+                        opp=order.source_opportunity
+                        gate=ProfitFeasibilityGate.objects.filter(opportunity=opp).first()
 
-                revenue=Decimal(request.POST.get('revenue_snapshot') or '0')
-                base_cost=Decimal(request.POST.get('base_cost_snapshot') or '0')
-                min_margin=Decimal(request.POST.get('minimum_margin_percent') or '10')
-                if gate:
-                    if revenue<=0: revenue=gate.revenue
-                    if base_cost<=0: base_cost=gate.total_cost
-                    if not request.POST.get('minimum_margin_percent'): min_margin=gate.minimum_margin_percent
-                elif order and revenue<=0:
-                    revenue=order.order_value
+                    revenue=Decimal(request.POST.get('revenue_snapshot') or '0')
+                    base_cost=Decimal(request.POST.get('base_cost_snapshot') or '0')
+                    min_margin=Decimal(request.POST.get('minimum_margin_percent') or '10')
+                    if gate:
+                        if revenue<=0: revenue=gate.revenue
+                        if base_cost<=0: base_cost=gate.total_cost
+                        if not request.POST.get('minimum_margin_percent'): min_margin=gate.minimum_margin_percent
+                    elif order and revenue<=0:
+                        revenue=order.order_value
 
-                prior=ProfitBeforeSpendControl.objects.filter(
-                    order=order,final_decision__in=['ALLOW','ALLOW_WITH_APPROVAL']
-                ).aggregate(v=Sum('committed_amount'))['v'] or Decimal('0')
+                    prior=ProfitBeforeSpendControl.objects.filter(
+                        order=order,final_decision__in=['ALLOW','ALLOW_WITH_APPROVAL']
+                    ).aggregate(v=Sum('committed_amount'))['v'] or Decimal('0')
 
-                seq=ProfitBeforeSpendControl.objects.filter(created_at__date=timezone.localdate()).count()+1
-                ref=request.POST.get('reference','').strip() or f'PBS-{timezone.now():%Y%m%d}-{seq:05d}'
-                obj=ProfitBeforeSpendControl.objects.create(
-                    reference=ref,order=order,opportunity=opp,
-                    spend_category=request.POST.get('spend_category','OTHER'),
-                    description=request.POST.get('description','').strip(),
-                    vendor=request.POST.get('vendor','').strip(),
-                    currency=request.POST.get('currency','USD'),
-                    requested_amount=Decimal(request.POST.get('requested_amount') or '0'),
-                    revenue_snapshot=revenue,base_cost_snapshot=base_cost,
-                    prior_approved_spend=prior,minimum_margin_percent=min_margin,
-                    requested_by=request.user,reason=request.POST.get('reason','').strip()
-                )
-                messages.success(request,f'{obj.reference}: {obj.system_decision}; projected margin {obj.projected_margin_percent}%.')
-            elif action=='decision':
-                obj=get_object_or_404(ProfitBeforeSpendControl,pk=request.POST.get('check_id'))
-                final=request.POST.get('final_decision','PENDING')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if final=='ALLOW' and obj.system_decision in {'HOLD','BLOCK'}:
-                    raise PermissionError('Cannot directly ALLOW a spend that the system has HOLD/BLOCK status. Revise cost or use a senior-approved exception workflow.')
-                if final=='ALLOW_WITH_APPROVAL' and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('ALLOW WITH APPROVAL requires an APPROVED senior Approval Request.')
-                obj.final_decision=final
-                obj.approval=approval
-                obj.reviewed_by=request.user
-                obj.reviewed_at=timezone.now()
-                obj.reason=request.POST.get('decision_reason','').strip() or obj.reason
-                if final in {'ALLOW','ALLOW_WITH_APPROVAL'}:
-                    obj.committed_amount=obj.requested_amount
-                obj.save()
-                if final in {'HOLD','BLOCK'}:
-                    Alert.objects.create(
-                        level='RED' if final=='BLOCK' else 'WARNING',
-                        title='Profit Before Spend Control',
-                        message=f'{obj.reference}: {final}; projected margin {obj.projected_margin_percent}%',
-                        reference=obj.order.master_order_id if obj.order else obj.reference,
-                        actioned=False
+                    seq=ProfitBeforeSpendControl.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    ref=request.POST.get('reference','').strip() or f'PBS-{timezone.now():%Y%m%d}-{seq:05d}'
+                    obj=ProfitBeforeSpendControl.objects.create(
+                        reference=ref,order=order,opportunity=opp,
+                        spend_category=request.POST.get('spend_category','OTHER'),
+                        description=request.POST.get('description','').strip(),
+                        vendor=request.POST.get('vendor','').strip(),
+                        currency=request.POST.get('currency','USD'),
+                        requested_amount=Decimal(request.POST.get('requested_amount') or '0'),
+                        revenue_snapshot=revenue,base_cost_snapshot=base_cost,
+                        prior_approved_spend=prior,minimum_margin_percent=min_margin,
+                        requested_by=request.user,reason=request.POST.get('reason','').strip()
                     )
-                messages.success(request,f'Spend decision saved: {final}.')
+                    messages.success(request,f'{obj.reference}: {obj.system_decision}; projected margin {obj.projected_margin_percent}%.')
+                elif action=='decision':
+                    obj=get_object_or_404(ProfitBeforeSpendControl,pk=request.POST.get('check_id'))
+                    final=request.POST.get('final_decision','PENDING')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if final=='ALLOW' and obj.system_decision in {'HOLD','BLOCK'}:
+                        raise PermissionError('Cannot directly ALLOW a spend that the system has HOLD/BLOCK status. Revise cost or use a senior-approved exception workflow.')
+                    if final=='ALLOW_WITH_APPROVAL' and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('ALLOW WITH APPROVAL requires an APPROVED senior Approval Request.')
+                    obj.final_decision=final
+                    obj.approval=approval
+                    obj.reviewed_by=request.user
+                    obj.reviewed_at=timezone.now()
+                    obj.reason=request.POST.get('decision_reason','').strip() or obj.reason
+                    if final in {'ALLOW','ALLOW_WITH_APPROVAL'}:
+                        obj.committed_amount=obj.requested_amount
+                    obj.save()
+                    if final in {'HOLD','BLOCK'}:
+                        Alert.objects.create(
+                            level='RED' if final=='BLOCK' else 'WARNING',
+                            title='Profit Before Spend Control',
+                            message=f'{obj.reference}: {final}; projected margin {obj.projected_margin_percent}%',
+                            reference=obj.order.master_order_id if obj.order else obj.reference,
+                            actioned=False
+                        )
+                    messages.success(request,f'Spend decision saved: {final}.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('profit_before_spend')
 
     q=request.GET.get('q','').strip()
@@ -1905,67 +1947,68 @@ def staff_self_service(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='application':
-                seq=StaffApplication.objects.filter(created_at__date=timezone.localdate()).count()+1
-                app=StaffApplication.objects.create(
-                    application_no=f'SSA-{timezone.now():%Y%m%d}-{seq:05d}',
-                    employee=employee,
-                    application_type=request.POST.get('application_type','OTHER'),
-                    subject=request.POST.get('subject','').strip(),
-                    details=request.POST.get('details','').strip(),
-                    status='SUBMITTED',
-                    attachment=request.FILES.get('attachment') or None
-                )
-                StaffNotification.objects.create(employee=employee,title='Application Submitted',body=f'{app.application_no} · {app.subject}',level='SUCCESS',reference=app.application_no)
-                messages.success(request,f'{app.application_no} submitted.')
-            elif action=='upload_document':
-                dtype=request.POST.get('document_type','OTHER')
-                ref=request.POST.get('reference','').strip() or f'{employee.employee_id}-{dtype}-{timezone.now():%Y%m%d%H%M}'
-                doc=StaffDocument.objects.create(
-                    employee=employee,document_type=dtype,
-                    title=request.POST.get('title','').strip() or dtype.replace('_',' ').title(),
-                    reference=ref,version=request.POST.get('version','1.0'),
-                    issue_date=request.POST.get('issue_date') or None,
-                    expires_at=request.POST.get('expires_at') or None,
-                    file=request.FILES.get('file') or None,
-                    confidential=True,uploaded_by=request.user
-                )
-                messages.success(request,f'Document {doc.reference} uploaded.')
-            elif action=='hr_support':
-                seq=StaffApplication.objects.filter(created_at__date=timezone.localdate()).count()+1
-                app=StaffApplication.objects.create(
-                    application_no=f'HR-{timezone.now():%Y%m%d}-{seq:05d}',
-                    employee=employee,application_type=request.POST.get('support_type','HR_SUPPORT'),
-                    subject=request.POST.get('subject','').strip(),
-                    details=request.POST.get('details','').strip(),
-                    status='SUBMITTED',attachment=request.FILES.get('attachment') or None
-                )
-                # Create communication thread so HR support is visible in Communication Center / Chat 24/7.
-                thread=CommunicationThread.objects.create(
-                    thread_no=f'COM-HR-{app.id:06d}',subject=app.subject or 'HR Support Request',
-                    thread_type='HR',priority='NORMAL',reference=app.application_no,
-                    department=employee.department,created_by=request.user
-                )
-                thread.participants.add(request.user)
-                CommunicationMessage.objects.create(
-                    thread=thread,channel='CHAT_24_7',direction='INTERNAL',
-                    sender_user=request.user,body=app.details,status='SENT'
-                )
-                messages.success(request,f'HR support request {app.application_no} submitted and Chat 24/7 thread opened.')
-            elif action=='mark_notification':
-                n=get_object_or_404(StaffNotification,pk=request.POST.get('notification_id'),employee=employee)
-                n.read_at=timezone.now(); n.save(update_fields=['read_at','updated_at'])
-                messages.success(request,'Notification marked read.')
-            elif action=='profile':
-                profile.phone=request.POST.get('phone','').strip()
-                profile.email=request.POST.get('email','').strip()
-                profile.emergency_contact=request.POST.get('emergency_contact','').strip()
-                if request.FILES.get('profile_photo'):
-                    profile.profile_photo=request.FILES['profile_photo']
-                profile.save()
-                messages.success(request,'Profile updated.')
+            with transaction.atomic():
+                if action=='application':
+                    seq=StaffApplication.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    app=StaffApplication.objects.create(
+                        application_no=f'SSA-{timezone.now():%Y%m%d}-{seq:05d}',
+                        employee=employee,
+                        application_type=request.POST.get('application_type','OTHER'),
+                        subject=request.POST.get('subject','').strip(),
+                        details=request.POST.get('details','').strip(),
+                        status='SUBMITTED',
+                        attachment=request.FILES.get('attachment') or None
+                    )
+                    StaffNotification.objects.create(employee=employee,title='Application Submitted',body=f'{app.application_no} · {app.subject}',level='SUCCESS',reference=app.application_no)
+                    messages.success(request,f'{app.application_no} submitted.')
+                elif action=='upload_document':
+                    dtype=request.POST.get('document_type','OTHER')
+                    ref=request.POST.get('reference','').strip() or f'{employee.employee_id}-{dtype}-{timezone.now():%Y%m%d%H%M}'
+                    doc=StaffDocument.objects.create(
+                        employee=employee,document_type=dtype,
+                        title=request.POST.get('title','').strip() or dtype.replace('_',' ').title(),
+                        reference=ref,version=request.POST.get('version','1.0'),
+                        issue_date=request.POST.get('issue_date') or None,
+                        expires_at=request.POST.get('expires_at') or None,
+                        file=request.FILES.get('file') or None,
+                        confidential=True,uploaded_by=request.user
+                    )
+                    messages.success(request,f'Document {doc.reference} uploaded.')
+                elif action=='hr_support':
+                    seq=StaffApplication.objects.filter(created_at__date=timezone.localdate()).count()+1
+                    app=StaffApplication.objects.create(
+                        application_no=f'HR-{timezone.now():%Y%m%d}-{seq:05d}',
+                        employee=employee,application_type=request.POST.get('support_type','HR_SUPPORT'),
+                        subject=request.POST.get('subject','').strip(),
+                        details=request.POST.get('details','').strip(),
+                        status='SUBMITTED',attachment=request.FILES.get('attachment') or None
+                    )
+                    # Create communication thread so HR support is visible in Communication Center / Chat 24/7.
+                    thread=CommunicationThread.objects.create(
+                        thread_no=f'COM-HR-{app.id:06d}',subject=app.subject or 'HR Support Request',
+                        thread_type='HR',priority='NORMAL',reference=app.application_no,
+                        department=employee.department,created_by=request.user
+                    )
+                    thread.participants.add(request.user)
+                    CommunicationMessage.objects.create(
+                        thread=thread,channel='CHAT_24_7',direction='INTERNAL',
+                        sender_user=request.user,body=app.details,status='SENT'
+                    )
+                    messages.success(request,f'HR support request {app.application_no} submitted and Chat 24/7 thread opened.')
+                elif action=='mark_notification':
+                    n=get_object_or_404(StaffNotification,pk=request.POST.get('notification_id'),employee=employee)
+                    n.read_at=timezone.now(); n.save(update_fields=['read_at','updated_at'])
+                    messages.success(request,'Notification marked read.')
+                elif action=='profile':
+                    profile.phone=request.POST.get('phone','').strip()
+                    profile.email=request.POST.get('email','').strip()
+                    profile.emergency_contact=request.POST.get('emergency_contact','').strip()
+                    if request.FILES.get('profile_photo'):
+                        profile.profile_photo=request.FILES['profile_photo']
+                    profile.save()
+                    messages.success(request,'Profile updated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('staff_self_service')
 
     today=timezone.localdate()
@@ -1995,7 +2038,7 @@ def staff_self_service(request):
         Q(created_by=request.user)|Q(assigned_to=request.user)|Q(participants=request.user)
     ).distinct()
     unread_messages=CommunicationMessage.objects.filter(thread__in=user_threads).exclude(read_receipts__user=request.user).count()
-    pending_tasks=ActionItem.objects.filter(assigned_to=request.user).exclude(status='COMPLETED').count()
+    pending_tasks=ActionItem.objects.filter(assigned_to=request.user,status__in=ActionItem.OPEN_STATUSES).count()
 
     id_barcode,_=BarcodeAsset.objects.get_or_create(
         code=f'ERL-ID-{employee.employee_id}',
@@ -2044,7 +2087,7 @@ def api_staff_self_service(request):
         'department':employee.department.name if employee.department else None,
         'applications':apps.count(),'documents':docs.count(),
         'notifications_unread':StaffNotification.objects.filter(employee=employee,read_at__isnull=True).count(),
-        'pending_tasks':ActionItem.objects.filter(assigned_to=request.user).exclude(status='COMPLETED').count(),
+        'pending_tasks':ActionItem.objects.filter(assigned_to=request.user,status__in=ActionItem.OPEN_STATUSES).count(),
         'documents_expiring_90_days':sum(1 for d in docs if d.days_to_expiry is not None and d.days_to_expiry <= 90)
     })
 
@@ -2062,44 +2105,45 @@ def hr_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='add_employee':
-                dep=Department.objects.filter(pk=request.POST.get('department_id')).first()
-                emp=Employee.objects.create(
-                    employee_id=request.POST.get('employee_id','').strip(),
-                    name=request.POST.get('name','').strip(),
-                    department=dep,role=request.POST.get('role','STAFF'),
-                    category=request.POST.get('category','STAFF'),status='ACTIVE'
-                )
-                messages.success(request,f'Employee {emp.employee_id} added.')
-            elif action=='recruitment':
-                HRRecruitment.objects.create(
-                    candidate_name=request.POST.get('candidate_name','').strip(),
-                    email=request.POST.get('email','').strip(),phone=request.POST.get('phone','').strip(),
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    position=request.POST.get('position','').strip(),status='OPEN',
-                    joining_date=request.POST.get('joining_date') or None,
-                    cv=request.FILES.get('cv') or None,created_by=request.user
-                )
-                messages.success(request,'Recruitment candidate added.')
-            elif action=='leave_decision':
-                leave=get_object_or_404(HRLeaveRequest,pk=request.POST.get('leave_id'))
-                leave.status=request.POST.get('status','PENDING')
-                leave.save()
-                messages.success(request,'Leave decision updated.')
-            elif action=='case':
-                seq=HRComplaintIncident.objects.filter(created_at__date=today).count()+1
-                HRComplaintIncident.objects.create(
-                    reference=f'HRCASE-{timezone.now():%Y%m%d}-{seq:04d}',
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    case_type=request.POST.get('case_type','COMPLAINT'),
-                    subject=request.POST.get('subject','').strip(),
-                    details=request.POST.get('details','').strip(),
-                    severity=request.POST.get('severity','MEDIUM'),
-                    assigned_to=request.user,attachment=request.FILES.get('attachment') or None
-                )
-                messages.success(request,'HR case opened.')
+            with transaction.atomic():
+                if action=='add_employee':
+                    dep=Department.objects.filter(pk=request.POST.get('department_id')).first()
+                    emp=Employee.objects.create(
+                        employee_id=request.POST.get('employee_id','').strip(),
+                        name=request.POST.get('name','').strip(),
+                        department=dep,role=request.POST.get('role','STAFF'),
+                        category=request.POST.get('category','STAFF'),status='ACTIVE'
+                    )
+                    messages.success(request,f'Employee {emp.employee_id} added.')
+                elif action=='recruitment':
+                    HRRecruitment.objects.create(
+                        candidate_name=request.POST.get('candidate_name','').strip(),
+                        email=request.POST.get('email','').strip(),phone=request.POST.get('phone','').strip(),
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        position=request.POST.get('position','').strip(),status='OPEN',
+                        joining_date=request.POST.get('joining_date') or None,
+                        cv=request.FILES.get('cv') or None,created_by=request.user
+                    )
+                    messages.success(request,'Recruitment candidate added.')
+                elif action=='leave_decision':
+                    leave=get_object_or_404(HRLeaveRequest,pk=request.POST.get('leave_id'))
+                    leave.status=request.POST.get('status','PENDING')
+                    leave.save()
+                    messages.success(request,'Leave decision updated.')
+                elif action=='case':
+                    seq=HRComplaintIncident.objects.filter(created_at__date=today).count()+1
+                    HRComplaintIncident.objects.create(
+                        reference=f'HRCASE-{timezone.now():%Y%m%d}-{seq:04d}',
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        case_type=request.POST.get('case_type','COMPLAINT'),
+                        subject=request.POST.get('subject','').strip(),
+                        details=request.POST.get('details','').strip(),
+                        severity=request.POST.get('severity','MEDIUM'),
+                        assigned_to=request.user,attachment=request.FILES.get('attachment') or None
+                    )
+                    messages.success(request,'HR case opened.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('hr_dashboard')
 
     employees=Employee.objects.select_related('department')
@@ -2215,87 +2259,88 @@ def attendance_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='recalculate':
-                for emp in Employee.objects.filter(status='ACTIVE'):
-                    calculate_attendance_day(emp,work_date)
-                messages.success(request,f'Attendance recalculated for {work_date}.')
-            elif action=='event':
-                emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
-                event=request.POST.get('event','CHECK_IN')
-                occurred=request.POST.get('occurred_at')
-                when=timezone.now()
-                if occurred:
-                    when=timezone.make_aware(datetime.fromisoformat(occurred),timezone.get_current_timezone())
-                manual=request.POST.get('manual')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Authorized manual attendance entry requires an APPROVED senior Approval Request.')
-                AttendanceEvent.objects.create(
-                    employee=emp,event=event,occurred_at=when,
-                    source='Authorized Manual Entry' if manual else 'Dashboard',
-                    device_ref=request.POST.get('device_ref','').strip()
-                )
-                if manual:
-                    AttendanceManualAdjustment.objects.create(
-                        employee=emp,work_date=when.date(),field_name='ATTENDANCE_EVENT',
-                        old_value='',new_value=event,reason=request.POST.get('reason','').strip() or 'Manual attendance event',
-                        requested_by=request.user,approval=approval,applied_at=timezone.now()
+            with transaction.atomic():
+                if action=='recalculate':
+                    for emp in Employee.objects.filter(status='ACTIVE'):
+                        calculate_attendance_day(emp,work_date)
+                    messages.success(request,f'Attendance recalculated for {work_date}.')
+                elif action=='event':
+                    emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
+                    event=request.POST.get('event','CHECK_IN')
+                    occurred=request.POST.get('occurred_at')
+                    when=timezone.now()
+                    if occurred:
+                        when=timezone.make_aware(datetime.fromisoformat(occurred),timezone.get_current_timezone())
+                    manual=request.POST.get('manual')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Authorized manual attendance entry requires an APPROVED senior Approval Request.')
+                    AttendanceEvent.objects.create(
+                        employee=emp,event=event,occurred_at=when,
+                        source='Authorized Manual Entry' if manual else 'Dashboard',
+                        device_ref=request.POST.get('device_ref','').strip()
                     )
-                calculate_attendance_day(emp,when.date())
-                messages.success(request,f'{event} recorded for {emp.employee_id}.')
-            elif action=='gate_pass':
-                emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
-                out_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('out_at')),timezone.get_current_timezone())
-                in_raw=request.POST.get('in_at')
-                in_at=timezone.make_aware(datetime.fromisoformat(in_raw),timezone.get_current_timezone()) if in_raw else None
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING'
-                AttendanceGatePass.objects.create(
-                    employee=emp,pass_type=request.POST.get('pass_type','UNPAID'),out_at=out_at,in_at=in_at,
-                    reason=request.POST.get('reason','').strip(),status=status,approval=approval,created_by=request.user
-                )
-                calculate_attendance_day(emp,out_at.date())
-                messages.success(request,'Gate pass recorded.')
-            elif action=='overtime':
-                emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
-                start_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('start_at')),timezone.get_current_timezone())
-                end_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('end_at')),timezone.get_current_timezone())
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if not approval or approval.status!='APPROVED':
-                    raise PermissionError('Overtime requires an APPROVED authorization.')
-                schedule=attendance_schedule(emp.category,emp.role)
-                earliest=timezone.make_aware(datetime.combine(start_at.date(),schedule['ot_start']),timezone.get_current_timezone())
-                if start_at < earliest:
-                    raise PermissionError(f'OT cannot start before {schedule["ot_start"].strftime("%H:%M")} for {emp.category}.')
-                AttendanceOvertime.objects.create(
-                    employee=emp,work_date=start_at.date(),start_at=start_at,end_at=end_at,
-                    reason=request.POST.get('reason','').strip(),status='APPROVED',approval=approval
-                )
-                calculate_attendance_day(emp,start_at.date())
-                messages.success(request,'Authorized overtime recorded.')
-            elif action=='npt':
-                emp=Employee.objects.filter(pk=request.POST.get('employee_id')).first()
-                dep=Department.objects.filter(pk=request.POST.get('department_id')).first() or (emp.department if emp else None)
-                AttendanceNPT.objects.create(
-                    employee=emp,department=dep,work_date=request.POST.get('work_date') or work_date,
-                    category=request.POST.get('category','OTHER'),minutes=int(request.POST.get('minutes') or 0),
-                    reason=request.POST.get('reason','').strip(),cost=Decimal(request.POST.get('cost') or '0')
-                )
-                if emp: calculate_attendance_day(emp,work_date)
-                messages.success(request,'NPT record added.')
-            elif action=='leave':
-                emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                HRLeaveRequest.objects.create(
-                    employee=emp,leave_type=request.POST.get('leave_type','Annual Leave'),
-                    start_date=request.POST.get('start_date'),end_date=request.POST.get('end_date'),
-                    reason=request.POST.get('reason','').strip(),
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING',
-                    approval=approval,attachment=request.FILES.get('attachment') or None
-                )
-                messages.success(request,'Leave request recorded.')
+                    if manual:
+                        AttendanceManualAdjustment.objects.create(
+                            employee=emp,work_date=when.date(),field_name='ATTENDANCE_EVENT',
+                            old_value='',new_value=event,reason=request.POST.get('reason','').strip() or 'Manual attendance event',
+                            requested_by=request.user,approval=approval,applied_at=timezone.now()
+                        )
+                    calculate_attendance_day(emp,when.date())
+                    messages.success(request,f'{event} recorded for {emp.employee_id}.')
+                elif action=='gate_pass':
+                    emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
+                    out_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('out_at')),timezone.get_current_timezone())
+                    in_raw=request.POST.get('in_at')
+                    in_at=timezone.make_aware(datetime.fromisoformat(in_raw),timezone.get_current_timezone()) if in_raw else None
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING'
+                    AttendanceGatePass.objects.create(
+                        employee=emp,pass_type=request.POST.get('pass_type','UNPAID'),out_at=out_at,in_at=in_at,
+                        reason=request.POST.get('reason','').strip(),status=status,approval=approval,created_by=request.user
+                    )
+                    calculate_attendance_day(emp,out_at.date())
+                    messages.success(request,'Gate pass recorded.')
+                elif action=='overtime':
+                    emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
+                    start_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('start_at')),timezone.get_current_timezone())
+                    end_at=timezone.make_aware(datetime.fromisoformat(request.POST.get('end_at')),timezone.get_current_timezone())
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if not approval or approval.status!='APPROVED':
+                        raise PermissionError('Overtime requires an APPROVED authorization.')
+                    schedule=attendance_schedule(emp.category,emp.role)
+                    earliest=timezone.make_aware(datetime.combine(start_at.date(),schedule['ot_start']),timezone.get_current_timezone())
+                    if start_at < earliest:
+                        raise PermissionError(f'OT cannot start before {schedule["ot_start"].strftime("%H:%M")} for {emp.category}.')
+                    AttendanceOvertime.objects.create(
+                        employee=emp,work_date=start_at.date(),start_at=start_at,end_at=end_at,
+                        reason=request.POST.get('reason','').strip(),status='APPROVED',approval=approval
+                    )
+                    calculate_attendance_day(emp,start_at.date())
+                    messages.success(request,'Authorized overtime recorded.')
+                elif action=='npt':
+                    emp=Employee.objects.filter(pk=request.POST.get('employee_id')).first()
+                    dep=Department.objects.filter(pk=request.POST.get('department_id')).first() or (emp.department if emp else None)
+                    AttendanceNPT.objects.create(
+                        employee=emp,department=dep,work_date=request.POST.get('work_date') or work_date,
+                        category=request.POST.get('category','OTHER'),minutes=int(request.POST.get('minutes') or 0),
+                        reason=request.POST.get('reason','').strip(),cost=Decimal(request.POST.get('cost') or '0')
+                    )
+                    if emp: calculate_attendance_day(emp,work_date)
+                    messages.success(request,'NPT record added.')
+                elif action=='leave':
+                    emp=get_object_or_404(Employee,pk=request.POST.get('employee_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    HRLeaveRequest.objects.create(
+                        employee=emp,leave_type=request.POST.get('leave_type','Annual Leave'),
+                        start_date=request.POST.get('start_date'),end_date=request.POST.get('end_date'),
+                        reason=request.POST.get('reason','').strip(),
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING',
+                        approval=approval,attachment=request.FILES.get('attachment') or None
+                    )
+                    messages.success(request,'Leave request recorded.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect(f"{reverse('attendance_dashboard')}?date={work_date.isoformat()}")
 
     employees=Employee.objects.select_related('department').filter(status='ACTIVE')
@@ -2449,73 +2494,74 @@ def cutting_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                CuttingPlan.objects.create(
-                    plan_no=request.POST.get('plan_no').strip(),order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    product=request.POST.get('product').strip(),colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,created_by=request.user
-                )
-                messages.success(request,'Cutting plan created.')
-            elif action=='fabric':
-                plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
-                scan=request.POST.get('stock_out_scan','').strip()
-                if not scan: raise PermissionError('Fabric STOCK OUT SCAN is mandatory.')
-                CuttingFabricIssue.objects.create(
-                    plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
-                    roll_no=request.POST.get('roll_no').strip(),lot_no=request.POST.get('lot_no','').strip(),
-                    shade=request.POST.get('shade','').strip(),unit=request.POST.get('unit','METRE'),
-                    issued_qty=Decimal(request.POST.get('issued_qty') or '0'),stock_out_scan=scan,issued_by=request.user
-                )
-                messages.success(request,'Fabric issued with STOCK OUT SCAN.')
-            elif action=='bundle':
-                plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
-                barcode=request.POST.get('barcode','').strip()
-                if not barcode: raise PermissionError('Bundle barcode/QR is mandatory.')
-                CuttingBundle.objects.create(
-                    plan=plan,lay=CuttingLay.objects.filter(pk=request.POST.get('lay_id')).first(),
-                    bundle_no=request.POST.get('bundle_no').strip(),barcode=barcode,
-                    size=request.POST.get('size','').strip(),colour=request.POST.get('colour','').strip(),
-                    quantity=int(request.POST.get('quantity') or 0),
-                    stock_in_scan=request.POST.get('stock_in_scan','').strip()
-                )
-                messages.success(request,'Cutting bundle created and barcode registered.')
-            elif action=='production':
-                plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual production entry requires senior APPROVED authorization.')
-                CuttingProductionEntry.objects.create(
-                    plan=plan,work_date=request.POST.get('work_date') or today,
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
-                    target_qty=int(request.POST.get('target_qty') or 0),actual_qty=int(request.POST.get('actual_qty') or 0),
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Cutting production updated.')
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid automatic report slot.')
-                payload=_cutting_auto_report_payload(today)
-                CuttingAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Cutting automatic report generated.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    CuttingPlan.objects.create(
+                        plan_no=request.POST.get('plan_no').strip(),order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        product=request.POST.get('product').strip(),colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,created_by=request.user
+                    )
+                    messages.success(request,'Cutting plan created.')
+                elif action=='fabric':
+                    plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
+                    scan=request.POST.get('stock_out_scan','').strip()
+                    if not scan: raise PermissionError('Fabric STOCK OUT SCAN is mandatory.')
+                    CuttingFabricIssue.objects.create(
+                        plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
+                        roll_no=request.POST.get('roll_no').strip(),lot_no=request.POST.get('lot_no','').strip(),
+                        shade=request.POST.get('shade','').strip(),unit=request.POST.get('unit','METRE'),
+                        issued_qty=Decimal(request.POST.get('issued_qty') or '0'),stock_out_scan=scan,issued_by=request.user
+                    )
+                    messages.success(request,'Fabric issued with STOCK OUT SCAN.')
+                elif action=='bundle':
+                    plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
+                    barcode=request.POST.get('barcode','').strip()
+                    if not barcode: raise PermissionError('Bundle barcode/QR is mandatory.')
+                    CuttingBundle.objects.create(
+                        plan=plan,lay=CuttingLay.objects.filter(pk=request.POST.get('lay_id')).first(),
+                        bundle_no=request.POST.get('bundle_no').strip(),barcode=barcode,
+                        size=request.POST.get('size','').strip(),colour=request.POST.get('colour','').strip(),
+                        quantity=int(request.POST.get('quantity') or 0),
+                        stock_in_scan=request.POST.get('stock_in_scan','').strip()
+                    )
+                    messages.success(request,'Cutting bundle created and barcode registered.')
+                elif action=='production':
+                    plan=get_object_or_404(CuttingPlan,pk=request.POST.get('plan_id'))
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual production entry requires senior APPROVED authorization.')
+                    CuttingProductionEntry.objects.create(
+                        plan=plan,work_date=request.POST.get('work_date') or today,
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
+                        target_qty=int(request.POST.get('target_qty') or 0),actual_qty=int(request.POST.get('actual_qty') or 0),
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        manual_entry=manual,approval=approval
+                    )
+                    messages.success(request,'Cutting production updated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid automatic report slot.')
+                    payload=_cutting_auto_report_payload(today)
+                    CuttingAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Cutting automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('cutting_dashboard')
 
     plans=CuttingPlan.objects.select_related('order','department').order_by('-created_at')
@@ -2536,7 +2582,7 @@ def cutting_dashboard(request):
         'prod':prod[:100],'bundles':bundles[:100],'fabric':fabric[:100],'variances':variances[:50],
         'reports':reports,'payload':payload,'efficiency':efficiency,'marker_efficiency':marker,
         'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],
-        'actions':ActionItem.objects.exclude(status='COMPLETED').order_by('-created_at')[:10],
+        'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('-created_at')[:10],
     }
     return render(request,'cutting_dashboard.html',ctx)
 
@@ -2596,112 +2642,113 @@ def embroidery_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                EmbroideryPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    product=request.POST.get('product','').strip(),style_no=request.POST.get('style_no','').strip(),
-                    design_no=request.POST.get('design_no','').strip(),colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),stitch_count=int(request.POST.get('stitch_count') or 0),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,artwork=request.FILES.get('artwork') or None,
-                    program_file=request.FILES.get('program_file') or None,created_by=request.user
-                )
-                messages.success(request,'Embroidery plan created.')
-            elif action=='bundle_scan':
-                plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
-                bundle=get_object_or_404(CuttingBundle,pk=request.POST.get('bundle_id'))
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                if barcode != bundle.barcode:
-                    Alert.objects.create(level='RED',title='Embroidery Bundle Scan Mismatch',message=f'{bundle.bundle_no}: scanned barcode does not match registered barcode.',reference=bundle.bundle_no,actioned=False)
-                    raise PermissionError('Bundle scan blocked: wrong barcode/QR.')
-                if EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    Alert.objects.create(level='RED',title='Duplicate Embroidery Bundle Scan',message=f'{bundle.bundle_no}: duplicate {direction} scan.',reference=bundle.bundle_no,actioned=False)
-                    raise PermissionError('Bundle scan blocked: duplicate scan.')
-                actual=int(request.POST.get('actual_qty') or bundle.quantity)
-                status='VALID'
-                if actual != bundle.quantity:
-                    status='MISMATCH'
-                    Alert.objects.create(level='RED',title='Embroidery Bundle Quantity Mismatch',message=f'{bundle.bundle_no}: expected {bundle.quantity}, actual {actual}.',reference=bundle.bundle_no,actioned=False)
-                if direction=='OUT':
-                    valid_in=EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists()
-                    if not valid_in:
-                        raise PermissionError('Bundle OUT blocked: no valid Embroidery BUNDLE IN SCAN.')
-                    if not EmbroideryQC.objects.filter(plan=plan,bundle=bundle,status='PASS').exists():
-                        raise PermissionError('Bundle OUT blocked: final Embroidery QC PASS is required.')
-                EmbroideryBundleScan.objects.create(
-                    plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=bundle.quantity,actual_qty=actual,
-                    source_department=request.POST.get('source_department','Cutting' if direction=='IN' else 'Embroidery'),
-                    destination_department=request.POST.get('destination_department','Embroidery' if direction=='IN' else 'Sewing'),
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    raise PermissionError('Bundle movement recorded as mismatch and blocked for downstream release.')
-                messages.success(request,f'Bundle {direction} scan accepted.')
-            elif action=='material':
-                plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
-                scan=request.POST.get('stock_out_scan','').strip()
-                if not scan: raise PermissionError('Thread/material STOCK OUT SCAN is mandatory.')
-                EmbroideryMaterialIssue.objects.create(
-                    plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
-                    material_type=request.POST.get('material_type','THREAD'),colour=request.POST.get('colour','').strip(),
-                    lot_no=request.POST.get('lot_no','').strip(),unit=request.POST.get('unit','PCS'),
-                    issued_qty=Decimal(request.POST.get('issued_qty') or '0'),stock_out_scan=scan,issued_by=request.user
-                )
-                messages.success(request,'Embroidery material issued.')
-            elif action=='production':
-                plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                if bundle and not EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Production blocked: mandatory valid BUNDLE IN SCAN is missing.')
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual Embroidery production entry requires senior APPROVED authorization.')
-                EmbroideryProductionEntry.objects.create(
-                    plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
-                    machine_heads=int(request.POST.get('machine_heads') or 1),
-                    target_qty=int(request.POST.get('target_qty') or 0),actual_qty=int(request.POST.get('actual_qty') or 0),
-                    stitch_count=int(request.POST.get('stitch_count') or plan.stitch_count),
-                    process_minutes=int(request.POST.get('process_minutes') or 0),npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    thread_cost=Decimal(request.POST.get('thread_cost') or '0'),other_cost=Decimal(request.POST.get('other_cost') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Embroidery production updated.')
-            elif action=='qc':
-                plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                EmbroideryQC.objects.create(
-                    plan=plan,bundle=bundle,inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),reject_qty=int(request.POST.get('reject_qty') or 0),
-                    repair_qty=int(request.POST.get('repair_qty') or 0),rework_qty=int(request.POST.get('rework_qty') or 0),
-                    status=request.POST.get('status','PASS'),defect_reason=request.POST.get('defect_reason','').strip(),
-                    inspected_by=request.user
-                )
-                messages.success(request,'Embroidery QC recorded.')
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
-                payload=_embroidery_auto_report_payload(today)
-                EmbroideryAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Embroidery automatic report generated.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    EmbroideryPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        product=request.POST.get('product','').strip(),style_no=request.POST.get('style_no','').strip(),
+                        design_no=request.POST.get('design_no','').strip(),colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),stitch_count=int(request.POST.get('stitch_count') or 0),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,artwork=request.FILES.get('artwork') or None,
+                        program_file=request.FILES.get('program_file') or None,created_by=request.user
+                    )
+                    messages.success(request,'Embroidery plan created.')
+                elif action=='bundle_scan':
+                    plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
+                    bundle=get_object_or_404(CuttingBundle,pk=request.POST.get('bundle_id'))
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    if barcode != bundle.barcode:
+                        Alert.objects.create(level='RED',title='Embroidery Bundle Scan Mismatch',message=f'{bundle.bundle_no}: scanned barcode does not match registered barcode.',reference=bundle.bundle_no,actioned=False)
+                        raise PermissionError('Bundle scan blocked: wrong barcode/QR.')
+                    if EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        Alert.objects.create(level='RED',title='Duplicate Embroidery Bundle Scan',message=f'{bundle.bundle_no}: duplicate {direction} scan.',reference=bundle.bundle_no,actioned=False)
+                        raise PermissionError('Bundle scan blocked: duplicate scan.')
+                    actual=int(request.POST.get('actual_qty') or bundle.quantity)
+                    status='VALID'
+                    if actual != bundle.quantity:
+                        status='MISMATCH'
+                        Alert.objects.create(level='RED',title='Embroidery Bundle Quantity Mismatch',message=f'{bundle.bundle_no}: expected {bundle.quantity}, actual {actual}.',reference=bundle.bundle_no,actioned=False)
+                    if direction=='OUT':
+                        valid_in=EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists()
+                        if not valid_in:
+                            raise PermissionError('Bundle OUT blocked: no valid Embroidery BUNDLE IN SCAN.')
+                        if not EmbroideryQC.objects.filter(plan=plan,bundle=bundle,status='PASS').exists():
+                            raise PermissionError('Bundle OUT blocked: final Embroidery QC PASS is required.')
+                    EmbroideryBundleScan.objects.create(
+                        plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=bundle.quantity,actual_qty=actual,
+                        source_department=request.POST.get('source_department','Cutting' if direction=='IN' else 'Embroidery'),
+                        destination_department=request.POST.get('destination_department','Embroidery' if direction=='IN' else 'Sewing'),
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        raise PermissionError('Bundle movement recorded as mismatch and blocked for downstream release.')
+                    messages.success(request,f'Bundle {direction} scan accepted.')
+                elif action=='material':
+                    plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
+                    scan=request.POST.get('stock_out_scan','').strip()
+                    if not scan: raise PermissionError('Thread/material STOCK OUT SCAN is mandatory.')
+                    EmbroideryMaterialIssue.objects.create(
+                        plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
+                        material_type=request.POST.get('material_type','THREAD'),colour=request.POST.get('colour','').strip(),
+                        lot_no=request.POST.get('lot_no','').strip(),unit=request.POST.get('unit','PCS'),
+                        issued_qty=Decimal(request.POST.get('issued_qty') or '0'),stock_out_scan=scan,issued_by=request.user
+                    )
+                    messages.success(request,'Embroidery material issued.')
+                elif action=='production':
+                    plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    if bundle and not EmbroideryBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                        raise PermissionError('Production blocked: mandatory valid BUNDLE IN SCAN is missing.')
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual Embroidery production entry requires senior APPROVED authorization.')
+                    EmbroideryProductionEntry.objects.create(
+                        plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
+                        machine_heads=int(request.POST.get('machine_heads') or 1),
+                        target_qty=int(request.POST.get('target_qty') or 0),actual_qty=int(request.POST.get('actual_qty') or 0),
+                        stitch_count=int(request.POST.get('stitch_count') or plan.stitch_count),
+                        process_minutes=int(request.POST.get('process_minutes') or 0),npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        thread_cost=Decimal(request.POST.get('thread_cost') or '0'),other_cost=Decimal(request.POST.get('other_cost') or '0'),
+                        manual_entry=manual,approval=approval
+                    )
+                    messages.success(request,'Embroidery production updated.')
+                elif action=='qc':
+                    plan=get_object_or_404(EmbroideryPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    EmbroideryQC.objects.create(
+                        plan=plan,bundle=bundle,inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),reject_qty=int(request.POST.get('reject_qty') or 0),
+                        repair_qty=int(request.POST.get('repair_qty') or 0),rework_qty=int(request.POST.get('rework_qty') or 0),
+                        status=request.POST.get('status','PASS'),defect_reason=request.POST.get('defect_reason','').strip(),
+                        inspected_by=request.user
+                    )
+                    messages.success(request,'Embroidery QC recorded.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
+                    payload=_embroidery_auto_report_payload(today)
+                    EmbroideryAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Embroidery automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('embroidery_dashboard')
 
     plans=EmbroideryPlan.objects.select_related('order','department').order_by('-created_at')
@@ -2782,132 +2829,133 @@ def label_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                LabelPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    brand=request.POST.get('brand','').strip(),style_no=request.POST.get('style_no','').strip(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    colour=request.POST.get('colour','').strip(),size_range=request.POST.get('size_range','').strip(),
-                    label_type=request.POST.get('label_type','MAIN_BRAND'),
-                    label_code=request.POST.get('label_code','').strip(),
-                    version=request.POST.get('version','1.0'),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,artwork=request.FILES.get('artwork') or None,
-                    specification=request.FILES.get('specification') or None,created_by=request.user
-                )
-                messages.success(request,'Label plan created.')
-            elif action=='proof':
-                plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
-                LabelProof.objects.create(
-                    plan=plan,proof_no=request.POST.get('proof_no','').strip(),
-                    version=request.POST.get('version',plan.version),
-                    proof_file=request.FILES.get('proof_file') or None,
-                    sample_image=request.FILES.get('sample_image') or None,
-                    status=request.POST.get('status','PENDING'),
-                    remarks=request.POST.get('remarks','').strip(),
-                    approved_by=request.user if request.POST.get('status')=='APPROVED' else None,
-                    approved_at=timezone.now() if request.POST.get('status')=='APPROVED' else None
-                )
-                messages.success(request,'Label proof/sample recorded.')
-            elif action=='material':
-                plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
-                scan=request.POST.get('stock_out_scan','').strip()
-                if not scan: raise PermissionError('Label material STOCK OUT SCAN is mandatory.')
-                LabelMaterialIssue.objects.create(
-                    plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
-                    supplier=request.POST.get('supplier','').strip(),batch_no=request.POST.get('batch_no','').strip(),
-                    lot_no=request.POST.get('lot_no','').strip(),unit=request.POST.get('unit','PCS'),
-                    issued_qty=Decimal(request.POST.get('issued_qty') or '0'),
-                    stock_out_scan=scan,issued_by=request.user
-                )
-                messages.success(request,'Label material issued with STOCK OUT SCAN.')
-            elif action=='production':
-                plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual label production entry requires senior APPROVED authorization.')
-                if not LabelProof.objects.filter(plan=plan,status='APPROVED',version=plan.version).exists():
-                    raise PermissionError('Production blocked: current label artwork/proof version is not approved.')
-                LabelProductionEntry.objects.create(
-                    plan=plan,work_date=request.POST.get('work_date') or today,
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
-                    target_qty=int(request.POST.get('target_qty') or 0),
-                    actual_qty=int(request.POST.get('actual_qty') or 0),
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    material_cost=Decimal(request.POST.get('material_cost') or '0'),
-                    other_cost=Decimal(request.POST.get('other_cost') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Label production updated.')
-            elif action=='qc':
-                plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
-                checked_version=request.POST.get('checked_version','').strip()
-                status=request.POST.get('status','PASS')
-                if checked_version != plan.version:
-                    Alert.objects.create(level='RED',title='Wrong Label Version',message=f'{plan.plan_no}: expected version {plan.version}, checked {checked_version}.',reference=plan.plan_no,actioned=False)
-                    status='HOLD'
-                LabelQC.objects.create(
-                    plan=plan,inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    status=status,defect_reason=request.POST.get('defect_reason','').strip(),
-                    checked_version=checked_version,checked_by=request.user
-                )
-                messages.success(request,'Label QC recorded.')
-            elif action=='allocation':
-                plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                if order.id != plan.order_id:
-                    Alert.objects.create(level='RED',title='Wrong Order Label Allocation',message=f'{plan.plan_no}: label allocated to wrong Master Order.',reference=plan.plan_no,actioned=False)
-                    raise PermissionError('Allocation blocked: label plan and Master Order do not match.')
-                if not LabelQC.objects.filter(plan=plan,status='PASS').exists():
-                    raise PermissionError('Allocation blocked: Label QC PASS is required.')
-                in_scan=request.POST.get('label_in_scan','').strip()
-                out_scan=request.POST.get('label_out_scan','').strip()
-                if not in_scan: raise PermissionError('LABEL IN SCAN is mandatory.')
-                allocated=int(request.POST.get('allocated_qty') or 0)
-                issued=int(request.POST.get('issued_qty') or 0)
-                if issued > allocated:
-                    raise PermissionError('Issue blocked: issued label quantity exceeds allocated quantity.')
-                duplicate=LabelAllocation.objects.filter(plan=plan,order=order,label_out_scan=out_scan).exists() if out_scan else False
-                if duplicate:
-                    Alert.objects.create(level='RED',title='Duplicate Label Issue',message=f'{plan.plan_no}: duplicate LABEL OUT SCAN.',reference=plan.plan_no,actioned=False)
-                    raise PermissionError('Duplicate label issue blocked.')
-                LabelAllocation.objects.create(
-                    plan=plan,bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first(),
-                    order=order,allocated_qty=allocated,issued_qty=issued,
-                    used_qty=int(request.POST.get('used_qty') or 0),
-                    returned_qty=int(request.POST.get('returned_qty') or 0),
-                    rejected_qty=int(request.POST.get('rejected_qty') or 0),
-                    label_in_scan=in_scan,label_out_scan=out_scan,
-                    destination_department=request.POST.get('destination_department','Finishing'),
-                    status='ISSUED' if issued else 'ALLOCATED',issued_by=request.user
-                )
-                messages.success(request,'Label allocation/issue recorded.')
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
-                payload=_label_auto_report_payload(today)
-                LabelAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Label automatic report generated.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    LabelPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        brand=request.POST.get('brand','').strip(),style_no=request.POST.get('style_no','').strip(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        colour=request.POST.get('colour','').strip(),size_range=request.POST.get('size_range','').strip(),
+                        label_type=request.POST.get('label_type','MAIN_BRAND'),
+                        label_code=request.POST.get('label_code','').strip(),
+                        version=request.POST.get('version','1.0'),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,artwork=request.FILES.get('artwork') or None,
+                        specification=request.FILES.get('specification') or None,created_by=request.user
+                    )
+                    messages.success(request,'Label plan created.')
+                elif action=='proof':
+                    plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
+                    LabelProof.objects.create(
+                        plan=plan,proof_no=request.POST.get('proof_no','').strip(),
+                        version=request.POST.get('version',plan.version),
+                        proof_file=request.FILES.get('proof_file') or None,
+                        sample_image=request.FILES.get('sample_image') or None,
+                        status=request.POST.get('status','PENDING'),
+                        remarks=request.POST.get('remarks','').strip(),
+                        approved_by=request.user if request.POST.get('status')=='APPROVED' else None,
+                        approved_at=timezone.now() if request.POST.get('status')=='APPROVED' else None
+                    )
+                    messages.success(request,'Label proof/sample recorded.')
+                elif action=='material':
+                    plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
+                    scan=request.POST.get('stock_out_scan','').strip()
+                    if not scan: raise PermissionError('Label material STOCK OUT SCAN is mandatory.')
+                    LabelMaterialIssue.objects.create(
+                        plan=plan,stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
+                        supplier=request.POST.get('supplier','').strip(),batch_no=request.POST.get('batch_no','').strip(),
+                        lot_no=request.POST.get('lot_no','').strip(),unit=request.POST.get('unit','PCS'),
+                        issued_qty=Decimal(request.POST.get('issued_qty') or '0'),
+                        stock_out_scan=scan,issued_by=request.user
+                    )
+                    messages.success(request,'Label material issued with STOCK OUT SCAN.')
+                elif action=='production':
+                    plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual label production entry requires senior APPROVED authorization.')
+                    if not LabelProof.objects.filter(plan=plan,status='APPROVED',version=plan.version).exists():
+                        raise PermissionError('Production blocked: current label artwork/proof version is not approved.')
+                    LabelProductionEntry.objects.create(
+                        plan=plan,work_date=request.POST.get('work_date') or today,
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first(),
+                        target_qty=int(request.POST.get('target_qty') or 0),
+                        actual_qty=int(request.POST.get('actual_qty') or 0),
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        material_cost=Decimal(request.POST.get('material_cost') or '0'),
+                        other_cost=Decimal(request.POST.get('other_cost') or '0'),
+                        manual_entry=manual,approval=approval
+                    )
+                    messages.success(request,'Label production updated.')
+                elif action=='qc':
+                    plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
+                    checked_version=request.POST.get('checked_version','').strip()
+                    status=request.POST.get('status','PASS')
+                    if checked_version != plan.version:
+                        Alert.objects.create(level='RED',title='Wrong Label Version',message=f'{plan.plan_no}: expected version {plan.version}, checked {checked_version}.',reference=plan.plan_no,actioned=False)
+                        status='HOLD'
+                    LabelQC.objects.create(
+                        plan=plan,inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        status=status,defect_reason=request.POST.get('defect_reason','').strip(),
+                        checked_version=checked_version,checked_by=request.user
+                    )
+                    messages.success(request,'Label QC recorded.')
+                elif action=='allocation':
+                    plan=get_object_or_404(LabelPlan,pk=request.POST.get('plan_id'))
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    if order.id != plan.order_id:
+                        Alert.objects.create(level='RED',title='Wrong Order Label Allocation',message=f'{plan.plan_no}: label allocated to wrong Master Order.',reference=plan.plan_no,actioned=False)
+                        raise PermissionError('Allocation blocked: label plan and Master Order do not match.')
+                    if not LabelQC.objects.filter(plan=plan,status='PASS').exists():
+                        raise PermissionError('Allocation blocked: Label QC PASS is required.')
+                    in_scan=request.POST.get('label_in_scan','').strip()
+                    out_scan=request.POST.get('label_out_scan','').strip()
+                    if not in_scan: raise PermissionError('LABEL IN SCAN is mandatory.')
+                    allocated=int(request.POST.get('allocated_qty') or 0)
+                    issued=int(request.POST.get('issued_qty') or 0)
+                    if issued > allocated:
+                        raise PermissionError('Issue blocked: issued label quantity exceeds allocated quantity.')
+                    duplicate=LabelAllocation.objects.filter(plan=plan,order=order,label_out_scan=out_scan).exists() if out_scan else False
+                    if duplicate:
+                        Alert.objects.create(level='RED',title='Duplicate Label Issue',message=f'{plan.plan_no}: duplicate LABEL OUT SCAN.',reference=plan.plan_no,actioned=False)
+                        raise PermissionError('Duplicate label issue blocked.')
+                    LabelAllocation.objects.create(
+                        plan=plan,bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first(),
+                        order=order,allocated_qty=allocated,issued_qty=issued,
+                        used_qty=int(request.POST.get('used_qty') or 0),
+                        returned_qty=int(request.POST.get('returned_qty') or 0),
+                        rejected_qty=int(request.POST.get('rejected_qty') or 0),
+                        label_in_scan=in_scan,label_out_scan=out_scan,
+                        destination_department=request.POST.get('destination_department','Finishing'),
+                        status='ISSUED' if issued else 'ALLOCATED',issued_by=request.user
+                    )
+                    messages.success(request,'Label allocation/issue recorded.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
+                    payload=_label_auto_report_payload(today)
+                    LabelAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={'summary':payload,'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Label automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('label_dashboard')
 
     plans=LabelPlan.objects.select_related('order','department').order_by('-created_at')
@@ -2992,166 +3040,167 @@ def qc_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                QCInspectionPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),
-                    order=order,
-                    stage=request.POST.get('stage','FINAL_INSPECTION'),
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    style_no=request.POST.get('style_no','').strip(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    specification_version=request.POST.get('specification_version','1.0'),
-                    aql_level=request.POST.get('aql_level','2.5'),
-                    lot_size=int(request.POST.get('lot_size') or 0),
-                    sample_size=int(request.POST.get('sample_size') or 0),
-                    planned_inspection_date=request.POST.get('planned_inspection_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,
-                    specification_file=request.FILES.get('specification_file') or None,
-                    approved_sample_file=request.FILES.get('approved_sample_file') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'QC inspection plan created.')
-            elif action=='bundle_scan':
-                plan=get_object_or_404(QCInspectionPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
-                if bundle and barcode and barcode != bundle.barcode:
-                    status='MISMATCH'
-                if bundle and QCBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if direction=='OUT':
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    QCInspectionPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),
+                        order=order,
+                        stage=request.POST.get('stage','FINAL_INSPECTION'),
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        style_no=request.POST.get('style_no','').strip(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        specification_version=request.POST.get('specification_version','1.0'),
+                        aql_level=request.POST.get('aql_level','2.5'),
+                        lot_size=int(request.POST.get('lot_size') or 0),
+                        sample_size=int(request.POST.get('sample_size') or 0),
+                        planned_inspection_date=request.POST.get('planned_inspection_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,
+                        specification_file=request.FILES.get('specification_file') or None,
+                        approved_sample_file=request.FILES.get('approved_sample_file') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'QC inspection plan created.')
+                elif action=='bundle_scan':
+                    plan=get_object_or_404(QCInspectionPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
+                    if bundle and barcode and barcode != bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and QCBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if direction=='OUT':
+                        if bundle and not QCBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        gate=QCReleaseGate.objects.filter(plan=plan).select_related('approval').first()
+                        if not gate or not gate.gate_passed:
+                            status='HOLD'
+                    if actual != expected:
+                        status='MISMATCH'
+                    scan=QCBundleScan.objects.create(
+                        plan=plan,bundle=bundle,barcode=barcode,direction=direction,
+                        expected_qty=expected,actual_qty=actual,
+                        source_department=request.POST.get('source_department','').strip(),
+                        destination_department=request.POST.get('destination_department','').strip(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(
+                            level='RED',title='QC Bundle Scan Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                        raise PermissionError(f'QC bundle movement blocked: {status}.')
+                    messages.success(request,f'QC BUNDLE {direction} SCAN accepted.')
+                elif action=='inspection':
+                    plan=get_object_or_404(QCInspectionPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
                     if bundle and not QCBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    gate=QCReleaseGate.objects.filter(plan=plan).select_related('approval').first()
-                    if not gate or not gate.gate_passed:
-                        status='HOLD'
-                if actual != expected:
-                    status='MISMATCH'
-                scan=QCBundleScan.objects.create(
-                    plan=plan,bundle=bundle,barcode=barcode,direction=direction,
-                    expected_qty=expected,actual_qty=actual,
-                    source_department=request.POST.get('source_department','').strip(),
-                    destination_department=request.POST.get('destination_department','').strip(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(
-                        level='RED',title='QC Bundle Scan Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False
+                        raise PermissionError('Inspection blocked: valid QC BUNDLE IN SCAN is required.')
+                    result=request.POST.get('result','HOLD')
+                    critical=int(request.POST.get('critical_defects') or 0)
+                    if critical > 0:
+                        result='HOLD'
+                    ins=QCInspection.objects.create(
+                        plan=plan,bundle=bundle,inspector=request.user,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        critical_defects=critical,
+                        major_defects=int(request.POST.get('major_defects') or 0),
+                        minor_defects=int(request.POST.get('minor_defects') or 0),
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        measurement_fail_qty=int(request.POST.get('measurement_fail_qty') or 0),
+                        shade_fail_qty=int(request.POST.get('shade_fail_qty') or 0),
+                        label_fail_qty=int(request.POST.get('label_fail_qty') or 0),
+                        workmanship_fail_qty=int(request.POST.get('workmanship_fail_qty') or 0),
+                        packing_fail_qty=int(request.POST.get('packing_fail_qty') or 0),
+                        result=result,comments=request.POST.get('comments','').strip(),
+                        photo=request.FILES.get('photo') or None,
+                        inspection_sheet=request.FILES.get('inspection_sheet') or None
                     )
-                    raise PermissionError(f'QC bundle movement blocked: {status}.')
-                messages.success(request,f'QC BUNDLE {direction} SCAN accepted.')
-            elif action=='inspection':
-                plan=get_object_or_404(QCInspectionPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                if bundle and not QCBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Inspection blocked: valid QC BUNDLE IN SCAN is required.')
-                result=request.POST.get('result','HOLD')
-                critical=int(request.POST.get('critical_defects') or 0)
-                if critical > 0:
-                    result='HOLD'
-                ins=QCInspection.objects.create(
-                    plan=plan,bundle=bundle,inspector=request.user,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    critical_defects=critical,
-                    major_defects=int(request.POST.get('major_defects') or 0),
-                    minor_defects=int(request.POST.get('minor_defects') or 0),
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    measurement_fail_qty=int(request.POST.get('measurement_fail_qty') or 0),
-                    shade_fail_qty=int(request.POST.get('shade_fail_qty') or 0),
-                    label_fail_qty=int(request.POST.get('label_fail_qty') or 0),
-                    workmanship_fail_qty=int(request.POST.get('workmanship_fail_qty') or 0),
-                    packing_fail_qty=int(request.POST.get('packing_fail_qty') or 0),
-                    result=result,comments=request.POST.get('comments','').strip(),
-                    photo=request.FILES.get('photo') or None,
-                    inspection_sheet=request.FILES.get('inspection_sheet') or None
-                )
-                gate,_=QCReleaseGate.objects.get_or_create(plan=plan)
-                gate.latest_inspection=ins
-                gate.reviewed_by=request.user
-                gate.reviewed_at=timezone.now()
-                gate.save()
-                if result in {'HOLD','REWORK','REJECT'} or critical>0:
-                    Alert.objects.create(
-                        level='RED' if critical>0 or result=='REJECT' else 'WARNING',
-                        title='QC Hold / Rework',
-                        message=f'{plan.plan_no}: result={result}, critical={critical}, major={ins.major_defects}, minor={ins.minor_defects}.',
-                        reference=plan.plan_no,actioned=False
+                    gate,_=QCReleaseGate.objects.get_or_create(plan=plan)
+                    gate.latest_inspection=ins
+                    gate.reviewed_by=request.user
+                    gate.reviewed_at=timezone.now()
+                    gate.save()
+                    if result in {'HOLD','REWORK','REJECT'} or critical>0:
+                        Alert.objects.create(
+                            level='RED' if critical>0 or result=='REJECT' else 'WARNING',
+                            title='QC Hold / Rework',
+                            message=f'{plan.plan_no}: result={result}, critical={critical}, major={ins.major_defects}, minor={ins.minor_defects}.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                    messages.success(request,f'QC inspection recorded: {result}.')
+                elif action=='defect':
+                    ins=get_object_or_404(QCInspection,pk=request.POST.get('inspection_id'))
+                    defect=QCDefect.objects.create(
+                        inspection=ins,defect_code=request.POST.get('defect_code','').strip(),
+                        category=request.POST.get('category','OTHER'),
+                        severity=request.POST.get('severity','MINOR'),
+                        description=request.POST.get('description','').strip(),
+                        quantity=int(request.POST.get('quantity') or 1),
+                        root_cause=request.POST.get('root_cause','').strip(),
+                        corrective_action=request.POST.get('corrective_action','').strip(),
+                        responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
+                        due_at=request.POST.get('due_at') or None
                     )
-                messages.success(request,f'QC inspection recorded: {result}.')
-            elif action=='defect':
-                ins=get_object_or_404(QCInspection,pk=request.POST.get('inspection_id'))
-                defect=QCDefect.objects.create(
-                    inspection=ins,defect_code=request.POST.get('defect_code','').strip(),
-                    category=request.POST.get('category','OTHER'),
-                    severity=request.POST.get('severity','MINOR'),
-                    description=request.POST.get('description','').strip(),
-                    quantity=int(request.POST.get('quantity') or 1),
-                    root_cause=request.POST.get('root_cause','').strip(),
-                    corrective_action=request.POST.get('corrective_action','').strip(),
-                    responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
-                    due_at=request.POST.get('due_at') or None
-                )
-                if defect.severity=='CRITICAL':
-                    Alert.objects.create(level='RED',title='Critical QC Defect',message=f'{ins.plan.plan_no}: {defect.description}',reference=ins.plan.plan_no,actioned=False)
-                messages.success(request,'QC defect recorded.')
-            elif action=='capa':
-                ins=get_object_or_404(QCInspection,pk=request.POST.get('inspection_id'))
-                seq=QCCAPA.objects.filter(created_at__date=today).count()+1
-                QCCAPA.objects.create(
-                    reference=f'CAPA-{timezone.now():%Y%m%d}-{seq:04d}',inspection=ins,
-                    root_cause=request.POST.get('root_cause','').strip(),
-                    corrective_action=request.POST.get('corrective_action','').strip(),
-                    preventive_action=request.POST.get('preventive_action','').strip(),
-                    responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
-                    due_at=request.POST.get('due_at') or None,status='OPEN'
-                )
-                messages.success(request,'CAPA opened.')
-            elif action=='release':
-                gate=get_object_or_404(QCReleaseGate,pk=request.POST.get('gate_id'))
-                final=request.POST.get('final_decision','PENDING')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if final=='RELEASE_WITH_APPROVAL' and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Conditional release requires APPROVED senior authorization.')
-                if final=='RELEASE' and gate.system_decision!='RELEASE':
-                    raise PermissionError(f'Direct release blocked. System decision is {gate.system_decision}.')
-                gate.final_decision=final
-                gate.approval=approval
-                gate.decision_reason=request.POST.get('decision_reason','').strip()
-                gate.reviewed_by=request.user
-                gate.reviewed_at=timezone.now()
-                gate.save()
-                messages.success(request,f'QC release decision saved: {final}.')
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_qc_auto_report_payload(today)
-                QCAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,stage='',
-                    defaults={
-                        'summary':payload,
-                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                    }
-                )
-                messages.success(request,f'{slot} QC automatic report generated.')
+                    if defect.severity=='CRITICAL':
+                        Alert.objects.create(level='RED',title='Critical QC Defect',message=f'{ins.plan.plan_no}: {defect.description}',reference=ins.plan.plan_no,actioned=False)
+                    messages.success(request,'QC defect recorded.')
+                elif action=='capa':
+                    ins=get_object_or_404(QCInspection,pk=request.POST.get('inspection_id'))
+                    seq=QCCAPA.objects.filter(created_at__date=today).count()+1
+                    QCCAPA.objects.create(
+                        reference=f'CAPA-{timezone.now():%Y%m%d}-{seq:04d}',inspection=ins,
+                        root_cause=request.POST.get('root_cause','').strip(),
+                        corrective_action=request.POST.get('corrective_action','').strip(),
+                        preventive_action=request.POST.get('preventive_action','').strip(),
+                        responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
+                        due_at=request.POST.get('due_at') or None,status='OPEN'
+                    )
+                    messages.success(request,'CAPA opened.')
+                elif action=='release':
+                    gate=get_object_or_404(QCReleaseGate,pk=request.POST.get('gate_id'))
+                    final=request.POST.get('final_decision','PENDING')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if final=='RELEASE_WITH_APPROVAL' and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Conditional release requires APPROVED senior authorization.')
+                    if final=='RELEASE' and gate.system_decision!='RELEASE':
+                        raise PermissionError(f'Direct release blocked. System decision is {gate.system_decision}.')
+                    gate.final_decision=final
+                    gate.approval=approval
+                    gate.decision_reason=request.POST.get('decision_reason','').strip()
+                    gate.reviewed_by=request.user
+                    gate.reviewed_at=timezone.now()
+                    gate.save()
+                    messages.success(request,f'QC release decision saved: {final}.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_qc_auto_report_payload(today)
+                    QCAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,stage='',
+                        defaults={
+                            'summary':payload,
+                            'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                            'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                            'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                        }
+                    )
+                    messages.success(request,f'{slot} QC automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('qc_dashboard')
 
     plans=QCInspectionPlan.objects.select_related('order','department').order_by('-created_at')
@@ -3232,144 +3281,145 @@ def hand_iron_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                HandIronPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),
-                    order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    style_no=request.POST.get('style_no','').strip(),
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    fabric_type=request.POST.get('fabric_type','').strip(),
-                    min_temperature_c=Decimal(request.POST.get('min_temperature_c') or '0'),
-                    max_temperature_c=Decimal(request.POST.get('max_temperature_c') or '0'),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,
-                    instruction_file=request.FILES.get('instruction_file') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Hand Iron plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    HandIronPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),
+                        order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        style_no=request.POST.get('style_no','').strip(),
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        fabric_type=request.POST.get('fabric_type','').strip(),
+                        min_temperature_c=Decimal(request.POST.get('min_temperature_c') or '0'),
+                        max_temperature_c=Decimal(request.POST.get('max_temperature_c') or '0'),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,
+                        instruction_file=request.FILES.get('instruction_file') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Hand Iron plan created.')
 
-            elif action=='bundle_scan':
-                plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
-                if bundle and barcode and barcode != bundle.barcode:
-                    status='MISMATCH'
-                if bundle and HandIronBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual != expected:
-                    status='MISMATCH'
-                if direction=='OUT':
+                elif action=='bundle_scan':
+                    plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
+                    if bundle and barcode and barcode != bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and HandIronBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual != expected:
+                        status='MISMATCH'
+                    if direction=='OUT':
+                        if bundle and not HandIronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        if not HandIronQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
+                            status='QC_HOLD'
+                    HandIronBundleScan.objects.create(
+                        plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=expected,actual_qty=actual,
+                        source_department=request.POST.get('source_department','').strip(),
+                        destination_department=request.POST.get('destination_department','').strip(),
+                        operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
+                        workstation=AssetMachine.objects.filter(pk=request.POST.get('workstation_id')).first(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(
+                            level='RED',title='Hand Iron Bundle Scan Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                        raise PermissionError(f'Bundle movement blocked: {status}.')
+                    messages.success(request,f'Hand Iron BUNDLE {direction} SCAN accepted.')
+
+                elif action=='production':
+                    plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
                     if bundle and not HandIronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    if not HandIronQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
-                        status='QC_HOLD'
-                HandIronBundleScan.objects.create(
-                    plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=expected,actual_qty=actual,
-                    source_department=request.POST.get('source_department','').strip(),
-                    destination_department=request.POST.get('destination_department','').strip(),
-                    operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
-                    workstation=AssetMachine.objects.filter(pk=request.POST.get('workstation_id')).first(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(
-                        level='RED',title='Hand Iron Bundle Scan Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False
+                        raise PermissionError('Production blocked: valid Hand Iron BUNDLE IN SCAN is required.')
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual Hand Iron production entry requires senior APPROVED authorization.')
+                    temp=Decimal(request.POST.get('actual_temperature_c') or '0')
+                    if plan.max_temperature_c and temp > plan.max_temperature_c:
+                        Alert.objects.create(level='RED',title='Hand Iron Temperature High',message=f'{plan.plan_no}: {temp}°C exceeds max {plan.max_temperature_c}°C.',reference=plan.plan_no,actioned=False)
+                        raise PermissionError('Production blocked: actual iron temperature exceeds permitted maximum.')
+                    if plan.min_temperature_c and temp < plan.min_temperature_c:
+                        Alert.objects.create(level='WARNING',title='Hand Iron Temperature Low',message=f'{plan.plan_no}: {temp}°C below min {plan.min_temperature_c}°C.',reference=plan.plan_no,actioned=False)
+                    HandIronProductionEntry.objects.create(
+                        plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
+                        operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
+                        workstation=AssetMachine.objects.filter(pk=request.POST.get('workstation_id')).first(),
+                        target_qty=int(request.POST.get('target_qty') or 0),
+                        actual_qty=int(request.POST.get('actual_qty') or 0),
+                        start_at=request.POST.get('start_at') or None,
+                        end_at=request.POST.get('end_at') or None,
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        actual_temperature_c=temp,
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
+                        utility_cost=Decimal(request.POST.get('utility_cost') or '0'),
+                        manual_entry=manual,approval=approval
                     )
-                    raise PermissionError(f'Bundle movement blocked: {status}.')
-                messages.success(request,f'Hand Iron BUNDLE {direction} SCAN accepted.')
+                    messages.success(request,'Hand Iron production entry saved.')
 
-            elif action=='production':
-                plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                if bundle and not HandIronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Production blocked: valid Hand Iron BUNDLE IN SCAN is required.')
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual Hand Iron production entry requires senior APPROVED authorization.')
-                temp=Decimal(request.POST.get('actual_temperature_c') or '0')
-                if plan.max_temperature_c and temp > plan.max_temperature_c:
-                    Alert.objects.create(level='RED',title='Hand Iron Temperature High',message=f'{plan.plan_no}: {temp}°C exceeds max {plan.max_temperature_c}°C.',reference=plan.plan_no,actioned=False)
-                    raise PermissionError('Production blocked: actual iron temperature exceeds permitted maximum.')
-                if plan.min_temperature_c and temp < plan.min_temperature_c:
-                    Alert.objects.create(level='WARNING',title='Hand Iron Temperature Low',message=f'{plan.plan_no}: {temp}°C below min {plan.min_temperature_c}°C.',reference=plan.plan_no,actioned=False)
-                HandIronProductionEntry.objects.create(
-                    plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
-                    operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
-                    workstation=AssetMachine.objects.filter(pk=request.POST.get('workstation_id')).first(),
-                    target_qty=int(request.POST.get('target_qty') or 0),
-                    actual_qty=int(request.POST.get('actual_qty') or 0),
-                    start_at=request.POST.get('start_at') or None,
-                    end_at=request.POST.get('end_at') or None,
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    actual_temperature_c=temp,
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
-                    utility_cost=Decimal(request.POST.get('utility_cost') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Hand Iron production entry saved.')
-
-            elif action=='qc':
-                plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                result=request.POST.get('result','PASS')
-                defect=request.POST.get('defect_type','')
-                reject=int(request.POST.get('reject_qty') or 0)
-                reiron=int(request.POST.get('reiron_qty') or 0)
-                if defect in {'SCORCH_BURN','COLOUR_CHANGE','SHAPE_DISTORTION'} and result=='PASS':
-                    result='HOLD'
-                qc=HandIronQC.objects.create(
-                    plan=plan,bundle=bundle,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    reject_qty=reject,reiron_qty=reiron,
-                    defect_type=defect,
-                    defect_reason=request.POST.get('defect_reason','').strip(),
-                    result=result,checked_by=request.user,
-                    qc_photo=request.FILES.get('qc_photo') or None
-                )
-                if result in {'HOLD','REIRON','REJECT'} or defect in {'SCORCH_BURN','COLOUR_CHANGE'}:
-                    Alert.objects.create(
-                        level='RED' if result=='REJECT' or defect=='SCORCH_BURN' else 'WARNING',
-                        title='Hand Iron QC Hold / Re-Iron',
-                        message=f'{plan.plan_no}: result={result}, defect={defect}, reject={reject}, reiron={reiron}.',
-                        reference=plan.plan_no,actioned=False
+                elif action=='qc':
+                    plan=get_object_or_404(HandIronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    result=request.POST.get('result','PASS')
+                    defect=request.POST.get('defect_type','')
+                    reject=int(request.POST.get('reject_qty') or 0)
+                    reiron=int(request.POST.get('reiron_qty') or 0)
+                    if defect in {'SCORCH_BURN','COLOUR_CHANGE','SHAPE_DISTORTION'} and result=='PASS':
+                        result='HOLD'
+                    qc=HandIronQC.objects.create(
+                        plan=plan,bundle=bundle,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        reject_qty=reject,reiron_qty=reiron,
+                        defect_type=defect,
+                        defect_reason=request.POST.get('defect_reason','').strip(),
+                        result=result,checked_by=request.user,
+                        qc_photo=request.FILES.get('qc_photo') or None
                     )
-                messages.success(request,f'Hand Iron QC recorded: {result}.')
+                    if result in {'HOLD','REIRON','REJECT'} or defect in {'SCORCH_BURN','COLOUR_CHANGE'}:
+                        Alert.objects.create(
+                            level='RED' if result=='REJECT' or defect=='SCORCH_BURN' else 'WARNING',
+                            title='Hand Iron QC Hold / Re-Iron',
+                            message=f'{plan.plan_no}: result={result}, defect={defect}, reject={reject}, reiron={reiron}.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                    messages.success(request,f'Hand Iron QC recorded: {result}.')
 
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_hand_iron_auto_report_payload(today)
-                HandIronAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={
-                        'summary':payload,
-                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                    }
-                )
-                messages.success(request,f'{slot} Hand Iron automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_hand_iron_auto_report_payload(today)
+                    HandIronAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={
+                            'summary':payload,
+                            'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                            'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                            'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                        }
+                    )
+                    messages.success(request,f'{slot} Hand Iron automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('hand_iron_dashboard')
 
     plans=HandIronPlan.objects.select_related('order','department').order_by('-created_at')
@@ -3467,169 +3517,170 @@ def poly_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                PolyPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),
-                    order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    brand=request.POST.get('brand','').strip(),
-                    style_no=request.POST.get('style_no','').strip(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    poly_type=request.POST.get('poly_type','INDIVIDUAL_POLY'),
-                    poly_code=request.POST.get('poly_code','').strip(),
-                    poly_size=request.POST.get('poly_size','').strip(),
-                    thickness_micron=Decimal(request.POST.get('thickness_micron') or '0'),
-                    material=request.POST.get('material','').strip(),
-                    warning_text=request.POST.get('warning_text','').strip(),
-                    barcode_required=request.POST.get('barcode_required')=='on',
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,
-                    packing_specification=request.FILES.get('packing_specification') or None,
-                    artwork=request.FILES.get('artwork') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Poly plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    PolyPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),
+                        order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        brand=request.POST.get('brand','').strip(),
+                        style_no=request.POST.get('style_no','').strip(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        poly_type=request.POST.get('poly_type','INDIVIDUAL_POLY'),
+                        poly_code=request.POST.get('poly_code','').strip(),
+                        poly_size=request.POST.get('poly_size','').strip(),
+                        thickness_micron=Decimal(request.POST.get('thickness_micron') or '0'),
+                        material=request.POST.get('material','').strip(),
+                        warning_text=request.POST.get('warning_text','').strip(),
+                        barcode_required=request.POST.get('barcode_required')=='on',
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,
+                        packing_specification=request.FILES.get('packing_specification') or None,
+                        artwork=request.FILES.get('artwork') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Poly plan created.')
 
-            elif action=='stock_issue':
-                plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
-                scan=request.POST.get('stock_out_scan','').strip()
-                if not scan:
-                    raise PermissionError('POLY STOCK OUT SCAN is mandatory.')
-                PolyStockIssue.objects.create(
-                    plan=plan,
-                    stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
-                    supplier=request.POST.get('supplier','').strip(),
-                    batch_no=request.POST.get('batch_no','').strip(),
-                    lot_no=request.POST.get('lot_no','').strip(),
-                    issued_qty=int(request.POST.get('issued_qty') or 0),
-                    returned_qty=int(request.POST.get('returned_qty') or 0),
-                    damaged_qty=int(request.POST.get('damaged_qty') or 0),
-                    stock_out_scan=scan,
-                    stock_in_return_scan=request.POST.get('stock_in_return_scan','').strip(),
-                    issued_by=request.user
-                )
-                messages.success(request,'Poly stock issue recorded with STOCK OUT SCAN.')
+                elif action=='stock_issue':
+                    plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
+                    scan=request.POST.get('stock_out_scan','').strip()
+                    if not scan:
+                        raise PermissionError('POLY STOCK OUT SCAN is mandatory.')
+                    PolyStockIssue.objects.create(
+                        plan=plan,
+                        stock_item=StockItem.objects.filter(pk=request.POST.get('stock_item_id')).first(),
+                        supplier=request.POST.get('supplier','').strip(),
+                        batch_no=request.POST.get('batch_no','').strip(),
+                        lot_no=request.POST.get('lot_no','').strip(),
+                        issued_qty=int(request.POST.get('issued_qty') or 0),
+                        returned_qty=int(request.POST.get('returned_qty') or 0),
+                        damaged_qty=int(request.POST.get('damaged_qty') or 0),
+                        stock_out_scan=scan,
+                        stock_in_return_scan=request.POST.get('stock_in_return_scan','').strip(),
+                        issued_by=request.user
+                    )
+                    messages.success(request,'Poly stock issue recorded with STOCK OUT SCAN.')
 
-            elif action=='bundle_scan':
-                plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
+                elif action=='bundle_scan':
+                    plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
 
-                if bundle and barcode and barcode != bundle.barcode:
-                    status='MISMATCH'
-                if bundle and PolyBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual != expected:
-                    status='MISMATCH'
-                if direction=='OUT':
+                    if bundle and barcode and barcode != bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and PolyBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual != expected:
+                        status='MISMATCH'
+                    if direction=='OUT':
+                        if bundle and not PolyBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        if not PolyQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
+                            status='QC_HOLD'
+
+                    PolyBundleScan.objects.create(
+                        plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=expected,actual_qty=actual,
+                        source_department=request.POST.get('source_department','').strip(),
+                        destination_department=request.POST.get('destination_department','').strip(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(
+                            level='RED',
+                            title='Poly Bundle/Garment Scan Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                        raise PermissionError(f'Poly garment/bundle movement blocked: {status}.')
+                    messages.success(request,f'Poly GARMENT/BUNDLE {direction} SCAN accepted.')
+
+                elif action=='packing':
+                    plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
                     if bundle and not PolyBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    if not PolyQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
-                        status='QC_HOLD'
-
-                PolyBundleScan.objects.create(
-                    plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=expected,actual_qty=actual,
-                    source_department=request.POST.get('source_department','').strip(),
-                    destination_department=request.POST.get('destination_department','').strip(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(
-                        level='RED',
-                        title='Poly Bundle/Garment Scan Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False
+                        raise PermissionError('Poly packing blocked: valid GARMENT/BUNDLE IN SCAN is required.')
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual Poly packing entry requires senior APPROVED authorization.')
+                    PolyPackingEntry.objects.create(
+                        plan=plan,bundle=bundle,
+                        work_date=request.POST.get('work_date') or today,
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        target_qty=int(request.POST.get('target_qty') or 0),
+                        actual_qty=int(request.POST.get('actual_qty') or 0),
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        poly_used_qty=int(request.POST.get('poly_used_qty') or 0),
+                        damaged_qty=int(request.POST.get('damaged_qty') or 0),
+                        rejected_qty=int(request.POST.get('rejected_qty') or 0),
+                        returned_qty=int(request.POST.get('returned_qty') or 0),
+                        poly_cost_per_piece=Decimal(request.POST.get('poly_cost_per_piece') or '0'),
+                        sticker_barcode_cost=Decimal(request.POST.get('sticker_barcode_cost') or '0'),
+                        labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        wastage_cost=Decimal(request.POST.get('wastage_cost') or '0'),
+                        manual_entry=manual,approval=approval
                     )
-                    raise PermissionError(f'Poly garment/bundle movement blocked: {status}.')
-                messages.success(request,f'Poly GARMENT/BUNDLE {direction} SCAN accepted.')
+                    messages.success(request,'Poly packing/cost entry saved.')
 
-            elif action=='packing':
-                plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                if bundle and not PolyBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Poly packing blocked: valid GARMENT/BUNDLE IN SCAN is required.')
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual Poly packing entry requires senior APPROVED authorization.')
-                PolyPackingEntry.objects.create(
-                    plan=plan,bundle=bundle,
-                    work_date=request.POST.get('work_date') or today,
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    target_qty=int(request.POST.get('target_qty') or 0),
-                    actual_qty=int(request.POST.get('actual_qty') or 0),
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    poly_used_qty=int(request.POST.get('poly_used_qty') or 0),
-                    damaged_qty=int(request.POST.get('damaged_qty') or 0),
-                    rejected_qty=int(request.POST.get('rejected_qty') or 0),
-                    returned_qty=int(request.POST.get('returned_qty') or 0),
-                    poly_cost_per_piece=Decimal(request.POST.get('poly_cost_per_piece') or '0'),
-                    sticker_barcode_cost=Decimal(request.POST.get('sticker_barcode_cost') or '0'),
-                    labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    wastage_cost=Decimal(request.POST.get('wastage_cost') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Poly packing/cost entry saved.')
-
-            elif action=='qc':
-                plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                result=request.POST.get('result','PASS')
-                defect=request.POST.get('defect_type','')
-                if defect in {'WRONG_POLY','WRONG_ORDER_STYLE','WRONG_SIZE','WRONG_COLOUR','BARCODE_FAIL','WARNING_TEXT_FAIL'} and result=='PASS':
-                    result='HOLD'
-                qc=PolyQC.objects.create(
-                    plan=plan,bundle=bundle,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    defect_type=defect,
-                    defect_reason=request.POST.get('defect_reason','').strip(),
-                    result=result,
-                    checked_by=request.user,
-                    qc_photo=request.FILES.get('qc_photo') or None
-                )
-                if result in {'HOLD','REWORK','REJECT'} or defect in {'WRONG_POLY','WRONG_ORDER_STYLE','BARCODE_FAIL'}:
-                    Alert.objects.create(
-                        level='RED' if result=='REJECT' or defect in {'WRONG_POLY','WRONG_ORDER_STYLE'} else 'WARNING',
-                        title='Poly QC Hold / Wrong Packing',
-                        message=f'{plan.plan_no}: result={result}, defect={defect}.',
-                        reference=plan.plan_no,actioned=False
+                elif action=='qc':
+                    plan=get_object_or_404(PolyPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    result=request.POST.get('result','PASS')
+                    defect=request.POST.get('defect_type','')
+                    if defect in {'WRONG_POLY','WRONG_ORDER_STYLE','WRONG_SIZE','WRONG_COLOUR','BARCODE_FAIL','WARNING_TEXT_FAIL'} and result=='PASS':
+                        result='HOLD'
+                    qc=PolyQC.objects.create(
+                        plan=plan,bundle=bundle,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        defect_type=defect,
+                        defect_reason=request.POST.get('defect_reason','').strip(),
+                        result=result,
+                        checked_by=request.user,
+                        qc_photo=request.FILES.get('qc_photo') or None
                     )
-                messages.success(request,f'Poly QC recorded: {result}.')
+                    if result in {'HOLD','REWORK','REJECT'} or defect in {'WRONG_POLY','WRONG_ORDER_STYLE','BARCODE_FAIL'}:
+                        Alert.objects.create(
+                            level='RED' if result=='REJECT' or defect in {'WRONG_POLY','WRONG_ORDER_STYLE'} else 'WARNING',
+                            title='Poly QC Hold / Wrong Packing',
+                            message=f'{plan.plan_no}: result={result}, defect={defect}.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                    messages.success(request,f'Poly QC recorded: {result}.')
 
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_poly_auto_report_payload(today)
-                PolyAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={
-                        'summary':payload,
-                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                    }
-                )
-                messages.success(request,f'{slot} Poly automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_poly_auto_report_payload(today)
+                    PolyAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={
+                            'summary':payload,
+                            'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                            'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                            'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                        }
+                    )
+                    messages.success(request,f'{slot} Poly automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('poly_dashboard')
 
     plans=PolyPlan.objects.select_related('order','department').order_by('-created_at')
@@ -3732,187 +3783,188 @@ def iron_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                IronPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),
-                    order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    style_no=request.POST.get('style_no','').strip(),
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    fabric_type=request.POST.get('fabric_type','').strip(),
-                    min_temperature_c=Decimal(request.POST.get('min_temperature_c') or '0'),
-                    max_temperature_c=Decimal(request.POST.get('max_temperature_c') or '0'),
-                    min_steam_pressure_bar=Decimal(request.POST.get('min_steam_pressure_bar') or '0'),
-                    max_steam_pressure_bar=Decimal(request.POST.get('max_steam_pressure_bar') or '0'),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,
-                    instruction_file=request.FILES.get('instruction_file') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Industrial Iron plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    IronPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),
+                        order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        style_no=request.POST.get('style_no','').strip(),
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        fabric_type=request.POST.get('fabric_type','').strip(),
+                        min_temperature_c=Decimal(request.POST.get('min_temperature_c') or '0'),
+                        max_temperature_c=Decimal(request.POST.get('max_temperature_c') or '0'),
+                        min_steam_pressure_bar=Decimal(request.POST.get('min_steam_pressure_bar') or '0'),
+                        max_steam_pressure_bar=Decimal(request.POST.get('max_steam_pressure_bar') or '0'),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,
+                        instruction_file=request.FILES.get('instruction_file') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Industrial Iron plan created.')
 
-            elif action=='bundle_scan':
-                plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
-                if machine and machine.status in {'UNDER_MAINTENANCE','BREAKDOWN','HOLD','RETIRED','DISPOSED'}:
-                    status='MACHINE_HOLD'
-                if bundle and barcode and barcode != bundle.barcode:
-                    status='MISMATCH'
-                if bundle and IronBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual != expected:
-                    status='MISMATCH'
-                if direction=='OUT':
+                elif action=='bundle_scan':
+                    plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    machine=AssetMachine.objects.filter(pk=request.POST.get('machine_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
+                    if machine and machine.status in {'UNDER_MAINTENANCE','BREAKDOWN','HOLD','RETIRED','DISPOSED'}:
+                        status='MACHINE_HOLD'
+                    if bundle and barcode and barcode != bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and IronBundleScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual != expected:
+                        status='MISMATCH'
+                    if direction=='OUT':
+                        if bundle and not IronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        if not IronQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
+                            status='QC_HOLD'
+                    IronBundleScan.objects.create(
+                        plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=expected,actual_qty=actual,
+                        source_department=request.POST.get('source_department','').strip(),
+                        destination_department=request.POST.get('destination_department','').strip(),
+                        operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
+                        machine=machine,scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(
+                            level='RED',title='Industrial Iron Bundle Scan Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                        raise PermissionError(f'Industrial Iron bundle movement blocked: {status}.')
+                    messages.success(request,f'Industrial Iron BUNDLE {direction} SCAN accepted.')
+
+                elif action=='production':
+                    plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    machine=get_object_or_404(AssetMachine,pk=request.POST.get('machine_id'))
+                    if machine.status in {'UNDER_MAINTENANCE','BREAKDOWN','HOLD','RETIRED','DISPOSED'}:
+                        raise PermissionError(f'Production blocked: machine status is {machine.status}.')
+                    if AssetMaintenance.objects.filter(asset=machine,status__in=['PLANNED','IN_PROGRESS'],scheduled_date__lte=today).exists():
+                        raise PermissionError('Production blocked: machine has due/in-progress maintenance.')
                     if bundle and not IronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    if not IronQC.objects.filter(plan=plan,bundle=bundle,result='PASS').exists():
-                        status='QC_HOLD'
-                IronBundleScan.objects.create(
-                    plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=expected,actual_qty=actual,
-                    source_department=request.POST.get('source_department','').strip(),
-                    destination_department=request.POST.get('destination_department','').strip(),
-                    operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
-                    machine=machine,scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(
-                        level='RED',title='Industrial Iron Bundle Scan Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False
+                        raise PermissionError('Production blocked: valid Industrial Iron BUNDLE IN SCAN is required.')
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual Industrial Iron production entry requires senior APPROVED authorization.')
+                    temp=Decimal(request.POST.get('actual_temperature_c') or '0')
+                    pressure=Decimal(request.POST.get('steam_pressure_bar') or '0')
+                    if plan.max_temperature_c and temp > plan.max_temperature_c:
+                        Alert.objects.create(level='RED',title='Industrial Iron Temperature High',message=f'{plan.plan_no}: {temp}°C exceeds max {plan.max_temperature_c}°C.',reference=plan.plan_no,actioned=False)
+                        raise PermissionError('Production blocked: temperature exceeds permitted maximum.')
+                    if plan.min_temperature_c and temp < plan.min_temperature_c:
+                        Alert.objects.create(level='WARNING',title='Industrial Iron Temperature Low',message=f'{plan.plan_no}: {temp}°C below min {plan.min_temperature_c}°C.',reference=plan.plan_no,actioned=False)
+                    if plan.max_steam_pressure_bar and pressure > plan.max_steam_pressure_bar:
+                        Alert.objects.create(level='RED',title='Industrial Iron Steam Pressure High',message=f'{plan.plan_no}: {pressure} bar exceeds max {plan.max_steam_pressure_bar} bar.',reference=plan.plan_no,actioned=False)
+                        raise PermissionError('Production blocked: steam pressure exceeds permitted maximum.')
+                    if plan.min_steam_pressure_bar and pressure < plan.min_steam_pressure_bar:
+                        Alert.objects.create(level='WARNING',title='Industrial Iron Steam Pressure Low',message=f'{plan.plan_no}: {pressure} bar below min {plan.min_steam_pressure_bar} bar.',reference=plan.plan_no,actioned=False)
+
+                    open_downtime=AssetDowntime.objects.filter(asset=machine,ended_at__isnull=True)
+                    if open_downtime.exists():
+                        raise PermissionError('Production blocked: machine has active downtime.')
+
+                    IronProductionEntry.objects.create(
+                        plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
+                        operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
+                        helper=Employee.objects.filter(pk=request.POST.get('helper_id')).first(),
+                        machine=machine,
+                        target_qty=int(request.POST.get('target_qty') or 0),
+                        actual_qty=int(request.POST.get('actual_qty') or 0),
+                        start_at=request.POST.get('start_at') or None,
+                        end_at=request.POST.get('end_at') or None,
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        downtime_minutes=int(request.POST.get('downtime_minutes') or 0),
+                        actual_temperature_c=temp,
+                        steam_pressure_bar=pressure,
+                        electricity_kwh=Decimal(request.POST.get('electricity_kwh') or '0'),
+                        steam_kg=Decimal(request.POST.get('steam_kg') or '0'),
+                        cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
+                        labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
+                        helper_cost=Decimal(request.POST.get('helper_cost') or '0'),
+                        machine_cost=Decimal(request.POST.get('machine_cost') or '0'),
+                        utility_cost=Decimal(request.POST.get('utility_cost') or '0'),
+                        downtime_cost=Decimal(request.POST.get('downtime_cost') or '0'),
+                        manual_entry=manual,approval=approval
                     )
-                    raise PermissionError(f'Industrial Iron bundle movement blocked: {status}.')
-                messages.success(request,f'Industrial Iron BUNDLE {direction} SCAN accepted.')
+                    messages.success(request,'Industrial Iron production/cost entry saved.')
 
-            elif action=='production':
-                plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                machine=get_object_or_404(AssetMachine,pk=request.POST.get('machine_id'))
-                if machine.status in {'UNDER_MAINTENANCE','BREAKDOWN','HOLD','RETIRED','DISPOSED'}:
-                    raise PermissionError(f'Production blocked: machine status is {machine.status}.')
-                if AssetMaintenance.objects.filter(asset=machine,status__in=['PLANNED','IN_PROGRESS'],scheduled_date__lte=today).exists():
-                    raise PermissionError('Production blocked: machine has due/in-progress maintenance.')
-                if bundle and not IronBundleScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Production blocked: valid Industrial Iron BUNDLE IN SCAN is required.')
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual Industrial Iron production entry requires senior APPROVED authorization.')
-                temp=Decimal(request.POST.get('actual_temperature_c') or '0')
-                pressure=Decimal(request.POST.get('steam_pressure_bar') or '0')
-                if plan.max_temperature_c and temp > plan.max_temperature_c:
-                    Alert.objects.create(level='RED',title='Industrial Iron Temperature High',message=f'{plan.plan_no}: {temp}°C exceeds max {plan.max_temperature_c}°C.',reference=plan.plan_no,actioned=False)
-                    raise PermissionError('Production blocked: temperature exceeds permitted maximum.')
-                if plan.min_temperature_c and temp < plan.min_temperature_c:
-                    Alert.objects.create(level='WARNING',title='Industrial Iron Temperature Low',message=f'{plan.plan_no}: {temp}°C below min {plan.min_temperature_c}°C.',reference=plan.plan_no,actioned=False)
-                if plan.max_steam_pressure_bar and pressure > plan.max_steam_pressure_bar:
-                    Alert.objects.create(level='RED',title='Industrial Iron Steam Pressure High',message=f'{plan.plan_no}: {pressure} bar exceeds max {plan.max_steam_pressure_bar} bar.',reference=plan.plan_no,actioned=False)
-                    raise PermissionError('Production blocked: steam pressure exceeds permitted maximum.')
-                if plan.min_steam_pressure_bar and pressure < plan.min_steam_pressure_bar:
-                    Alert.objects.create(level='WARNING',title='Industrial Iron Steam Pressure Low',message=f'{plan.plan_no}: {pressure} bar below min {plan.min_steam_pressure_bar} bar.',reference=plan.plan_no,actioned=False)
-
-                open_downtime=AssetDowntime.objects.filter(asset=machine,ended_at__isnull=True)
-                if open_downtime.exists():
-                    raise PermissionError('Production blocked: machine has active downtime.')
-
-                IronProductionEntry.objects.create(
-                    plan=plan,bundle=bundle,work_date=request.POST.get('work_date') or today,
-                    operator=Employee.objects.filter(pk=request.POST.get('operator_id')).first(),
-                    helper=Employee.objects.filter(pk=request.POST.get('helper_id')).first(),
-                    machine=machine,
-                    target_qty=int(request.POST.get('target_qty') or 0),
-                    actual_qty=int(request.POST.get('actual_qty') or 0),
-                    start_at=request.POST.get('start_at') or None,
-                    end_at=request.POST.get('end_at') or None,
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    downtime_minutes=int(request.POST.get('downtime_minutes') or 0),
-                    actual_temperature_c=temp,
-                    steam_pressure_bar=pressure,
-                    electricity_kwh=Decimal(request.POST.get('electricity_kwh') or '0'),
-                    steam_kg=Decimal(request.POST.get('steam_kg') or '0'),
-                    cost_per_minute=Decimal(request.POST.get('cost_per_minute') or '0'),
-                    labour_cost=Decimal(request.POST.get('labour_cost') or '0'),
-                    helper_cost=Decimal(request.POST.get('helper_cost') or '0'),
-                    machine_cost=Decimal(request.POST.get('machine_cost') or '0'),
-                    utility_cost=Decimal(request.POST.get('utility_cost') or '0'),
-                    downtime_cost=Decimal(request.POST.get('downtime_cost') or '0'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Industrial Iron production/cost entry saved.')
-
-            elif action=='qc':
-                plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                result=request.POST.get('result','PASS')
-                defect=request.POST.get('defect_type','')
-                if defect in {'SCORCH_BURN','COLOUR_CHANGE','SHAPE_DISTORTION','MEASUREMENT_CHANGE','FABRIC_DAMAGE'} and result=='PASS':
-                    result='HOLD'
-                IronQC.objects.create(
-                    plan=plan,bundle=bundle,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    reiron_qty=int(request.POST.get('reiron_qty') or 0),
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    defect_type=defect,
-                    defect_reason=request.POST.get('defect_reason','').strip(),
-                    result=result,checked_by=request.user,
-                    qc_photo=request.FILES.get('qc_photo') or None
-                )
-                if result in {'HOLD','REIRON','REWORK','REJECT'} or defect in {'SCORCH_BURN','FABRIC_DAMAGE','MEASUREMENT_CHANGE'}:
-                    Alert.objects.create(
-                        level='RED' if result=='REJECT' or defect in {'SCORCH_BURN','FABRIC_DAMAGE'} else 'WARNING',
-                        title='Industrial Iron QC Hold / Rework',
-                        message=f'{plan.plan_no}: result={result}, defect={defect}.',
-                        reference=plan.plan_no,actioned=False
+                elif action=='qc':
+                    plan=get_object_or_404(IronPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    result=request.POST.get('result','PASS')
+                    defect=request.POST.get('defect_type','')
+                    if defect in {'SCORCH_BURN','COLOUR_CHANGE','SHAPE_DISTORTION','MEASUREMENT_CHANGE','FABRIC_DAMAGE'} and result=='PASS':
+                        result='HOLD'
+                    IronQC.objects.create(
+                        plan=plan,bundle=bundle,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        reiron_qty=int(request.POST.get('reiron_qty') or 0),
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        defect_type=defect,
+                        defect_reason=request.POST.get('defect_reason','').strip(),
+                        result=result,checked_by=request.user,
+                        qc_photo=request.FILES.get('qc_photo') or None
                     )
-                messages.success(request,f'Industrial Iron QC recorded: {result}.')
+                    if result in {'HOLD','REIRON','REWORK','REJECT'} or defect in {'SCORCH_BURN','FABRIC_DAMAGE','MEASUREMENT_CHANGE'}:
+                        Alert.objects.create(
+                            level='RED' if result=='REJECT' or defect in {'SCORCH_BURN','FABRIC_DAMAGE'} else 'WARNING',
+                            title='Industrial Iron QC Hold / Rework',
+                            message=f'{plan.plan_no}: result={result}, defect={defect}.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                    messages.success(request,f'Industrial Iron QC recorded: {result}.')
 
-            elif action=='downtime':
-                machine=get_object_or_404(AssetMachine,pk=request.POST.get('machine_id'))
-                ref=request.POST.get('reference','').strip() or f'IRON-DT-{timezone.now():%Y%m%d%H%M%S}'
-                AssetDowntime.objects.create(
-                    asset=machine,reference=ref,
-                    reason=request.POST.get('reason','BREAKDOWN'),
-                    description=request.POST.get('description','').strip(),
-                    production_impact_qty=Decimal(request.POST.get('production_impact_qty') or '0'),
-                    recorded_by=request.user
-                )
-                machine.status='BREAKDOWN' if request.POST.get('reason')=='BREAKDOWN' else 'HOLD'
-                machine.save(update_fields=['status','updated_at'])
-                Alert.objects.create(level='RED',title='Industrial Iron Machine Downtime',message=f'{machine.asset_code}: {request.POST.get("reason")}.',reference=ref,actioned=False)
-                messages.success(request,'Machine downtime opened and machine held.')
+                elif action=='downtime':
+                    machine=get_object_or_404(AssetMachine,pk=request.POST.get('machine_id'))
+                    ref=request.POST.get('reference','').strip() or f'IRON-DT-{timezone.now():%Y%m%d%H%M%S}'
+                    AssetDowntime.objects.create(
+                        asset=machine,reference=ref,
+                        reason=request.POST.get('reason','BREAKDOWN'),
+                        description=request.POST.get('description','').strip(),
+                        production_impact_qty=Decimal(request.POST.get('production_impact_qty') or '0'),
+                        recorded_by=request.user
+                    )
+                    machine.status='BREAKDOWN' if request.POST.get('reason')=='BREAKDOWN' else 'HOLD'
+                    machine.save(update_fields=['status','updated_at'])
+                    Alert.objects.create(level='RED',title='Industrial Iron Machine Downtime',message=f'{machine.asset_code}: {request.POST.get("reason")}.',reference=ref,actioned=False)
+                    messages.success(request,'Machine downtime opened and machine held.')
 
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_iron_auto_report_payload(today)
-                IronAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,department=None,
-                    defaults={
-                        'summary':payload,
-                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                    }
-                )
-                messages.success(request,f'{slot} Industrial Iron automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_iron_auto_report_payload(today)
+                    IronAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,department=None,
+                        defaults={
+                            'summary':payload,
+                            'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                            'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                            'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                        }
+                    )
+                    messages.success(request,f'{slot} Industrial Iron automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('iron_dashboard')
 
     plans=IronPlan.objects.select_related('order','department').order_by('-created_at')
@@ -4030,207 +4082,208 @@ def final_qc_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                FinalQCPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),
-                    order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    style_no=request.POST.get('style_no','').strip(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    specification_version=request.POST.get('specification_version','1.0'),
-                    aql_level=request.POST.get('aql_level','2.5'),
-                    lot_size=int(request.POST.get('lot_size') or 0),
-                    sample_size=int(request.POST.get('sample_size') or 0),
-                    shipment_qty=int(request.POST.get('shipment_qty') or order.quantity),
-                    inspection_date=request.POST.get('inspection_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,
-                    specification_file=request.FILES.get('specification_file') or None,
-                    approved_sample_file=request.FILES.get('approved_sample_file') or None,
-                    packing_spec_file=request.FILES.get('packing_spec_file') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Final QC plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    FinalQCPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),
+                        order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        style_no=request.POST.get('style_no','').strip(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        specification_version=request.POST.get('specification_version','1.0'),
+                        aql_level=request.POST.get('aql_level','2.5'),
+                        lot_size=int(request.POST.get('lot_size') or 0),
+                        sample_size=int(request.POST.get('sample_size') or 0),
+                        shipment_qty=int(request.POST.get('shipment_qty') or order.quantity),
+                        inspection_date=request.POST.get('inspection_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,
+                        specification_file=request.FILES.get('specification_file') or None,
+                        approved_sample_file=request.FILES.get('approved_sample_file') or None,
+                        packing_spec_file=request.FILES.get('packing_spec_file') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Final QC plan created.')
 
-            elif action=='scan':
-                plan=get_object_or_404(FinalQCPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
-                if bundle and barcode and barcode != bundle.barcode:
-                    status='MISMATCH'
-                if bundle and FinalQCUnitScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual != expected:
-                    status='MISMATCH'
-                if direction=='OUT':
+                elif action=='scan':
+                    plan=get_object_or_404(FinalQCPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
+                    if bundle and barcode and barcode != bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and FinalQCUnitScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual != expected:
+                        status='MISMATCH'
+                    if direction=='OUT':
+                        if bundle and not FinalQCUnitScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        release=FinalQCRelease.objects.filter(plan=plan).select_related('approval').first()
+                        if not release or not release.released:
+                            status='QC_HOLD'
+                    FinalQCUnitScan.objects.create(
+                        plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=expected,actual_qty=actual,
+                        source_department=request.POST.get('source_department','').strip(),
+                        destination_department=request.POST.get('destination_department','Ready for Shipment').strip(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(
+                            level='RED',title='Final QC Movement Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                        raise PermissionError(f'Final QC movement blocked: {status}.')
+                    messages.success(request,f'Final QC {direction} scan accepted.')
+
+                elif action=='inspection':
+                    plan=get_object_or_404(FinalQCPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
                     if bundle and not FinalQCUnitScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    release=FinalQCRelease.objects.filter(plan=plan).select_related('approval').first()
-                    if not release or not release.released:
-                        status='QC_HOLD'
-                FinalQCUnitScan.objects.create(
-                    plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=expected,actual_qty=actual,
-                    source_department=request.POST.get('source_department','').strip(),
-                    destination_department=request.POST.get('destination_department','Ready for Shipment').strip(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(
-                        level='RED',title='Final QC Movement Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False
+                        raise PermissionError('Final inspection blocked: valid Final QC IN SCAN is required.')
+                    result=request.POST.get('result','HOLD')
+                    critical=int(request.POST.get('critical_defects') or 0)
+                    label_fail=int(request.POST.get('label_fail_qty') or 0)
+                    barcode_fail=int(request.POST.get('barcode_fail_qty') or 0)
+                    measurement_fail=int(request.POST.get('measurement_fail_qty') or 0)
+                    packing_fail=int(request.POST.get('packing_fail_qty') or 0)
+                    qty_fail=int(request.POST.get('quantity_fail_qty') or 0)
+                    if critical>0 or label_fail>0 or barcode_fail>0 or measurement_fail>0 or packing_fail>0 or qty_fail>0:
+                        if result=='PASS':
+                            result='HOLD'
+
+                    ins=FinalQCInspection.objects.create(
+                        plan=plan,bundle=bundle,inspector=request.user,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        critical_defects=critical,
+                        major_defects=int(request.POST.get('major_defects') or 0),
+                        minor_defects=int(request.POST.get('minor_defects') or 0),
+                        measurement_fail_qty=measurement_fail,
+                        appearance_fail_qty=int(request.POST.get('appearance_fail_qty') or 0),
+                        workmanship_fail_qty=int(request.POST.get('workmanship_fail_qty') or 0),
+                        label_fail_qty=label_fail,
+                        barcode_fail_qty=barcode_fail,
+                        poly_fail_qty=int(request.POST.get('poly_fail_qty') or 0),
+                        packing_fail_qty=packing_fail,
+                        carton_marking_fail_qty=int(request.POST.get('carton_marking_fail_qty') or 0),
+                        quantity_fail_qty=qty_fail,
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        result=result,
+                        buyer_inspection_result=request.POST.get('buyer_inspection_result','').strip(),
+                        comments=request.POST.get('comments','').strip(),
+                        inspection_sheet=request.FILES.get('inspection_sheet') or None,
+                        photo=request.FILES.get('photo') or None
                     )
-                    raise PermissionError(f'Final QC movement blocked: {status}.')
-                messages.success(request,f'Final QC {direction} scan accepted.')
-
-            elif action=='inspection':
-                plan=get_object_or_404(FinalQCPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                if bundle and not FinalQCUnitScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('Final inspection blocked: valid Final QC IN SCAN is required.')
-                result=request.POST.get('result','HOLD')
-                critical=int(request.POST.get('critical_defects') or 0)
-                label_fail=int(request.POST.get('label_fail_qty') or 0)
-                barcode_fail=int(request.POST.get('barcode_fail_qty') or 0)
-                measurement_fail=int(request.POST.get('measurement_fail_qty') or 0)
-                packing_fail=int(request.POST.get('packing_fail_qty') or 0)
-                qty_fail=int(request.POST.get('quantity_fail_qty') or 0)
-                if critical>0 or label_fail>0 or barcode_fail>0 or measurement_fail>0 or packing_fail>0 or qty_fail>0:
-                    if result=='PASS':
-                        result='HOLD'
-
-                ins=FinalQCInspection.objects.create(
-                    plan=plan,bundle=bundle,inspector=request.user,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    critical_defects=critical,
-                    major_defects=int(request.POST.get('major_defects') or 0),
-                    minor_defects=int(request.POST.get('minor_defects') or 0),
-                    measurement_fail_qty=measurement_fail,
-                    appearance_fail_qty=int(request.POST.get('appearance_fail_qty') or 0),
-                    workmanship_fail_qty=int(request.POST.get('workmanship_fail_qty') or 0),
-                    label_fail_qty=label_fail,
-                    barcode_fail_qty=barcode_fail,
-                    poly_fail_qty=int(request.POST.get('poly_fail_qty') or 0),
-                    packing_fail_qty=packing_fail,
-                    carton_marking_fail_qty=int(request.POST.get('carton_marking_fail_qty') or 0),
-                    quantity_fail_qty=qty_fail,
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    result=result,
-                    buyer_inspection_result=request.POST.get('buyer_inspection_result','').strip(),
-                    comments=request.POST.get('comments','').strip(),
-                    inspection_sheet=request.FILES.get('inspection_sheet') or None,
-                    photo=request.FILES.get('photo') or None
-                )
-                release,_=FinalQCRelease.objects.get_or_create(plan=plan)
-                release.latest_inspection=ins
-                release.shipment_readiness_percent=(
-                    min((ins.pass_qty/plan.shipment_qty*100),100) if plan.shipment_qty else 0
-                )
-                release.save()
-
-                plan.status='PASSED' if result=='PASS' else ('REWORK' if result=='REWORK' else ('REJECTED' if result=='REJECT' else 'HOLD'))
-                plan.save(update_fields=['status','updated_at'])
-
-                if result in {'HOLD','REWORK','REJECT'} or critical>0 or label_fail or barcode_fail or measurement_fail or packing_fail or qty_fail:
-                    Alert.objects.create(
-                        level='RED',
-                        title='Final QC Hold / Shipment Block',
-                        message=f'{plan.plan_no}: result={result}; critical={critical}; measurement={measurement_fail}; label={label_fail}; barcode={barcode_fail}; packing={packing_fail}; qty={qty_fail}.',
-                        reference=plan.plan_no,actioned=False
+                    release,_=FinalQCRelease.objects.get_or_create(plan=plan)
+                    release.latest_inspection=ins
+                    release.shipment_readiness_percent=(
+                        min((ins.pass_qty/plan.shipment_qty*100),100) if plan.shipment_qty else 0
                     )
-                messages.success(request,f'Final inspection recorded: {result}.')
+                    release.save()
 
-            elif action=='defect':
-                ins=get_object_or_404(FinalQCInspection,pk=request.POST.get('inspection_id'))
-                defect=FinalQCDefect.objects.create(
-                    inspection=ins,
-                    defect_code=request.POST.get('defect_code','').strip(),
-                    category=request.POST.get('category','OTHER'),
-                    severity=request.POST.get('severity','MINOR'),
-                    description=request.POST.get('description','').strip(),
-                    quantity=int(request.POST.get('quantity') or 1),
-                    root_cause=request.POST.get('root_cause','').strip(),
-                    corrective_action=request.POST.get('corrective_action','').strip(),
-                    responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
-                    due_at=request.POST.get('due_at') or None
-                )
-                if defect.severity=='CRITICAL':
-                    Alert.objects.create(
-                        level='RED',title='Critical Final QC Defect',
-                        message=f'{ins.plan.plan_no}: {defect.description}',
-                        reference=ins.plan.plan_no,actioned=False
+                    plan.status='PASSED' if result=='PASS' else ('REWORK' if result=='REWORK' else ('REJECTED' if result=='REJECT' else 'HOLD'))
+                    plan.save(update_fields=['status','updated_at'])
+
+                    if result in {'HOLD','REWORK','REJECT'} or critical>0 or label_fail or barcode_fail or measurement_fail or packing_fail or qty_fail:
+                        Alert.objects.create(
+                            level='RED',
+                            title='Final QC Hold / Shipment Block',
+                            message=f'{plan.plan_no}: result={result}; critical={critical}; measurement={measurement_fail}; label={label_fail}; barcode={barcode_fail}; packing={packing_fail}; qty={qty_fail}.',
+                            reference=plan.plan_no,actioned=False
+                        )
+                    messages.success(request,f'Final inspection recorded: {result}.')
+
+                elif action=='defect':
+                    ins=get_object_or_404(FinalQCInspection,pk=request.POST.get('inspection_id'))
+                    defect=FinalQCDefect.objects.create(
+                        inspection=ins,
+                        defect_code=request.POST.get('defect_code','').strip(),
+                        category=request.POST.get('category','OTHER'),
+                        severity=request.POST.get('severity','MINOR'),
+                        description=request.POST.get('description','').strip(),
+                        quantity=int(request.POST.get('quantity') or 1),
+                        root_cause=request.POST.get('root_cause','').strip(),
+                        corrective_action=request.POST.get('corrective_action','').strip(),
+                        responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
+                        due_at=request.POST.get('due_at') or None
                     )
-                messages.success(request,'Final QC defect recorded.')
+                    if defect.severity=='CRITICAL':
+                        Alert.objects.create(
+                            level='RED',title='Critical Final QC Defect',
+                            message=f'{ins.plan.plan_no}: {defect.description}',
+                            reference=ins.plan.plan_no,actioned=False
+                        )
+                    messages.success(request,'Final QC defect recorded.')
 
-            elif action=='capa':
-                ins=get_object_or_404(FinalQCInspection,pk=request.POST.get('inspection_id'))
-                seq=FinalQCCAPA.objects.filter(created_at__date=today).count()+1
-                FinalQCCAPA.objects.create(
-                    reference=f'FQC-CAPA-{timezone.now():%Y%m%d}-{seq:04d}',
-                    inspection=ins,
-                    root_cause=request.POST.get('root_cause','').strip(),
-                    corrective_action=request.POST.get('corrective_action','').strip(),
-                    preventive_action=request.POST.get('preventive_action','').strip(),
-                    responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
-                    due_at=request.POST.get('due_at') or None,
-                    status='OPEN'
-                )
-                messages.success(request,'Final QC CAPA opened.')
+                elif action=='capa':
+                    ins=get_object_or_404(FinalQCInspection,pk=request.POST.get('inspection_id'))
+                    seq=FinalQCCAPA.objects.filter(created_at__date=today).count()+1
+                    FinalQCCAPA.objects.create(
+                        reference=f'FQC-CAPA-{timezone.now():%Y%m%d}-{seq:04d}',
+                        inspection=ins,
+                        root_cause=request.POST.get('root_cause','').strip(),
+                        corrective_action=request.POST.get('corrective_action','').strip(),
+                        preventive_action=request.POST.get('preventive_action','').strip(),
+                        responsible_user=User.objects.filter(pk=request.POST.get('responsible_user_id')).first(),
+                        due_at=request.POST.get('due_at') or None,
+                        status='OPEN'
+                    )
+                    messages.success(request,'Final QC CAPA opened.')
 
-            elif action=='release':
-                release=get_object_or_404(FinalQCRelease,pk=request.POST.get('release_id'))
-                decision=request.POST.get('final_decision','PENDING')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if decision=='READY_TO_SHIP' and release.system_decision!='READY_TO_SHIP':
-                    raise PermissionError(f'Ready-for-Shipment blocked. System decision is {release.system_decision}.')
-                if decision=='CONDITIONAL_RELEASE' and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Conditional Final QC release requires APPROVED senior authorization.')
-                release.final_decision=decision
-                release.approval=approval
-                release.decision_reason=request.POST.get('decision_reason','').strip()
-                if decision in {'READY_TO_SHIP','CONDITIONAL_RELEASE'}:
-                    release.pre_shipment_signoff_by=request.user
-                    release.pre_shipment_signoff_at=timezone.now()
-                    release.released_at=timezone.now()
-                release.save()
-                if release.released:
-                    order=release.plan.order
-                    order.status='READY_TO_SHIP'
-                    order.save(update_fields=['status','updated_at'])
-                    if hasattr(order,'delivery_sla'):
-                        order.delivery_sla.status='PACKED'
-                        order.delivery_sla.save(update_fields=['status','updated_at'])
-                messages.success(request,f'Final QC release decision saved: {decision}.')
+                elif action=='release':
+                    release=get_object_or_404(FinalQCRelease,pk=request.POST.get('release_id'))
+                    decision=request.POST.get('final_decision','PENDING')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if decision=='READY_TO_SHIP' and release.system_decision!='READY_TO_SHIP':
+                        raise PermissionError(f'Ready-for-Shipment blocked. System decision is {release.system_decision}.')
+                    if decision=='CONDITIONAL_RELEASE' and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Conditional Final QC release requires APPROVED senior authorization.')
+                    release.final_decision=decision
+                    release.approval=approval
+                    release.decision_reason=request.POST.get('decision_reason','').strip()
+                    if decision in {'READY_TO_SHIP','CONDITIONAL_RELEASE'}:
+                        release.pre_shipment_signoff_by=request.user
+                        release.pre_shipment_signoff_at=timezone.now()
+                        release.released_at=timezone.now()
+                    release.save()
+                    if release.released:
+                        order=release.plan.order
+                        order.status='READY_TO_SHIP'
+                        order.save(update_fields=['status','updated_at'])
+                        if hasattr(order,'delivery_sla'):
+                            order.delivery_sla.status='PACKED'
+                            order.delivery_sla.save(update_fields=['status','updated_at'])
+                    messages.success(request,f'Final QC release decision saved: {decision}.')
 
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_final_qc_auto_report_payload(today)
-                FinalQCAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,
-                    defaults={
-                        'summary':payload,
-                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                    }
-                )
-                messages.success(request,f'{slot} Final QC automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_final_qc_auto_report_payload(today)
+                    FinalQCAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,
+                        defaults={
+                            'summary':payload,
+                            'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                            'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                            'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                        }
+                    )
+                    messages.success(request,f'{slot} Final QC automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('final_qc_dashboard')
 
     plans=FinalQCPlan.objects.select_related('order','department').order_by('-created_at')
@@ -4327,7 +4380,7 @@ def finishing_dashboard(request):
             elif a=="generate_report":
                 slot=request.POST.get("slot")
                 if slot not in {"08:00","13:00","20:00"}:raise ValueError("Invalid report slot.")
-                payload=_finishing_payload(today);FinishingAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={"summary":payload,"outstanding_alerts":Alert.objects.filter(actioned=False).count(),"pending_actions":ActionItem.objects.exclude(status="COMPLETED").count(),"escalated_items":Alert.objects.filter(actioned=False,level="RED").count()})
+                payload=_finishing_payload(today);FinishingAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={"summary":payload,"outstanding_alerts":Alert.objects.filter(actioned=False).count(),"pending_actions":ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),"escalated_items":Alert.objects.filter(actioned=False,level="RED").count()})
             messages.success(request,"Finishing action completed.")
         except Exception as e:messages.error(request,str(e))
         return redirect("finishing_dashboard")
@@ -4383,165 +4436,166 @@ def packing_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                PackingPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    style_no=request.POST.get('style_no','').strip(),
-                    product=request.POST.get('product','').strip() or order.product,
-                    colour=request.POST.get('colour','').strip(),
-                    size_range=request.POST.get('size_range','').strip(),
-                    packing_ratio=request.POST.get('packing_ratio','').strip(),
-                    carton_marking=request.POST.get('carton_marking','').strip(),
-                    planned_qty=int(request.POST.get('planned_qty') or 0),
-                    target_date=request.POST.get('target_date') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,packing_spec_file=request.FILES.get('packing_spec_file') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Packing plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    PackingPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        style_no=request.POST.get('style_no','').strip(),
+                        product=request.POST.get('product','').strip() or order.product,
+                        colour=request.POST.get('colour','').strip(),
+                        size_range=request.POST.get('size_range','').strip(),
+                        packing_ratio=request.POST.get('packing_ratio','').strip(),
+                        carton_marking=request.POST.get('carton_marking','').strip(),
+                        planned_qty=int(request.POST.get('planned_qty') or 0),
+                        target_date=request.POST.get('target_date') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,packing_spec_file=request.FILES.get('packing_spec_file') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Packing plan created.')
 
-            elif action=='scan':
-                plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                direction=request.POST.get('direction','IN')
-                barcode=request.POST.get('barcode','').strip()
-                expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
-                actual=int(request.POST.get('actual_qty') or expected)
-                status='VALID'
+                elif action=='scan':
+                    plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    direction=request.POST.get('direction','IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    expected=bundle.quantity if bundle else int(request.POST.get('expected_qty') or 0)
+                    actual=int(request.POST.get('actual_qty') or expected)
+                    status='VALID'
 
-                if direction=='IN':
-                    final_release=FinalQCRelease.objects.filter(plan__order=plan.order).select_related('approval').order_by('-updated_at').first()
-                    if not final_release or not final_release.released:
-                        status='FINAL_QC_HOLD'
-                if bundle and barcode and barcode!=bundle.barcode:
-                    status='MISMATCH'
-                if bundle and PackingScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual!=expected:
-                    status='MISMATCH'
-                if direction=='OUT':
+                    if direction=='IN':
+                        final_release=FinalQCRelease.objects.filter(plan__order=plan.order).select_related('approval').order_by('-updated_at').first()
+                        if not final_release or not final_release.released:
+                            status='FINAL_QC_HOLD'
+                    if bundle and barcode and barcode!=bundle.barcode:
+                        status='MISMATCH'
+                    if bundle and PackingScan.objects.filter(plan=plan,bundle=bundle,direction=direction,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual!=expected:
+                        status='MISMATCH'
+                    if direction=='OUT':
+                        if bundle and not PackingScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        if not PackingQC.objects.filter(plan=plan,result='PASS').exists():
+                            status='PACKING_QC_HOLD'
+
+                    PackingScan.objects.create(plan=plan,bundle=bundle,direction=direction,barcode=barcode,
+                        expected_qty=expected,actual_qty=actual,scan_status=status,scanned_by=request.user)
+
+                    if status!='VALID':
+                        Alert.objects.create(level='RED',title='Packing Movement Blocked',
+                            message=f'{plan.plan_no}: {status} during {direction} scan.',
+                            reference=plan.plan_no,actioned=False)
+                        raise PermissionError(f'Packing movement blocked: {status}.')
+                    messages.success(request,f'PACKING {direction} SCAN accepted.')
+
+                elif action=='carton':
+                    plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
+                    barcode=request.POST.get('barcode','').strip()
+                    if not barcode:
+                        raise PermissionError('Carton barcode/QR is mandatory.')
+                    if PackingCarton.objects.filter(barcode=barcode).exists():
+                        raise PermissionError('Duplicate carton barcode/QR blocked.')
+                    matrix={}
+                    raw=request.POST.get('size_colour_matrix','').strip()
+                    if raw:
+                        try: matrix=pyjson.loads(raw)
+                        except Exception: matrix={'text':raw}
+                    carton=PackingCarton.objects.create(
+                        plan=plan,carton_no=request.POST.get('carton_no','').strip(),
+                        barcode=barcode,size_colour_matrix=matrix,
+                        packed_qty=int(request.POST.get('packed_qty') or 0),
+                        gross_weight_kg=Decimal(request.POST.get('gross_weight_kg') or 0),
+                        net_weight_kg=Decimal(request.POST.get('net_weight_kg') or 0),
+                        length_cm=Decimal(request.POST.get('length_cm') or 0),
+                        width_cm=Decimal(request.POST.get('width_cm') or 0),
+                        height_cm=Decimal(request.POST.get('height_cm') or 0),
+                        carton_marking=request.POST.get('carton_marking','').strip(),
+                        sealed=request.POST.get('sealed')=='on',
+                        seal_no=request.POST.get('seal_no','').strip(),
+                        created_by=request.user
+                    )
+                    if plan.carton_marking and carton.carton_marking and carton.carton_marking!=plan.carton_marking:
+                        Alert.objects.create(level='RED',title='Wrong Carton Marking',
+                            message=f'{plan.plan_no}: carton {carton.carton_no} marking mismatch.',
+                            reference=carton.carton_no,actioned=False)
+                    messages.success(request,'Carton created with barcode/QR and CBM.')
+
+                elif action=='production':
+                    plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
+                    bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
+                    carton=PackingCarton.objects.filter(pk=request.POST.get('carton_id')).first()
                     if bundle and not PackingScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    if not PackingQC.objects.filter(plan=plan,result='PASS').exists():
-                        status='PACKING_QC_HOLD'
+                        raise PermissionError('PACKING IN SCAN required before production.')
+                    manual=request.POST.get('manual_entry')=='on'
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if manual and (not approval or approval.status!='APPROVED'):
+                        raise PermissionError('Manual packing entry requires senior APPROVED authorization.')
+                    money=lambda k: Decimal(request.POST.get(k) or 0)
+                    PackingProduction.objects.create(
+                        plan=plan,bundle=bundle,carton=carton,
+                        work_date=request.POST.get('work_date') or today,
+                        employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
+                        target_qty=int(request.POST.get('target_qty') or 0),
+                        actual_qty=int(request.POST.get('actual_qty') or 0),
+                        wip_qty=int(request.POST.get('wip_qty') or 0),
+                        process_minutes=int(request.POST.get('process_minutes') or 0),
+                        npt_minutes=int(request.POST.get('npt_minutes') or 0),
+                        carton_cost=money('carton_cost'),poly_cost=money('poly_cost'),
+                        label_sticker_cost=money('label_sticker_cost'),
+                        hanger_tissue_accessory_cost=money('hanger_tissue_accessory_cost'),
+                        labour_cost=money('labour_cost'),process_cost=money('process_cost'),
+                        utility_cost=money('utility_cost'),rework_wastage_cost=money('rework_wastage_cost'),
+                        manual_entry=manual,approval=approval
+                    )
+                    messages.success(request,'Packing production/cost saved.')
 
-                PackingScan.objects.create(plan=plan,bundle=bundle,direction=direction,barcode=barcode,
-                    expected_qty=expected,actual_qty=actual,scan_status=status,scanned_by=request.user)
+                elif action=='qc':
+                    plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
+                    carton=PackingCarton.objects.filter(pk=request.POST.get('carton_id')).first()
+                    result=request.POST.get('result','HOLD')
+                    defect=request.POST.get('defect_type','')
+                    defect_qty=int(request.POST.get('defect_qty') or 0)
+                    if defect_qty and result=='PASS':
+                        result='HOLD'
+                    if defect in {'WRONG_ORDER_STYLE','WRONG_SIZE_COLOUR','WRONG_CARTON_MARKING','WRONG_ASSORTMENT','QUANTITY_MISMATCH'}:
+                        if result=='PASS': result='HOLD'
+                    PackingQC.objects.create(
+                        plan=plan,carton=carton,
+                        inspected_qty=int(request.POST.get('inspected_qty') or 0),
+                        pass_qty=int(request.POST.get('pass_qty') or 0),
+                        rework_qty=int(request.POST.get('rework_qty') or 0),
+                        reject_qty=int(request.POST.get('reject_qty') or 0),
+                        defect_type=defect,defect_qty=defect_qty,
+                        comments=request.POST.get('comments','').strip(),
+                        result=result,checked_by=request.user,
+                        qc_photo=request.FILES.get('qc_photo') or None
+                    )
+                    if result!='PASS':
+                        Alert.objects.create(level='RED' if result=='REJECT' else 'WARNING',
+                            title='Packing QC Hold',message=f'{plan.plan_no}: {result} / {defect}.',
+                            reference=plan.plan_no,actioned=False)
+                    messages.success(request,f'Packing QC recorded: {result}.')
 
-                if status!='VALID':
-                    Alert.objects.create(level='RED',title='Packing Movement Blocked',
-                        message=f'{plan.plan_no}: {status} during {direction} scan.',
-                        reference=plan.plan_no,actioned=False)
-                    raise PermissionError(f'Packing movement blocked: {status}.')
-                messages.success(request,f'PACKING {direction} SCAN accepted.')
-
-            elif action=='carton':
-                plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
-                barcode=request.POST.get('barcode','').strip()
-                if not barcode:
-                    raise PermissionError('Carton barcode/QR is mandatory.')
-                if PackingCarton.objects.filter(barcode=barcode).exists():
-                    raise PermissionError('Duplicate carton barcode/QR blocked.')
-                matrix={}
-                raw=request.POST.get('size_colour_matrix','').strip()
-                if raw:
-                    try: matrix=pyjson.loads(raw)
-                    except Exception: matrix={'text':raw}
-                carton=PackingCarton.objects.create(
-                    plan=plan,carton_no=request.POST.get('carton_no','').strip(),
-                    barcode=barcode,size_colour_matrix=matrix,
-                    packed_qty=int(request.POST.get('packed_qty') or 0),
-                    gross_weight_kg=Decimal(request.POST.get('gross_weight_kg') or 0),
-                    net_weight_kg=Decimal(request.POST.get('net_weight_kg') or 0),
-                    length_cm=Decimal(request.POST.get('length_cm') or 0),
-                    width_cm=Decimal(request.POST.get('width_cm') or 0),
-                    height_cm=Decimal(request.POST.get('height_cm') or 0),
-                    carton_marking=request.POST.get('carton_marking','').strip(),
-                    sealed=request.POST.get('sealed')=='on',
-                    seal_no=request.POST.get('seal_no','').strip(),
-                    created_by=request.user
-                )
-                if plan.carton_marking and carton.carton_marking and carton.carton_marking!=plan.carton_marking:
-                    Alert.objects.create(level='RED',title='Wrong Carton Marking',
-                        message=f'{plan.plan_no}: carton {carton.carton_no} marking mismatch.',
-                        reference=carton.carton_no,actioned=False)
-                messages.success(request,'Carton created with barcode/QR and CBM.')
-
-            elif action=='production':
-                plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
-                bundle=CuttingBundle.objects.filter(pk=request.POST.get('bundle_id')).first()
-                carton=PackingCarton.objects.filter(pk=request.POST.get('carton_id')).first()
-                if bundle and not PackingScan.objects.filter(plan=plan,bundle=bundle,direction='IN',scan_status='VALID').exists():
-                    raise PermissionError('PACKING IN SCAN required before production.')
-                manual=request.POST.get('manual_entry')=='on'
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if manual and (not approval or approval.status!='APPROVED'):
-                    raise PermissionError('Manual packing entry requires senior APPROVED authorization.')
-                money=lambda k: Decimal(request.POST.get(k) or 0)
-                PackingProduction.objects.create(
-                    plan=plan,bundle=bundle,carton=carton,
-                    work_date=request.POST.get('work_date') or today,
-                    employee=Employee.objects.filter(pk=request.POST.get('employee_id')).first(),
-                    target_qty=int(request.POST.get('target_qty') or 0),
-                    actual_qty=int(request.POST.get('actual_qty') or 0),
-                    wip_qty=int(request.POST.get('wip_qty') or 0),
-                    process_minutes=int(request.POST.get('process_minutes') or 0),
-                    npt_minutes=int(request.POST.get('npt_minutes') or 0),
-                    carton_cost=money('carton_cost'),poly_cost=money('poly_cost'),
-                    label_sticker_cost=money('label_sticker_cost'),
-                    hanger_tissue_accessory_cost=money('hanger_tissue_accessory_cost'),
-                    labour_cost=money('labour_cost'),process_cost=money('process_cost'),
-                    utility_cost=money('utility_cost'),rework_wastage_cost=money('rework_wastage_cost'),
-                    manual_entry=manual,approval=approval
-                )
-                messages.success(request,'Packing production/cost saved.')
-
-            elif action=='qc':
-                plan=get_object_or_404(PackingPlan,pk=request.POST.get('plan_id'))
-                carton=PackingCarton.objects.filter(pk=request.POST.get('carton_id')).first()
-                result=request.POST.get('result','HOLD')
-                defect=request.POST.get('defect_type','')
-                defect_qty=int(request.POST.get('defect_qty') or 0)
-                if defect_qty and result=='PASS':
-                    result='HOLD'
-                if defect in {'WRONG_ORDER_STYLE','WRONG_SIZE_COLOUR','WRONG_CARTON_MARKING','WRONG_ASSORTMENT','QUANTITY_MISMATCH'}:
-                    if result=='PASS': result='HOLD'
-                PackingQC.objects.create(
-                    plan=plan,carton=carton,
-                    inspected_qty=int(request.POST.get('inspected_qty') or 0),
-                    pass_qty=int(request.POST.get('pass_qty') or 0),
-                    rework_qty=int(request.POST.get('rework_qty') or 0),
-                    reject_qty=int(request.POST.get('reject_qty') or 0),
-                    defect_type=defect,defect_qty=defect_qty,
-                    comments=request.POST.get('comments','').strip(),
-                    result=result,checked_by=request.user,
-                    qc_photo=request.FILES.get('qc_photo') or None
-                )
-                if result!='PASS':
-                    Alert.objects.create(level='RED' if result=='REJECT' else 'WARNING',
-                        title='Packing QC Hold',message=f'{plan.plan_no}: {result} / {defect}.',
-                        reference=plan.plan_no,actioned=False)
-                messages.success(request,f'Packing QC recorded: {result}.')
-
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_packing_payload(today)
-                PackingAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,
-                    defaults={'summary':payload,
-                              'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Packing automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_packing_payload(today)
+                    PackingAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,
+                        defaults={'summary':payload,
+                                  'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Packing automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('packing_dashboard')
 
     plans=PackingPlan.objects.select_related('order').order_by('-created_at')
@@ -4646,200 +4700,201 @@ def shipping_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='plan':
-                order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
-                packing_pass=PackingQC.objects.filter(plan__order=order,result='PASS').exists()
-                if not packing_pass:
-                    raise PermissionError('Shipping plan blocked: Packing QC PASS is required.')
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                sla=BuyerDeliverySLA.objects.filter(order=order).first()
-                address=request.POST.get('delivery_address','').strip()
-                country=request.POST.get('country','').strip()
-                if sla:
-                    if not address:
-                        address=', '.join([x for x in [sla.street,sla.city,sla.state,sla.postal_code,sla.country] if x])
-                    if not country: country=sla.country
-                cartons=PackingCarton.objects.filter(plan__order=order)
-                ShippingPlan.objects.create(
-                    plan_no=request.POST.get('plan_no','').strip(),order=order,
-                    department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
-                    buyer=request.POST.get('buyer','').strip() or order.buyer,
-                    consignee=request.POST.get('consignee','').strip(),
-                    delivery_address=address,country=country,
-                    incoterm=request.POST.get('incoterm','').strip(),
-                    shipment_mode=request.POST.get('shipment_mode','ROAD'),
-                    forwarder=request.POST.get('forwarder','').strip(),
-                    carrier=request.POST.get('carrier','').strip(),
-                    booking_no=request.POST.get('booking_no','').strip(),
-                    awb_bl_cmr_tracking_no=request.POST.get('awb_bl_cmr_tracking_no','').strip(),
-                    container_no=request.POST.get('container_no','').strip(),
-                    seal_no=request.POST.get('seal_no','').strip(),
-                    vehicle_no=request.POST.get('vehicle_no','').strip(),
-                    driver_name=request.POST.get('driver_name','').strip(),
-                    driver_phone=request.POST.get('driver_phone','').strip(),
-                    planned_cartons=int(request.POST.get('planned_cartons') or cartons.count()),
-                    planned_pieces=int(request.POST.get('planned_pieces') or order.quantity),
-                    gross_weight_kg=Decimal(request.POST.get('gross_weight_kg') or (cartons.aggregate(v=Sum('gross_weight_kg'))['v'] or 0)),
-                    net_weight_kg=Decimal(request.POST.get('net_weight_kg') or (cartons.aggregate(v=Sum('net_weight_kg'))['v'] or 0)),
-                    total_cbm=Decimal(request.POST.get('total_cbm') or (cartons.aggregate(v=Sum('cbm'))['v'] or 0)),
-                    etd=request.POST.get('etd') or None,eta=request.POST.get('eta') or None,
-                    status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
-                    approval=approval,shipping_instruction=request.FILES.get('shipping_instruction') or None,
-                    created_by=request.user
-                )
-                messages.success(request,'Shipping plan created.')
+            with transaction.atomic():
+                if action=='plan':
+                    order=get_object_or_404(MasterOrder,pk=request.POST.get('order_id'))
+                    packing_pass=PackingQC.objects.filter(plan__order=order,result='PASS').exists()
+                    if not packing_pass:
+                        raise PermissionError('Shipping plan blocked: Packing QC PASS is required.')
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    sla=BuyerDeliverySLA.objects.filter(order=order).first()
+                    address=request.POST.get('delivery_address','').strip()
+                    country=request.POST.get('country','').strip()
+                    if sla:
+                        if not address:
+                            address=', '.join([x for x in [sla.street,sla.city,sla.state,sla.postal_code,sla.country] if x])
+                        if not country: country=sla.country
+                    cartons=PackingCarton.objects.filter(plan__order=order)
+                    ShippingPlan.objects.create(
+                        plan_no=request.POST.get('plan_no','').strip(),order=order,
+                        department=Department.objects.filter(pk=request.POST.get('department_id')).first(),
+                        buyer=request.POST.get('buyer','').strip() or order.buyer,
+                        consignee=request.POST.get('consignee','').strip(),
+                        delivery_address=address,country=country,
+                        incoterm=request.POST.get('incoterm','').strip(),
+                        shipment_mode=request.POST.get('shipment_mode','ROAD'),
+                        forwarder=request.POST.get('forwarder','').strip(),
+                        carrier=request.POST.get('carrier','').strip(),
+                        booking_no=request.POST.get('booking_no','').strip(),
+                        awb_bl_cmr_tracking_no=request.POST.get('awb_bl_cmr_tracking_no','').strip(),
+                        container_no=request.POST.get('container_no','').strip(),
+                        seal_no=request.POST.get('seal_no','').strip(),
+                        vehicle_no=request.POST.get('vehicle_no','').strip(),
+                        driver_name=request.POST.get('driver_name','').strip(),
+                        driver_phone=request.POST.get('driver_phone','').strip(),
+                        planned_cartons=int(request.POST.get('planned_cartons') or cartons.count()),
+                        planned_pieces=int(request.POST.get('planned_pieces') or order.quantity),
+                        gross_weight_kg=Decimal(request.POST.get('gross_weight_kg') or (cartons.aggregate(v=Sum('gross_weight_kg'))['v'] or 0)),
+                        net_weight_kg=Decimal(request.POST.get('net_weight_kg') or (cartons.aggregate(v=Sum('net_weight_kg'))['v'] or 0)),
+                        total_cbm=Decimal(request.POST.get('total_cbm') or (cartons.aggregate(v=Sum('cbm'))['v'] or 0)),
+                        etd=request.POST.get('etd') or None,eta=request.POST.get('eta') or None,
+                        status='APPROVED' if approval and approval.status=='APPROVED' else 'PENDING_APPROVAL',
+                        approval=approval,shipping_instruction=request.FILES.get('shipping_instruction') or None,
+                        created_by=request.user
+                    )
+                    messages.success(request,'Shipping plan created.')
 
-            elif action=='scan':
-                plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
-                carton=get_object_or_404(PackingCarton,pk=request.POST.get('carton_id'))
-                scan_type=request.POST.get('scan_type','SHIPPING_IN')
-                barcode=request.POST.get('barcode','').strip()
-                actual_qty=int(request.POST.get('actual_qty') or carton.packed_qty)
-                status='VALID'
+                elif action=='scan':
+                    plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
+                    carton=get_object_or_404(PackingCarton,pk=request.POST.get('carton_id'))
+                    scan_type=request.POST.get('scan_type','SHIPPING_IN')
+                    barcode=request.POST.get('barcode','').strip()
+                    actual_qty=int(request.POST.get('actual_qty') or carton.packed_qty)
+                    status='VALID'
 
-                if carton.plan.order_id != plan.order_id:
-                    status='MISMATCH'
-                if barcode != carton.barcode:
-                    status='MISMATCH'
-                if ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type=scan_type,scan_status='VALID').exists():
-                    status='DUPLICATE'
-                if actual_qty != carton.packed_qty:
-                    status='MISMATCH'
-                if scan_type=='SHIPPING_IN':
-                    if not PackingQC.objects.filter(plan=carton.plan,carton=carton,result='PASS').exists():
-                        status='PACKING_QC_HOLD'
-                elif scan_type=='CARTON_VERIFY':
-                    if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='SHIPPING_IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                elif scan_type=='LOADING':
-                    if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='SHIPPING_IN',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    required={'COMMERCIAL_INVOICE','PACKING_LIST','SHIPPING_INSTRUCTION'}
-                    verified=set(ShippingDocument.objects.filter(plan=plan,verified=True).values_list('document_type',flat=True))
-                    if not required.issubset(verified):
-                        status='APPROVAL_HOLD'
-                elif scan_type=='GATE_OUT':
-                    if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='LOADING',scan_status='VALID').exists():
-                        status='BLOCKED'
-                    if not plan.approval_id or plan.approval.status!='APPROVED':
-                        status='APPROVAL_HOLD'
-                    actual_seal=request.POST.get('actual_seal_no','').strip()
-                    if plan.seal_no and actual_seal != plan.seal_no:
+                    if carton.plan.order_id != plan.order_id:
                         status='MISMATCH'
-                elif scan_type=='DELIVERY':
-                    if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='GATE_OUT',scan_status='VALID').exists():
-                        status='BLOCKED'
+                    if barcode != carton.barcode:
+                        status='MISMATCH'
+                    if ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type=scan_type,scan_status='VALID').exists():
+                        status='DUPLICATE'
+                    if actual_qty != carton.packed_qty:
+                        status='MISMATCH'
+                    if scan_type=='SHIPPING_IN':
+                        if not PackingQC.objects.filter(plan=carton.plan,carton=carton,result='PASS').exists():
+                            status='PACKING_QC_HOLD'
+                    elif scan_type=='CARTON_VERIFY':
+                        if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='SHIPPING_IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                    elif scan_type=='LOADING':
+                        if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='SHIPPING_IN',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        required={'COMMERCIAL_INVOICE','PACKING_LIST','SHIPPING_INSTRUCTION'}
+                        verified=set(ShippingDocument.objects.filter(plan=plan,verified=True).values_list('document_type',flat=True))
+                        if not required.issubset(verified):
+                            status='APPROVAL_HOLD'
+                    elif scan_type=='GATE_OUT':
+                        if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='LOADING',scan_status='VALID').exists():
+                            status='BLOCKED'
+                        if not plan.approval_id or plan.approval.status!='APPROVED':
+                            status='APPROVAL_HOLD'
+                        actual_seal=request.POST.get('actual_seal_no','').strip()
+                        if plan.seal_no and actual_seal != plan.seal_no:
+                            status='MISMATCH'
+                    elif scan_type=='DELIVERY':
+                        if not ShippingCartonScan.objects.filter(plan=plan,carton=carton,scan_type='GATE_OUT',scan_status='VALID').exists():
+                            status='BLOCKED'
 
-                ShippingCartonScan.objects.create(
-                    plan=plan,carton=carton,scan_type=scan_type,barcode=barcode,
-                    expected_qty=carton.packed_qty,actual_qty=actual_qty,
-                    expected_seal_no=plan.seal_no,
-                    actual_seal_no=request.POST.get('actual_seal_no','').strip(),
-                    scan_status=status,scanned_by=request.user
-                )
-                if status!='VALID':
-                    Alert.objects.create(level='RED',title='Shipping Scan Blocked',
-                        message=f'{plan.plan_no}: {scan_type} / {status} / carton {carton.carton_no}.',
-                        reference=plan.plan_no,actioned=False)
-                    raise PermissionError(f'Shipping scan blocked: {status}.')
+                    ShippingCartonScan.objects.create(
+                        plan=plan,carton=carton,scan_type=scan_type,barcode=barcode,
+                        expected_qty=carton.packed_qty,actual_qty=actual_qty,
+                        expected_seal_no=plan.seal_no,
+                        actual_seal_no=request.POST.get('actual_seal_no','').strip(),
+                        scan_status=status,scanned_by=request.user
+                    )
+                    if status!='VALID':
+                        Alert.objects.create(level='RED',title='Shipping Scan Blocked',
+                            message=f'{plan.plan_no}: {scan_type} / {status} / carton {carton.carton_no}.',
+                            reference=plan.plan_no,actioned=False)
+                        raise PermissionError(f'Shipping scan blocked: {status}.')
 
-                if scan_type=='LOADING': plan.status='LOADING'
-                if scan_type=='GATE_OUT':
-                    plan.status='DISPATCHED'; plan.actual_dispatch_at=timezone.now()
-                    order=plan.order; order.status='SHIPPED'; order.save(update_fields=['status','updated_at'])
+                    if scan_type=='LOADING': plan.status='LOADING'
+                    if scan_type=='GATE_OUT':
+                        plan.status='DISPATCHED'; plan.actual_dispatch_at=timezone.now()
+                        order=plan.order; order.status='SHIPPED'; order.save(update_fields=['status','updated_at'])
+                        sla,_=_shipping_sla_info(plan)
+                        sla.status='DISPATCHED'; sla.actual_dispatch_at=timezone.now()
+                        sla.courier=plan.carrier or plan.forwarder; sla.tracking_number=plan.awb_bl_cmr_tracking_no
+                        sla.save(update_fields=['status','actual_dispatch_at','courier','tracking_number','updated_at'])
+                    plan.save()
+                    messages.success(request,f'{scan_type} accepted for carton {carton.carton_no}.')
+
+                elif action=='document':
+                    plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
+                    doc=ShippingDocument.objects.create(
+                        plan=plan,document_type=request.POST.get('document_type','OTHER'),
+                        document_no=request.POST.get('document_no','').strip(),
+                        file=request.FILES.get('file'),
+                        verified=request.POST.get('verified')=='on',
+                        verified_by=request.user if request.POST.get('verified')=='on' else None,
+                        verified_at=timezone.now() if request.POST.get('verified')=='on' else None,
+                        uploaded_by=request.user
+                    )
+                    messages.success(request,f'Shipping document saved: {doc.document_type}.')
+
+                elif action=='cost':
+                    plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
+                    approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    money=lambda k: Decimal(request.POST.get(k) or 0)
+                    ShippingCost.objects.update_or_create(
+                        plan=plan,defaults={
+                            'freight':money('freight'),'forwarder':money('forwarder'),
+                            'customs':money('customs'),'port_airport':money('port_airport'),
+                            'truck_vehicle':money('truck_vehicle'),'loading':money('loading'),
+                            'documentation':money('documentation'),'insurance':money('insurance'),
+                            'duty_tax':money('duty_tax'),'handling':money('handling'),
+                            'demurrage_detention':money('demurrage_detention'),'courier':money('courier'),
+                            'other_approved':money('other_approved'),'approval':approval,'updated_by':request.user
+                        })
+                    cost=ShippingCost.objects.get(plan=plan)
                     sla,_=_shipping_sla_info(plan)
-                    sla.status='DISPATCHED'; sla.actual_dispatch_at=timezone.now()
-                    sla.courier=plan.carrier or plan.forwarder; sla.tracking_number=plan.awb_bl_cmr_tracking_no
-                    sla.save(update_fields=['status','actual_dispatch_at','courier','tracking_number','updated_at'])
-                plan.save()
-                messages.success(request,f'{scan_type} accepted for carton {carton.carton_no}.')
+                    sla.shipping_cost=cost.total_cost; sla.save(update_fields=['shipping_cost','updated_at'])
+                    messages.success(request,'Shipping cost updated.')
 
-            elif action=='document':
-                plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
-                doc=ShippingDocument.objects.create(
-                    plan=plan,document_type=request.POST.get('document_type','OTHER'),
-                    document_no=request.POST.get('document_no','').strip(),
-                    file=request.FILES.get('file'),
-                    verified=request.POST.get('verified')=='on',
-                    verified_by=request.user if request.POST.get('verified')=='on' else None,
-                    verified_at=timezone.now() if request.POST.get('verified')=='on' else None,
-                    uploaded_by=request.user
-                )
-                messages.success(request,f'Shipping document saved: {doc.document_type}.')
+                elif action=='status':
+                    plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
+                    status=request.POST.get('status')
+                    if status not in dict(ShippingPlan.STATUS):
+                        raise ValueError('Invalid shipping status.')
+                    plan.status=status
+                    if status=='IN_TRANSIT':
+                        sla,_=_shipping_sla_info(plan); sla.status='IN_TRANSIT'; sla.save(update_fields=['status','updated_at'])
+                    elif status=='OUT_FOR_DELIVERY':
+                        sla,_=_shipping_sla_info(plan); sla.status='OUT_FOR_DELIVERY'; sla.save(update_fields=['status','updated_at'])
+                    plan.save(update_fields=['status','updated_at'])
+                    messages.success(request,f'Shipment status updated: {status}.')
 
-            elif action=='cost':
-                plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
-                approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                money=lambda k: Decimal(request.POST.get(k) or 0)
-                ShippingCost.objects.update_or_create(
-                    plan=plan,defaults={
-                        'freight':money('freight'),'forwarder':money('forwarder'),
-                        'customs':money('customs'),'port_airport':money('port_airport'),
-                        'truck_vehicle':money('truck_vehicle'),'loading':money('loading'),
-                        'documentation':money('documentation'),'insurance':money('insurance'),
-                        'duty_tax':money('duty_tax'),'handling':money('handling'),
-                        'demurrage_detention':money('demurrage_detention'),'courier':money('courier'),
-                        'other_approved':money('other_approved'),'approval':approval,'updated_by':request.user
-                    })
-                cost=ShippingCost.objects.get(plan=plan)
-                sla,_=_shipping_sla_info(plan)
-                sla.shipping_cost=cost.total_cost; sla.save(update_fields=['shipping_cost','updated_at'])
-                messages.success(request,'Shipping cost updated.')
+                elif action=='pod':
+                    plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
+                    if not ShippingCartonScan.objects.filter(plan=plan,scan_type='GATE_OUT',scan_status='VALID').exists():
+                        raise PermissionError('POD blocked: valid GATE OUT scan is required.')
+                    pod,_=ShippingPOD.objects.update_or_create(
+                        plan=plan,defaults={
+                            'receiver_name':request.POST.get('receiver_name','').strip(),
+                            'delivered_at':request.POST.get('delivered_at') or timezone.now(),
+                            'proof_of_delivery':request.FILES.get('proof_of_delivery') or None,
+                            'buyer_signature':request.FILES.get('buyer_signature') or None,
+                            'delivery_photo':request.FILES.get('delivery_photo') or None,
+                            'courier_confirmation':request.POST.get('courier_confirmation','').strip(),
+                            'gps_location':request.POST.get('gps_location','').strip(),
+                            'confirmed_by':request.user
+                        })
+                    plan.status='DELIVERED'; plan.actual_delivery_at=pod.delivered_at; plan.save()
+                    order=plan.order; order.status='DELIVERED'; order.save(update_fields=['status','updated_at'])
+                    sla,_=_shipping_sla_info(plan)
+                    sla.status='DELIVERY_CONFIRMED'; sla.actual_delivery_at=pod.delivered_at
+                    sla.receiver_name=pod.receiver_name; sla.proof_of_delivery=pod.proof_of_delivery
+                    sla.buyer_signature=pod.buyer_signature; sla.delivery_photo=pod.delivery_photo
+                    sla.gps_location=pod.gps_location; sla.courier_confirmation=pod.courier_confirmation
+                    sla.confirmed_by=request.user; sla.confirmed_delivery_at=timezone.now()
+                    sla.save()
+                    messages.success(request,'Proof of Delivery confirmed and order marked DELIVERED.')
 
-            elif action=='status':
-                plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
-                status=request.POST.get('status')
-                if status not in dict(ShippingPlan.STATUS):
-                    raise ValueError('Invalid shipping status.')
-                plan.status=status
-                if status=='IN_TRANSIT':
-                    sla,_=_shipping_sla_info(plan); sla.status='IN_TRANSIT'; sla.save(update_fields=['status','updated_at'])
-                elif status=='OUT_FOR_DELIVERY':
-                    sla,_=_shipping_sla_info(plan); sla.status='OUT_FOR_DELIVERY'; sla.save(update_fields=['status','updated_at'])
-                plan.save(update_fields=['status','updated_at'])
-                messages.success(request,f'Shipment status updated: {status}.')
-
-            elif action=='pod':
-                plan=get_object_or_404(ShippingPlan,pk=request.POST.get('plan_id'))
-                if not ShippingCartonScan.objects.filter(plan=plan,scan_type='GATE_OUT',scan_status='VALID').exists():
-                    raise PermissionError('POD blocked: valid GATE OUT scan is required.')
-                pod,_=ShippingPOD.objects.update_or_create(
-                    plan=plan,defaults={
-                        'receiver_name':request.POST.get('receiver_name','').strip(),
-                        'delivered_at':request.POST.get('delivered_at') or timezone.now(),
-                        'proof_of_delivery':request.FILES.get('proof_of_delivery') or None,
-                        'buyer_signature':request.FILES.get('buyer_signature') or None,
-                        'delivery_photo':request.FILES.get('delivery_photo') or None,
-                        'courier_confirmation':request.POST.get('courier_confirmation','').strip(),
-                        'gps_location':request.POST.get('gps_location','').strip(),
-                        'confirmed_by':request.user
-                    })
-                plan.status='DELIVERED'; plan.actual_delivery_at=pod.delivered_at; plan.save()
-                order=plan.order; order.status='DELIVERED'; order.save(update_fields=['status','updated_at'])
-                sla,_=_shipping_sla_info(plan)
-                sla.status='DELIVERY_CONFIRMED'; sla.actual_delivery_at=pod.delivered_at
-                sla.receiver_name=pod.receiver_name; sla.proof_of_delivery=pod.proof_of_delivery
-                sla.buyer_signature=pod.buyer_signature; sla.delivery_photo=pod.delivery_photo
-                sla.gps_location=pod.gps_location; sla.courier_confirmation=pod.courier_confirmation
-                sla.confirmed_by=request.user; sla.confirmed_delivery_at=timezone.now()
-                sla.save()
-                messages.success(request,'Proof of Delivery confirmed and order marked DELIVERED.')
-
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                payload=_shipping_payload(today)
-                ShippingAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,
-                    defaults={'summary':payload,
-                              'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Shipping automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    payload=_shipping_payload(today)
+                    ShippingAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,
+                        defaults={'summary':payload,
+                                  'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Shipping automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('shipping_dashboard')
 
     plans=ShippingPlan.objects.select_related('order','approval').order_by('-created_at')
@@ -4978,7 +5033,7 @@ def supplier_dashboard(request):
             elif a=='generate_report':
                 slot=request.POST.get('slot')
                 if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
-                SupplierAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={'summary':_supplier_payload(),'outstanding_alerts':Alert.objects.filter(actioned=False).count(),'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()})
+                SupplierAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={'summary':_supplier_payload(),'outstanding_alerts':Alert.objects.filter(actioned=False).count(),'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()})
             messages.success(request,'Supplier action completed.')
         except Exception as e: messages.error(request,str(e))
         return redirect('supplier_dashboard')
@@ -5034,121 +5089,122 @@ def procurement_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='request':
-                material=MaterialMaster.objects.filter(pk=request.POST.get('material_id')).first()
-                order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
-                required=Decimal(request.POST.get('required_qty') or 0)
-                stock_item=StockItem.objects.filter(sku=material.material_code).first() if material else None
-                available=stock_item.qty if stock_item else Decimal('0')
-                reserved=stock_item.reserved_qty if stock_item else Decimal('0')
-                free=max(available-reserved,Decimal('0'))
-                shortage=max(required-free,Decimal('0'))
-                req=ProcurementRequest.objects.create(
-                    request_no=request.POST.get('request_no','').strip(),order=order,material=material,
-                    description=request.POST.get('description','').strip() or (material.name if material else ''),
-                    required_qty=required,uom=request.POST.get('uom','') or (material.uom if material else ''),
-                    required_date=request.POST.get('required_date') or None,
-                    stock_available=available,reserved_qty=reserved,shortage_qty=shortage,
-                    budget_value=Decimal(request.POST.get('budget_value') or 0),
-                    status='RFQ' if shortage>0 else 'STOCK_CHECK',requested_by=request.user
-                )
-                if shortage<=0:
-                    messages.success(request,'Stock check passed. Purchase not required unless approved exception.')
-                else:
-                    messages.success(request,f'Procurement request created. Shortage: {shortage} {req.uom}.')
+            with transaction.atomic():
+                if action=='request':
+                    material=MaterialMaster.objects.filter(pk=request.POST.get('material_id')).first()
+                    order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
+                    required=Decimal(request.POST.get('required_qty') or 0)
+                    stock_item=StockItem.objects.filter(sku=material.material_code).first() if material else None
+                    available=stock_item.qty if stock_item else Decimal('0')
+                    reserved=stock_item.reserved_qty if stock_item else Decimal('0')
+                    free=max(available-reserved,Decimal('0'))
+                    shortage=max(required-free,Decimal('0'))
+                    req=ProcurementRequest.objects.create(
+                        request_no=request.POST.get('request_no','').strip(),order=order,material=material,
+                        description=request.POST.get('description','').strip() or (material.name if material else ''),
+                        required_qty=required,uom=request.POST.get('uom','') or (material.uom if material else ''),
+                        required_date=request.POST.get('required_date') or None,
+                        stock_available=available,reserved_qty=reserved,shortage_qty=shortage,
+                        budget_value=Decimal(request.POST.get('budget_value') or 0),
+                        status='RFQ' if shortage>0 else 'STOCK_CHECK',requested_by=request.user
+                    )
+                    if shortage<=0:
+                        messages.success(request,'Stock check passed. Purchase not required unless approved exception.')
+                    else:
+                        messages.success(request,f'Procurement request created. Shortage: {shortage} {req.uom}.')
 
-            elif action=='comparison':
-                req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
-                supplier=get_object_or_404(SupplierMaster,pk=request.POST.get('supplier_id'))
-                if supplier.status!='APPROVED':
-                    raise PermissionError('Supplier comparison blocked: supplier must be APPROVED.')
-                ProcurementComparison.objects.create(
-                    request=req,supplier=supplier,rfq=SupplierRFQ.objects.filter(pk=request.POST.get('rfq_id')).first(),
-                    unit_price=Decimal(request.POST.get('unit_price') or 0),
-                    freight_cost=Decimal(request.POST.get('freight_cost') or 0),
-                    tax_duty_cost=Decimal(request.POST.get('tax_duty_cost') or 0),
-                    other_cost=Decimal(request.POST.get('other_cost') or 0),
-                    lead_time_days=int(request.POST.get('lead_time_days') or supplier.lead_time_days),
-                    payment_terms=request.POST.get('payment_terms','').strip() or supplier.payment_terms,
-                    reason=request.POST.get('reason','').strip()
-                )
-                req.status='EVALUATION'; req.save(update_fields=['status','updated_at'])
-                messages.success(request,'Supplier comparison added.')
+                elif action=='comparison':
+                    req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
+                    supplier=get_object_or_404(SupplierMaster,pk=request.POST.get('supplier_id'))
+                    if supplier.status!='APPROVED':
+                        raise PermissionError('Supplier comparison blocked: supplier must be APPROVED.')
+                    ProcurementComparison.objects.create(
+                        request=req,supplier=supplier,rfq=SupplierRFQ.objects.filter(pk=request.POST.get('rfq_id')).first(),
+                        unit_price=Decimal(request.POST.get('unit_price') or 0),
+                        freight_cost=Decimal(request.POST.get('freight_cost') or 0),
+                        tax_duty_cost=Decimal(request.POST.get('tax_duty_cost') or 0),
+                        other_cost=Decimal(request.POST.get('other_cost') or 0),
+                        lead_time_days=int(request.POST.get('lead_time_days') or supplier.lead_time_days),
+                        payment_terms=request.POST.get('payment_terms','').strip() or supplier.payment_terms,
+                        reason=request.POST.get('reason','').strip()
+                    )
+                    req.status='EVALUATION'; req.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Supplier comparison added.')
 
-            elif action=='select':
-                comp=get_object_or_404(ProcurementComparison,pk=request.POST.get('comparison_id'))
-                ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if not ap or ap.status!='APPROVED':
-                    raise PermissionError('Supplier selection requires APPROVED authorization.')
-                ProcurementComparison.objects.filter(request=comp.request).update(selected=False)
-                comp.selected=True; comp.save(update_fields=['selected','updated_at'])
-                comp.request.status='PENDING_APPROVAL'; comp.request.approval=ap; comp.request.save(update_fields=['status','approval','updated_at'])
-                messages.success(request,'Supplier selected and request moved to approval.')
+                elif action=='select':
+                    comp=get_object_or_404(ProcurementComparison,pk=request.POST.get('comparison_id'))
+                    ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if not ap or ap.status!='APPROVED':
+                        raise PermissionError('Supplier selection requires APPROVED authorization.')
+                    ProcurementComparison.objects.filter(request=comp.request).update(selected=False)
+                    comp.selected=True; comp.save(update_fields=['selected','updated_at'])
+                    comp.request.status='PENDING_APPROVAL'; comp.request.approval=ap; comp.request.save(update_fields=['status','approval','updated_at'])
+                    messages.success(request,'Supplier selected and request moved to approval.')
 
-            elif action=='commit':
-                req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
-                comp=get_object_or_404(ProcurementComparison,request=req,selected=True)
-                ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if not ap or ap.status!='APPROVED':
-                    raise PermissionError('Profit-before-spend approval is mandatory.')
-                committed=Decimal(request.POST.get('committed_value') or (comp.landed_unit_cost*req.required_qty))
-                if req.budget_value and committed > req.budget_value:
-                    Alert.objects.create(level='RED',title='Procurement Budget Variance',
-                        message=f'{req.request_no}: commitment {committed} exceeds budget {req.budget_value}.',
-                        reference=req.request_no,actioned=False)
-                ProcurementCommitment.objects.update_or_create(
-                    request=req,defaults={'selected_comparison':comp,'supplier':comp.supplier,
-                        'approved_budget':req.budget_value,'committed_value':committed,
-                        'profit_before_spend_pass':True,'approval':ap,'committed_by':request.user}
-                )
-                req.status='APPROVED';req.approval=ap;req.save(update_fields=['status','approval','updated_at'])
-                messages.success(request,'Procurement commitment approved.')
+                elif action=='commit':
+                    req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
+                    comp=get_object_or_404(ProcurementComparison,request=req,selected=True)
+                    ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if not ap or ap.status!='APPROVED':
+                        raise PermissionError('Profit-before-spend approval is mandatory.')
+                    committed=Decimal(request.POST.get('committed_value') or (comp.landed_unit_cost*req.required_qty))
+                    if req.budget_value and committed > req.budget_value:
+                        Alert.objects.create(level='RED',title='Procurement Budget Variance',
+                            message=f'{req.request_no}: commitment {committed} exceeds budget {req.budget_value}.',
+                            reference=req.request_no,actioned=False)
+                    ProcurementCommitment.objects.update_or_create(
+                        request=req,defaults={'selected_comparison':comp,'supplier':comp.supplier,
+                            'approved_budget':req.budget_value,'committed_value':committed,
+                            'profit_before_spend_pass':True,'approval':ap,'committed_by':request.user}
+                    )
+                    req.status='APPROVED';req.approval=ap;req.save(update_fields=['status','approval','updated_at'])
+                    messages.success(request,'Procurement commitment approved.')
 
-            elif action=='create_po':
-                req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
-                commitment=get_object_or_404(ProcurementCommitment,request=req,profit_before_spend_pass=True)
-                if not commitment.approval_id or commitment.approval.status!='APPROVED':
-                    raise PermissionError('PO blocked: valid profit-before-spend approval required.')
-                comp=commitment.selected_comparison
-                po=SupplierPurchaseOrder.objects.create(
-                    po_no=request.POST.get('po_no','').strip(),supplier=commitment.supplier,order=req.order,
-                    rfq=comp.rfq if comp else None,material=req.material,description=req.description,
-                    quantity=req.required_qty,unit=req.uom,unit_price=comp.unit_price if comp else Decimal('0'),
-                    currency=commitment.supplier.currency,expected_delivery=request.POST.get('expected_delivery') or req.required_date,
-                    status='APPROVED',approval=commitment.approval,po_file=request.FILES.get('po_file') or None,created_by=request.user
-                )
-                commitment.po=po;commitment.save(update_fields=['po','updated_at'])
-                req.status='ORDERED';req.save(update_fields=['status','updated_at'])
-                messages.success(request,f'Purchase Order {po.po_no} created.')
+                elif action=='create_po':
+                    req=get_object_or_404(ProcurementRequest,pk=request.POST.get('request_id'))
+                    commitment=get_object_or_404(ProcurementCommitment,request=req,profit_before_spend_pass=True)
+                    if not commitment.approval_id or commitment.approval.status!='APPROVED':
+                        raise PermissionError('PO blocked: valid profit-before-spend approval required.')
+                    comp=commitment.selected_comparison
+                    po=SupplierPurchaseOrder.objects.create(
+                        po_no=request.POST.get('po_no','').strip(),supplier=commitment.supplier,order=req.order,
+                        rfq=comp.rfq if comp else None,material=req.material,description=req.description,
+                        quantity=req.required_qty,unit=req.uom,unit_price=comp.unit_price if comp else Decimal('0'),
+                        currency=commitment.supplier.currency,expected_delivery=request.POST.get('expected_delivery') or req.required_date,
+                        status='APPROVED',approval=commitment.approval,po_file=request.FILES.get('po_file') or None,created_by=request.user
+                    )
+                    commitment.po=po;commitment.save(update_fields=['po','updated_at'])
+                    req.status='ORDERED';req.save(update_fields=['status','updated_at'])
+                    messages.success(request,f'Purchase Order {po.po_no} created.')
 
-            elif action=='delivery_status':
-                po=get_object_or_404(SupplierPurchaseOrder,pk=request.POST.get('po_id'))
-                received=sum((r.received_qty for r in po.receipts.all()),Decimal('0'))
-                if received<=0: po.status='SENT'
-                elif received<po.quantity: po.status='PART_RECEIVED'
-                else: po.status='RECEIVED'
-                po.save(update_fields=['status','updated_at'])
-                if hasattr(po,'procurement_commitments'):
-                    pass
-                req=ProcurementRequest.objects.filter(commitment__po=po).first()
-                if req:
-                    req.status='PART_RECEIVED' if po.status=='PART_RECEIVED' else ('RECEIVED' if po.status=='RECEIVED' else req.status)
-                    req.save(update_fields=['status','updated_at'])
-                messages.success(request,'Procurement delivery status recalculated.')
+                elif action=='delivery_status':
+                    po=get_object_or_404(SupplierPurchaseOrder,pk=request.POST.get('po_id'))
+                    received=sum((r.received_qty for r in po.receipts.all()),Decimal('0'))
+                    if received<=0: po.status='SENT'
+                    elif received<po.quantity: po.status='PART_RECEIVED'
+                    else: po.status='RECEIVED'
+                    po.save(update_fields=['status','updated_at'])
+                    if hasattr(po,'procurement_commitments'):
+                        pass
+                    req=ProcurementRequest.objects.filter(commitment__po=po).first()
+                    if req:
+                        req.status='PART_RECEIVED' if po.status=='PART_RECEIVED' else ('RECEIVED' if po.status=='RECEIVED' else req.status)
+                        req.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Procurement delivery status recalculated.')
 
-            elif action=='generate_report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                ProcurementAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={
-                    'summary':_procurement_payload(),
-                    'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                    'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                    'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
-                })
-                messages.success(request,f'{slot} Procurement automatic report generated.')
+                elif action=='generate_report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    ProcurementAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={
+                        'summary':_procurement_payload(),
+                        'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                        'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                        'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()
+                    })
+                    messages.success(request,f'{slot} Procurement automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('procurement_dashboard')
 
     return render(request,'procurement_dashboard.html',{
@@ -5241,7 +5297,7 @@ def purchases_dashboard(request):
             elif a=='report':
                 slot=request.POST.get('slot')
                 if slot not in {'08:00','13:00','20:00'}: raise ValueError('Invalid report slot.')
-                PurchaseAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={'summary':_purchase_payload(),'outstanding_alerts':Alert.objects.filter(actioned=False).count(),'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()})
+                PurchaseAutoReport.objects.update_or_create(report_date=today,slot=slot,defaults={'summary':_purchase_payload(),'outstanding_alerts':Alert.objects.filter(actioned=False).count(),'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()})
             messages.success(request,'Purchase action completed.')
         except Exception as e: messages.error(request,str(e))
         return redirect('purchases_dashboard')
@@ -5301,188 +5357,189 @@ def sourcing_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='request':
-                material=MaterialMaster.objects.filter(pk=request.POST.get('material_id')).first()
-                order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
-                required=Decimal(request.POST.get('required_qty') or 0)
-                stock_item=StockItem.objects.filter(sku=material.material_code).first() if material else None
-                available=stock_item.qty if stock_item else Decimal('0')
-                reserved=stock_item.reserved_qty if stock_item else Decimal('0')
-                free=max(available-reserved,Decimal('0'))
-                shortage=max(required-free,Decimal('0'))
-                sr=SourcingRequest.objects.create(
-                    request_no=request.POST.get('request_no','').strip(),
-                    order=order,material=material,
-                    category=request.POST.get('category','FABRIC'),
-                    description=request.POST.get('description','').strip() or (material.name if material else ''),
-                    specification=request.POST.get('specification','').strip(),
-                    required_qty=required,
-                    uom=request.POST.get('uom','').strip() or (material.uom if material else ''),
-                    required_date=request.POST.get('required_date') or None,
-                    stock_available=available,stock_reserved=reserved,shortage_qty=shortage,
-                    target_price=Decimal(request.POST.get('target_price') or 0),
-                    target_currency=request.POST.get('target_currency','BDT'),
-                    status='SUPPLIER_SEARCH' if shortage>0 else 'STOCK_CHECK',
-                    specification_file=request.FILES.get('specification_file') or None,
-                    created_by=request.user
-                )
-                if shortage<=0:
-                    messages.success(request,'Stock check passed. Sourcing is not required unless an approved exception is created.')
-                else:
-                    messages.success(request,f'Sourcing request created. Shortage: {shortage} {sr.uom}.')
+            with transaction.atomic():
+                if action=='request':
+                    material=MaterialMaster.objects.filter(pk=request.POST.get('material_id')).first()
+                    order=MasterOrder.objects.filter(pk=request.POST.get('order_id')).first()
+                    required=Decimal(request.POST.get('required_qty') or 0)
+                    stock_item=StockItem.objects.filter(sku=material.material_code).first() if material else None
+                    available=stock_item.qty if stock_item else Decimal('0')
+                    reserved=stock_item.reserved_qty if stock_item else Decimal('0')
+                    free=max(available-reserved,Decimal('0'))
+                    shortage=max(required-free,Decimal('0'))
+                    sr=SourcingRequest.objects.create(
+                        request_no=request.POST.get('request_no','').strip(),
+                        order=order,material=material,
+                        category=request.POST.get('category','FABRIC'),
+                        description=request.POST.get('description','').strip() or (material.name if material else ''),
+                        specification=request.POST.get('specification','').strip(),
+                        required_qty=required,
+                        uom=request.POST.get('uom','').strip() or (material.uom if material else ''),
+                        required_date=request.POST.get('required_date') or None,
+                        stock_available=available,stock_reserved=reserved,shortage_qty=shortage,
+                        target_price=Decimal(request.POST.get('target_price') or 0),
+                        target_currency=request.POST.get('target_currency','BDT'),
+                        status='SUPPLIER_SEARCH' if shortage>0 else 'STOCK_CHECK',
+                        specification_file=request.FILES.get('specification_file') or None,
+                        created_by=request.user
+                    )
+                    if shortage<=0:
+                        messages.success(request,'Stock check passed. Sourcing is not required unless an approved exception is created.')
+                    else:
+                        messages.success(request,f'Sourcing request created. Shortage: {shortage} {sr.uom}.')
 
-            elif action=='candidate':
-                sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
-                supplier=SupplierMaster.objects.filter(pk=request.POST.get('supplier_id')).first()
-                source_type=request.POST.get('source_type','EXISTING')
-                if source_type=='EXISTING' and (not supplier or supplier.status!='APPROVED'):
-                    raise PermissionError('Existing supplier sourcing requires an APPROVED supplier.')
-                SourcingCandidate.objects.create(
-                    request=sr,supplier=supplier,
-                    supplier_name=request.POST.get('supplier_name','').strip() or (supplier.company_name if supplier else ''),
-                    supplier_country=request.POST.get('supplier_country','').strip() or (supplier.country if supplier else ''),
-                    source_type=source_type,
-                    contact_details=request.POST.get('contact_details','').strip(),
-                    compliance_status=request.POST.get('compliance_status','PENDING'),
-                    capacity_per_month=Decimal(request.POST.get('capacity_per_month') or 0),
-                    moq=Decimal(request.POST.get('moq') or 0),
-                    lead_time_days=int(request.POST.get('lead_time_days') or (supplier.lead_time_days if supplier else 0)),
-                    payment_terms=request.POST.get('payment_terms','').strip() or (supplier.payment_terms if supplier else ''),
-                    notes=request.POST.get('notes','').strip(),created_by=request.user
-                )
-                sr.status='RFQ';sr.save(update_fields=['status','updated_at'])
-                messages.success(request,'Sourcing candidate added.')
+                elif action=='candidate':
+                    sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
+                    supplier=SupplierMaster.objects.filter(pk=request.POST.get('supplier_id')).first()
+                    source_type=request.POST.get('source_type','EXISTING')
+                    if source_type=='EXISTING' and (not supplier or supplier.status!='APPROVED'):
+                        raise PermissionError('Existing supplier sourcing requires an APPROVED supplier.')
+                    SourcingCandidate.objects.create(
+                        request=sr,supplier=supplier,
+                        supplier_name=request.POST.get('supplier_name','').strip() or (supplier.company_name if supplier else ''),
+                        supplier_country=request.POST.get('supplier_country','').strip() or (supplier.country if supplier else ''),
+                        source_type=source_type,
+                        contact_details=request.POST.get('contact_details','').strip(),
+                        compliance_status=request.POST.get('compliance_status','PENDING'),
+                        capacity_per_month=Decimal(request.POST.get('capacity_per_month') or 0),
+                        moq=Decimal(request.POST.get('moq') or 0),
+                        lead_time_days=int(request.POST.get('lead_time_days') or (supplier.lead_time_days if supplier else 0)),
+                        payment_terms=request.POST.get('payment_terms','').strip() or (supplier.payment_terms if supplier else ''),
+                        notes=request.POST.get('notes','').strip(),created_by=request.user
+                    )
+                    sr.status='RFQ';sr.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Sourcing candidate added.')
 
-            elif action=='quotation':
-                sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
-                cand=get_object_or_404(SourcingCandidate,pk=request.POST.get('candidate_id'),request=sr)
-                quote=SourcingQuotation.objects.create(
-                    request=sr,candidate=cand,
-                    rfq=SupplierRFQ.objects.filter(pk=request.POST.get('rfq_id')).first(),
-                    quote_no=request.POST.get('quote_no','').strip(),
-                    unit_price=Decimal(request.POST.get('unit_price') or 0),
-                    currency=request.POST.get('currency','BDT'),
-                    freight=Decimal(request.POST.get('freight') or 0),
-                    duty_tax=Decimal(request.POST.get('duty_tax') or 0),
-                    other_cost=Decimal(request.POST.get('other_cost') or 0),
-                    quoted_lead_days=int(request.POST.get('quoted_lead_days') or cand.lead_time_days),
-                    moq=Decimal(request.POST.get('moq') or cand.moq),
-                    payment_terms=request.POST.get('payment_terms','').strip() or cand.payment_terms,
-                    valid_until=request.POST.get('valid_until') or None,
-                    status='SAMPLE_PENDING',
-                    quotation_file=request.FILES.get('quotation_file') or None
-                )
-                if sr.target_price and quote.landed_unit_cost > sr.target_price:
-                    Alert.objects.create(level='WARNING',title='Sourcing Target Price Variance',
-                        message=f'{sr.request_no}: landed {quote.landed_unit_cost} exceeds target {sr.target_price}.',
-                        reference=sr.request_no,actioned=False)
-                sr.status='SAMPLE';sr.save(update_fields=['status','updated_at'])
-                messages.success(request,'Sourcing quotation recorded.')
+                elif action=='quotation':
+                    sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
+                    cand=get_object_or_404(SourcingCandidate,pk=request.POST.get('candidate_id'),request=sr)
+                    quote=SourcingQuotation.objects.create(
+                        request=sr,candidate=cand,
+                        rfq=SupplierRFQ.objects.filter(pk=request.POST.get('rfq_id')).first(),
+                        quote_no=request.POST.get('quote_no','').strip(),
+                        unit_price=Decimal(request.POST.get('unit_price') or 0),
+                        currency=request.POST.get('currency','BDT'),
+                        freight=Decimal(request.POST.get('freight') or 0),
+                        duty_tax=Decimal(request.POST.get('duty_tax') or 0),
+                        other_cost=Decimal(request.POST.get('other_cost') or 0),
+                        quoted_lead_days=int(request.POST.get('quoted_lead_days') or cand.lead_time_days),
+                        moq=Decimal(request.POST.get('moq') or cand.moq),
+                        payment_terms=request.POST.get('payment_terms','').strip() or cand.payment_terms,
+                        valid_until=request.POST.get('valid_until') or None,
+                        status='SAMPLE_PENDING',
+                        quotation_file=request.FILES.get('quotation_file') or None
+                    )
+                    if sr.target_price and quote.landed_unit_cost > sr.target_price:
+                        Alert.objects.create(level='WARNING',title='Sourcing Target Price Variance',
+                            message=f'{sr.request_no}: landed {quote.landed_unit_cost} exceeds target {sr.target_price}.',
+                            reference=sr.request_no,actioned=False)
+                    sr.status='SAMPLE';sr.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Sourcing quotation recorded.')
 
-            elif action=='sample':
-                quote=get_object_or_404(SourcingQuotation,pk=request.POST.get('quotation_id'))
-                sample=SourcingSample.objects.create(
-                    quotation=quote,sample_no=request.POST.get('sample_no','').strip(),
-                    received_at=request.POST.get('received_at') or timezone.now(),
-                    quality_result=request.POST.get('quality_result','PENDING'),
-                    compliance_result=request.POST.get('compliance_result','PENDING'),
-                    lab_test_result=request.POST.get('lab_test_result','PENDING'),
-                    comments=request.POST.get('comments','').strip(),
-                    sample_file=request.FILES.get('sample_file') or None,checked_by=request.user
-                )
-                if sample.quality_result=='PASS' and sample.compliance_result=='PASS' and sample.lab_test_result in {'PASS','PENDING'}:
-                    quote.status='SAMPLE_APPROVED'
-                elif 'REJECT' in {sample.quality_result,sample.compliance_result,sample.lab_test_result}:
-                    quote.status='REJECTED'
-                    Alert.objects.create(level='RED',title='Sourcing Sample Rejected',
-                        message=f'{quote.request.request_no}: sample {sample.sample_no} rejected.',
-                        reference=quote.request.request_no,actioned=False)
-                else:
-                    quote.status='SAMPLE_PENDING'
-                quote.save(update_fields=['status','updated_at'])
-                quote.request.status='EVALUATION';quote.request.save(update_fields=['status','updated_at'])
-                messages.success(request,'Sample evaluation saved.')
+                elif action=='sample':
+                    quote=get_object_or_404(SourcingQuotation,pk=request.POST.get('quotation_id'))
+                    sample=SourcingSample.objects.create(
+                        quotation=quote,sample_no=request.POST.get('sample_no','').strip(),
+                        received_at=request.POST.get('received_at') or timezone.now(),
+                        quality_result=request.POST.get('quality_result','PENDING'),
+                        compliance_result=request.POST.get('compliance_result','PENDING'),
+                        lab_test_result=request.POST.get('lab_test_result','PENDING'),
+                        comments=request.POST.get('comments','').strip(),
+                        sample_file=request.FILES.get('sample_file') or None,checked_by=request.user
+                    )
+                    if sample.quality_result=='PASS' and sample.compliance_result=='PASS' and sample.lab_test_result in {'PASS','PENDING'}:
+                        quote.status='SAMPLE_APPROVED'
+                    elif 'REJECT' in {sample.quality_result,sample.compliance_result,sample.lab_test_result}:
+                        quote.status='REJECTED'
+                        Alert.objects.create(level='RED',title='Sourcing Sample Rejected',
+                            message=f'{quote.request.request_no}: sample {sample.sample_no} rejected.',
+                            reference=quote.request.request_no,actioned=False)
+                    else:
+                        quote.status='SAMPLE_PENDING'
+                    quote.save(update_fields=['status','updated_at'])
+                    quote.request.status='EVALUATION';quote.request.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Sample evaluation saved.')
 
-            elif action=='evaluate':
-                quote=get_object_or_404(SourcingQuotation,pk=request.POST.get('quotation_id'))
-                supplier=quote.candidate.supplier
-                perf=getattr(supplier,'performance',None) if supplier else None
-                last_price=Decimal(str(_sourcing_last_purchase_price(quote.request,supplier) or 0))
-                price_score=Decimal(request.POST.get('price_score') or 100)
-                quality_score=Decimal(request.POST.get('quality_score') or (perf.quality_pass_pct if perf else 0))
-                delivery_score=Decimal(request.POST.get('delivery_score') or (perf.on_time_delivery_pct if perf else 0))
-                compliance_score=Decimal(request.POST.get('compliance_score') or (100 if quote.candidate.compliance_status=='APPROVED' else 0))
-                capacity_score=Decimal(request.POST.get('capacity_score') or 0)
-                ev=SourcingEvaluation.objects.create(
-                    request=quote.request,quotation=quote,
-                    price_score=price_score,quality_score=quality_score,delivery_score=delivery_score,
-                    compliance_score=compliance_score,capacity_score=capacity_score,
-                    last_purchase_price=last_price,current_quote_price=quote.unit_price,
-                    nomination_reason=request.POST.get('nomination_reason','').strip(),
-                    evaluated_by=request.user
-                )
-                if abs(ev.price_variance_pct)>Decimal('10'):
-                    Alert.objects.create(level='RED',title='Sourcing Price Variance',
-                        message=f'{quote.request.request_no}: current price variance {ev.price_variance_pct}%.',
-                        reference=quote.request.request_no,actioned=False)
-                quote.request.status='NEGOTIATION';quote.request.save(update_fields=['status','updated_at'])
-                messages.success(request,'Sourcing evaluation calculated.')
+                elif action=='evaluate':
+                    quote=get_object_or_404(SourcingQuotation,pk=request.POST.get('quotation_id'))
+                    supplier=quote.candidate.supplier
+                    perf=getattr(supplier,'performance',None) if supplier else None
+                    last_price=Decimal(str(_sourcing_last_purchase_price(quote.request,supplier) or 0))
+                    price_score=Decimal(request.POST.get('price_score') or 100)
+                    quality_score=Decimal(request.POST.get('quality_score') or (perf.quality_pass_pct if perf else 0))
+                    delivery_score=Decimal(request.POST.get('delivery_score') or (perf.on_time_delivery_pct if perf else 0))
+                    compliance_score=Decimal(request.POST.get('compliance_score') or (100 if quote.candidate.compliance_status=='APPROVED' else 0))
+                    capacity_score=Decimal(request.POST.get('capacity_score') or 0)
+                    ev=SourcingEvaluation.objects.create(
+                        request=quote.request,quotation=quote,
+                        price_score=price_score,quality_score=quality_score,delivery_score=delivery_score,
+                        compliance_score=compliance_score,capacity_score=capacity_score,
+                        last_purchase_price=last_price,current_quote_price=quote.unit_price,
+                        nomination_reason=request.POST.get('nomination_reason','').strip(),
+                        evaluated_by=request.user
+                    )
+                    if abs(ev.price_variance_pct)>Decimal('10'):
+                        Alert.objects.create(level='RED',title='Sourcing Price Variance',
+                            message=f'{quote.request.request_no}: current price variance {ev.price_variance_pct}%.',
+                            reference=quote.request.request_no,actioned=False)
+                    quote.request.status='NEGOTIATION';quote.request.save(update_fields=['status','updated_at'])
+                    messages.success(request,'Sourcing evaluation calculated.')
 
-            elif action=='nominate':
-                ev=get_object_or_404(SourcingEvaluation,pk=request.POST.get('evaluation_id'))
-                supplier=ev.quotation.candidate.supplier
-                if not supplier or supplier.status!='APPROVED':
-                    raise PermissionError('Nomination blocked: supplier must be APPROVED in Supplier Master.')
-                samples=ev.quotation.samples.all()
-                if samples.exists() and not samples.filter(quality_result='PASS',compliance_result='PASS').exists():
-                    raise PermissionError('Nomination blocked: approved quality/compliance sample is required.')
-                ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
-                if not ap or ap.status!='APPROVED':
-                    raise PermissionError('Supplier nomination requires APPROVED authorization.')
-                SourcingEvaluation.objects.filter(request=ev.request).update(nominated=False)
-                ev.nominated=True;ev.approval=ap
-                ev.nomination_reason=request.POST.get('nomination_reason','').strip() or ev.nomination_reason
-                ev.save(update_fields=['nominated','approval','nomination_reason','updated_at'])
-                ev.request.status='NOMINATED';ev.request.approval=ap;ev.request.save(update_fields=['status','approval','updated_at'])
-                messages.success(request,'Supplier nominated for sourcing request.')
+                elif action=='nominate':
+                    ev=get_object_or_404(SourcingEvaluation,pk=request.POST.get('evaluation_id'))
+                    supplier=ev.quotation.candidate.supplier
+                    if not supplier or supplier.status!='APPROVED':
+                        raise PermissionError('Nomination blocked: supplier must be APPROVED in Supplier Master.')
+                    samples=ev.quotation.samples.all()
+                    if samples.exists() and not samples.filter(quality_result='PASS',compliance_result='PASS').exists():
+                        raise PermissionError('Nomination blocked: approved quality/compliance sample is required.')
+                    ap=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
+                    if not ap or ap.status!='APPROVED':
+                        raise PermissionError('Supplier nomination requires APPROVED authorization.')
+                    SourcingEvaluation.objects.filter(request=ev.request).update(nominated=False)
+                    ev.nominated=True;ev.approval=ap
+                    ev.nomination_reason=request.POST.get('nomination_reason','').strip() or ev.nomination_reason
+                    ev.save(update_fields=['nominated','approval','nomination_reason','updated_at'])
+                    ev.request.status='NOMINATED';ev.request.approval=ap;ev.request.save(update_fields=['status','approval','updated_at'])
+                    messages.success(request,'Supplier nominated for sourcing request.')
 
-            elif action=='handoff':
-                sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
-                ev=get_object_or_404(SourcingEvaluation,request=sr,nominated=True)
-                if not ev.approval_id or ev.approval.status!='APPROVED':
-                    raise PermissionError('Procurement handoff blocked: approved sourcing nomination required.')
-                supplier=ev.quotation.candidate.supplier
-                pr=ProcurementRequest.objects.create(
-                    request_no=request.POST.get('procurement_request_no','').strip(),
-                    order=sr.order,material=sr.material,description=sr.description,
-                    required_qty=sr.shortage_qty or sr.required_qty,uom=sr.uom,
-                    required_date=sr.required_date,stock_available=sr.stock_available,
-                    reserved_qty=sr.stock_reserved,shortage_qty=sr.shortage_qty,
-                    budget_value=Decimal(request.POST.get('budget_value') or (ev.quotation.landed_unit_cost*(sr.shortage_qty or sr.required_qty))),
-                    status='RFQ',requested_by=request.user
-                )
-                SourcingHandoff.objects.create(
-                    request=sr,evaluation=ev,supplier=supplier,procurement_request=pr,
-                    approved_price=ev.quotation.unit_price,currency=ev.quotation.currency,
-                    approved_lead_days=ev.quotation.quoted_lead_days,approval=ev.approval,handed_off_by=request.user
-                )
-                sr.status='HANDED_TO_PROCUREMENT';sr.save(update_fields=['status','updated_at'])
-                messages.success(request,f'Sourcing handed to Procurement as {pr.request_no}.')
+                elif action=='handoff':
+                    sr=get_object_or_404(SourcingRequest,pk=request.POST.get('request_id'))
+                    ev=get_object_or_404(SourcingEvaluation,request=sr,nominated=True)
+                    if not ev.approval_id or ev.approval.status!='APPROVED':
+                        raise PermissionError('Procurement handoff blocked: approved sourcing nomination required.')
+                    supplier=ev.quotation.candidate.supplier
+                    pr=ProcurementRequest.objects.create(
+                        request_no=request.POST.get('procurement_request_no','').strip(),
+                        order=sr.order,material=sr.material,description=sr.description,
+                        required_qty=sr.shortage_qty or sr.required_qty,uom=sr.uom,
+                        required_date=sr.required_date,stock_available=sr.stock_available,
+                        reserved_qty=sr.stock_reserved,shortage_qty=sr.shortage_qty,
+                        budget_value=Decimal(request.POST.get('budget_value') or (ev.quotation.landed_unit_cost*(sr.shortage_qty or sr.required_qty))),
+                        status='RFQ',requested_by=request.user
+                    )
+                    SourcingHandoff.objects.create(
+                        request=sr,evaluation=ev,supplier=supplier,procurement_request=pr,
+                        approved_price=ev.quotation.unit_price,currency=ev.quotation.currency,
+                        approved_lead_days=ev.quotation.quoted_lead_days,approval=ev.approval,handed_off_by=request.user
+                    )
+                    sr.status='HANDED_TO_PROCUREMENT';sr.save(update_fields=['status','updated_at'])
+                    messages.success(request,f'Sourcing handed to Procurement as {pr.request_no}.')
 
-            elif action=='report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00'}:
-                    raise ValueError('Invalid report slot.')
-                SourcingAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,
-                    defaults={'summary':_sourcing_payload(),
-                              'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
-                              'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-                              'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
-                )
-                messages.success(request,f'{slot} Sourcing automatic report generated.')
+                elif action=='report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00'}:
+                        raise ValueError('Invalid report slot.')
+                    SourcingAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,
+                        defaults={'summary':_sourcing_payload(),
+                                  'outstanding_alerts':Alert.objects.filter(actioned=False).count(),
+                                  'pending_actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
+                                  'escalated_items':Alert.objects.filter(actioned=False,level='RED').count()}
+                    )
+                    messages.success(request,f'{slot} Sourcing automatic report generated.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('sourcing_dashboard')
 
     return render(request,'sourcing_dashboard.html',{
@@ -5522,67 +5579,175 @@ def api_sourcing_dashboard(request):
     return JsonResponse(_sourcing_payload())
 
 
+#: Production models contributing to the daily output figure. Costs on these
+#: models are denominated in BDT (the default on every production and material
+#: model), which is why they must be converted before joining any consolidated
+#: total. See TECHNICAL_ASSESSMENT.md 5.6.
+_CEO_PRODUCTION_MODELS = [
+    ('Cutting', 'CuttingProductionEntry', 'process_cost'),
+    ('Embroidery', 'EmbroideryProductionEntry', 'total_cost'),
+    ('Label', 'LabelProductionEntry', 'total_cost'),
+    ('Hand Iron', 'HandIronProductionEntry', 'total_cost'),
+    ('Industrial Iron', 'IronProductionEntry', 'total_cost'),
+    ('Poly', 'PolyPackingEntry', 'total_cost'),
+    ('Finishing', 'FinishingProduction', 'total_cost'),
+    ('Packing', 'PackingProduction', 'total_cost'),
+]
+
+#: Currency production costs are recorded in.
+PRODUCTION_COST_CURRENCY = 'BDT'
+
+
 def _ceo_production_summary(today):
+    """Daily production output and cost.
+
+    One aggregate per model instead of three: this was 24 round trips for eight
+    models (TECHNICAL_ASSESSMENT.md 6.7).
+    """
     from django.db.models import Sum
-    models_to_check=[
-        ('Cutting','CuttingProductionEntry','actual_qty','target_qty','process_cost'),
-        ('Embroidery','EmbroideryProductionEntry','actual_qty','target_qty','total_cost'),
-        ('Label','LabelProductionEntry','actual_qty','target_qty','total_cost'),
-        ('Hand Iron','HandIronProductionEntry','actual_qty','target_qty','total_cost'),
-        ('Industrial Iron','IronProductionEntry','actual_qty','target_qty','total_cost'),
-        ('Poly','PolyPackingEntry','actual_qty','target_qty','total_cost'),
-        ('Finishing','FinishingProduction','actual_qty','target_qty','total_cost'),
-        ('Packing','PackingProduction','actual_qty','target_qty','total_cost'),
-    ]
-    rows=[]; total_actual=0; total_target=0; total_cost=Decimal('0')
-    for label,name,actual_field,target_field,cost_field in models_to_check:
-        model=globals().get(name)
-        if not model: continue
-        qs=model.objects.filter(work_date=today)
-        actual=qs.aggregate(v=Sum(actual_field))['v'] or 0
-        target=qs.aggregate(v=Sum(target_field))['v'] or 0
-        cost=qs.aggregate(v=Sum(cost_field))['v'] or 0
-        rows.append({'name':label,'actual':actual,'target':target,'cost':str(cost),'efficiency':round(actual/target*100,2) if target else 0})
-        total_actual+=actual; total_target+=target; total_cost+=cost
-    return rows,total_actual,total_target,total_cost
+
+    rows = []
+    total_actual = 0
+    total_target = 0
+    total_cost = Decimal('0')
+    for label, model_name, cost_field in _CEO_PRODUCTION_MODELS:
+        model = globals().get(model_name)
+        if not model:
+            continue
+        totals = model.objects.filter(work_date=today).aggregate(
+            actual=Sum('actual_qty'), target=Sum('target_qty'), cost=Sum(cost_field))
+        actual = totals['actual'] or 0
+        target = totals['target'] or 0
+        cost = totals['cost'] or Decimal('0')
+        rows.append({'name': label, 'actual': actual, 'target': target,
+                     'cost': str(cost), 'currency': PRODUCTION_COST_CURRENCY,
+                     'efficiency': round(actual / target * 100, 2) if target else 0})
+        total_actual += actual
+        total_target += target
+        total_cost += cost
+    return rows, total_actual, total_target, total_cost
+
 
 def _ceo_summary(today):
+    """Consolidated executive KPIs, expressed in settings.BASE_CURRENCY.
+
+    Every cross-entity money figure here used to be a raw sum across records in
+    different currencies. MasterOrder.order_value had no currency column at all,
+    FinanceTransaction defaults to EUR while production, stock and supplier
+    models default to BDT, and profit_today subtracted one from the other. At
+    roughly 130 BDT to the euro the headline figures were wrong by orders of
+    magnitude (TECHNICAL_ASSESSMENT.md 5.6).
+
+    Amounts are now converted to the base currency before being combined. Where
+    a rate is missing the amount is NOT silently dropped or counted at 1.0:
+    the currency is reported in ``fx_unconvertible`` so the dashboard can say the
+    figure is incomplete instead of presenting a wrong number as authoritative.
+    """
     from django.db.models import Sum, F, ExpressionWrapper, DecimalField
-    orders=MasterOrder.objects.all()
-    prod_rows,prod_actual,prod_target,prod_cost=_ceo_production_summary(today)
-    finance=FinanceTransaction.objects.filter(created_at__date=today)
-    income=finance.filter(transaction_type='INCOME').aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    expense=finance.filter(transaction_type='EXPENSE').aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    receivable=FinanceTransaction.objects.filter(transaction_type='RECEIVABLE').aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    payable=FinanceTransaction.objects.filter(transaction_type='PAYABLE').aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    att=AttendanceDailySummary.objects.filter(work_date=today)
-    staff_cost=att.aggregate(v=Sum('worked_cost'))['v'] or Decimal('0')
-    present=att.filter(worked_minutes__gt=0).count()
-    overtime=att.aggregate(v=Sum('overtime_minutes'))['v'] or 0
-    stock_expr=ExpressionWrapper(F('qty')*F('unit_cost'),output_field=DecimalField(max_digits=20,decimal_places=2))
-    stock_value=StockItem.objects.aggregate(v=Sum(stock_expr))['v'] or Decimal('0')
-    po_value=SupplierPurchaseOrder.objects.aggregate(v=Sum('total_value'))['v'] or Decimal('0')
-    purchase_outstanding=SupplierInvoice.objects.exclude(status='PAID').aggregate(v=Sum('amount'))['v'] or Decimal('0')
-    sourcing_open=SourcingRequest.objects.exclude(status__in=['CLOSED','HANDED_TO_PROCUREMENT']).count()
-    procurement_open=ProcurementRequest.objects.exclude(status__in=['RECEIVED','CLOSED']).count()
-    shipping_delayed=ShippingPlan.objects.filter(status__in=['HOLD']).count()
-    profit_today=income-expense-prod_cost
+
+    base = currency_base()
+
+    orders = MasterOrder.objects.all()
+    prod_rows, prod_actual, prod_target, prod_cost_bdt = _ceo_production_summary(today)
+
+    missing_rates = set()
+
+    def to_base(amount, code):
+        """Convert, recording any currency we have no rate for."""
+        if not amount:
+            return Decimal('0.00')
+        converted = convert_or_none(amount, code, base, today)
+        if converted is None:
+            missing_rates.add((code or '').upper())
+            return Decimal('0.00')
+        return converted
+
+    # --- order book, converted per currency ---------------------------------
+    order_value = Decimal('0.00')
+    for row in orders.values('currency').annotate(total=Sum('order_value')):
+        order_value += to_base(row['total'], row['currency'] or base)
+
+    # --- finance, converted per currency ------------------------------------
+    def finance_total(**filters):
+        total = Decimal('0.00')
+        rows = (FinanceTransaction.objects.filter(**filters)
+                .values('currency').annotate(total=Sum('amount')))
+        for row in rows:
+            total += to_base(row['total'], row['currency'] or base)
+        return total
+
+    income = finance_total(created_at__date=today, transaction_type='INCOME')
+    expense = finance_total(created_at__date=today, transaction_type='EXPENSE')
+    receivable = finance_total(transaction_type='RECEIVABLE')
+    payable = finance_total(transaction_type='PAYABLE')
+
+    prod_cost = to_base(prod_cost_bdt, PRODUCTION_COST_CURRENCY)
+
+    # --- workforce ----------------------------------------------------------
+    # Employee.daily_cost has no currency column; it is BDT, like the rest of
+    # the Bangladesh workforce data.
+    att = AttendanceDailySummary.objects.filter(work_date=today)
+    workforce = att.aggregate(cost=Sum('worked_cost'), ot=Sum('overtime_minutes'))
+    staff_cost = to_base(workforce['cost'] or Decimal('0'), PRODUCTION_COST_CURRENCY)
+    present = att.filter(worked_minutes__gt=0).count()
+    overtime = workforce['ot'] or 0
+
+    # --- stock, converted per currency --------------------------------------
+    stock_expr = ExpressionWrapper(F('qty') * F('unit_cost'),
+                                   output_field=DecimalField(max_digits=20, decimal_places=2))
+    stock_value = Decimal('0.00')
+    for row in StockItem.objects.values('currency').annotate(total=Sum(stock_expr)):
+        stock_value += to_base(row['total'], row['currency'] or PRODUCTION_COST_CURRENCY)
+
+    # --- purchasing, converted per currency --------------------------------
+    po_value = Decimal('0.00')
+    for row in SupplierPurchaseOrder.objects.values('currency').annotate(total=Sum('total_value')):
+        po_value += to_base(row['total'], row['currency'] or PRODUCTION_COST_CURRENCY)
+
+    purchase_outstanding = Decimal('0.00')
+    for row in (SupplierInvoice.objects.exclude(status='PAID')
+                .values('currency').annotate(total=Sum('amount'))):
+        purchase_outstanding += to_base(row['total'], row['currency'] or PRODUCTION_COST_CURRENCY)
+
+    sourcing_open = SourcingRequest.objects.exclude(
+        status__in=['CLOSED', 'HANDED_TO_PROCUREMENT']).count()
+    procurement_open = ProcurementRequest.objects.exclude(
+        status__in=['RECEIVED', 'CLOSED']).count()
+    shipping_holds = ShippingPlan.objects.filter(status='HOLD').count()
+
+    profit_today = income - expense - prod_cost
+
     return {
-        'orders':orders.count(),'order_value':str(orders.aggregate(v=Sum('order_value'))['v'] or 0),
-        'production_actual':prod_actual,'production_target':prod_target,
-        'production_efficiency':round(prod_actual/prod_target*100,2) if prod_target else 0,
-        'production_cost':str(prod_cost),'income_today':str(income),'expense_today':str(expense),
-        'profit_today':str(profit_today),'receivable':str(receivable),'payable':str(payable),
-        'stock_value':str(stock_value),'po_value':str(po_value),'purchase_outstanding':str(purchase_outstanding),
-        'present_staff':present,'staff_cost':str(staff_cost),'overtime_minutes':overtime,
-        'ready_to_ship':orders.filter(status='READY_TO_SHIP').count(),'shipped':orders.filter(status='SHIPPED').count(),
-        'delivered':orders.filter(status='DELIVERED').count(),'sourcing_open':sourcing_open,
-        'procurement_open':procurement_open,'shipping_holds':shipping_delayed,
-        'alerts':Alert.objects.filter(actioned=False).count(),'red_alerts':Alert.objects.filter(actioned=False,level='RED').count(),
-        'pending_actions':ActionItem.objects.exclude(status='COMPLETED').count(),
-        'pending_approvals':ApprovalRequest.objects.filter(status='PENDING').count(),
-        'production_rows':prod_rows,
+        'base_currency': base,
+        # Currencies present in the data with no usable rate. A non-empty list
+        # means the money figures below are incomplete and must be shown as such.
+        'fx_unconvertible': sorted(c for c in missing_rates if c),
+        'orders': orders.count(), 'order_value': str(order_value),
+        'production_actual': prod_actual, 'production_target': prod_target,
+        'production_efficiency': round(prod_actual / prod_target * 100, 2) if prod_target else 0,
+        'production_cost': str(prod_cost),
+        'production_cost_local': str(prod_cost_bdt),
+        'production_cost_local_currency': PRODUCTION_COST_CURRENCY,
+        'income_today': str(income), 'expense_today': str(expense),
+        'profit_today': str(profit_today),
+        'receivable': str(receivable), 'payable': str(payable),
+        'stock_value': str(stock_value), 'po_value': str(po_value),
+        'purchase_outstanding': str(purchase_outstanding),
+        'present_staff': present, 'staff_cost': str(staff_cost),
+        'overtime_minutes': overtime,
+        'ready_to_ship': orders.filter(status='READY_TO_SHIP').count(),
+        'shipped': orders.filter(status='SHIPPED').count(),
+        'delivered': orders.filter(status__in=['DELIVERED', 'COMPLETED']).count(),
+        'sourcing_open': sourcing_open, 'procurement_open': procurement_open,
+        'shipping_holds': shipping_holds,
+        'alerts': Alert.objects.filter(actioned=False).count(),
+        'red_alerts': Alert.objects.filter(actioned=False, level='RED').count(),
+        'pending_actions': ActionItem.objects.filter(
+            status__in=ActionItem.OPEN_STATUSES).count(),
+        'pending_approvals': ApprovalRequest.objects.filter(status='PENDING').count(),
+        'production_rows': prod_rows,
     }
+
 
 @login_required
 @require_http_methods(['GET','POST'])
@@ -5592,22 +5757,23 @@ def ceo_dashboard(request):
     if request.method=='POST':
         action=request.POST.get('action','')
         try:
-            if action=='report':
-                slot=request.POST.get('slot')
-                if slot not in {'08:00','13:00','20:00','MANUAL'}: raise ValueError('Invalid report slot.')
-                payload=_ceo_summary(today)
-                CEOAutoReport.objects.update_or_create(
-                    report_date=today,slot=slot,
-                    defaults={'summary':payload,'outstanding_alerts':payload['alerts'],
-                              'pending_actions':payload['pending_actions'],'escalated_items':payload['red_alerts']}
-                )
-                messages.success(request,f'CEO Executive Report generated: {slot}.')
-            elif action=='action_alert':
-                alert=get_object_or_404(Alert,pk=request.POST.get('alert_id'))
-                alert.actioned=True;alert.actioned_by=request.user;alert.actioned_at=timezone.now();alert.save()
-                messages.success(request,'CEO alert marked Actioned.')
+            with transaction.atomic():
+                if action=='report':
+                    slot=request.POST.get('slot')
+                    if slot not in {'08:00','13:00','20:00','MANUAL'}: raise ValueError('Invalid report slot.')
+                    payload=_ceo_summary(today)
+                    CEOAutoReport.objects.update_or_create(
+                        report_date=today,slot=slot,
+                        defaults={'summary':payload,'outstanding_alerts':payload['alerts'],
+                                  'pending_actions':payload['pending_actions'],'escalated_items':payload['red_alerts']}
+                    )
+                    messages.success(request,f'CEO Executive Report generated: {slot}.')
+                elif action=='action_alert':
+                    alert=get_object_or_404(Alert,pk=request.POST.get('alert_id'))
+                    alert.actioned=True;alert.actioned_by=request.user;alert.actioned_at=timezone.now();alert.save()
+                    messages.success(request,'CEO alert marked Actioned.')
         except Exception as exc:
-            messages.error(request,str(exc))
+            _handle_post_error(request, exc)
         return redirect('ceo_dashboard')
 
     summary=_ceo_summary(today)
@@ -5615,7 +5781,7 @@ def ceo_dashboard(request):
         'today':today,'summary':summary,
         'orders':MasterOrder.objects.order_by('-created_at')[:50],
         'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:25],
-        'actions':ActionItem.objects.exclude(status='COMPLETED').order_by('-created_at')[:25],
+        'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('-created_at')[:25],
         'approvals':ApprovalRequest.objects.filter(status='PENDING').order_by('-created_at')[:25],
         'supplier_perf':SupplierPerformance.objects.select_related('supplier').order_by('supplier_score')[:20],
         'shipping':ShippingPlan.objects.select_related('order').order_by('-created_at')[:25],

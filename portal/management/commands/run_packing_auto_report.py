@@ -10,6 +10,6 @@ class Command(BaseCommand):
         PackingAutoReport.objects.update_or_create(report_date=d,slot=s,defaults={
             "summary":payload,
             "outstanding_alerts":Alert.objects.filter(actioned=False).count(),
-            "pending_actions":ActionItem.objects.exclude(status="COMPLETED").count(),
+            "pending_actions":ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).count(),
             "escalated_items":Alert.objects.filter(actioned=False,level="RED").count()})
         self.stdout.write(self.style.SUCCESS(f"Packing report generated {d} {s}"))
