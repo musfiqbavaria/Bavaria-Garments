@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Sourcing Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Sourcing Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #071921;
@@ -509,9 +508,7 @@ block content %}
               <option value="">Evaluation</option>
               {% for e in evaluations %}
               <option value="{{e.id}}">
-                {{e.request.request_no}} · {% if e.quotation.candidate.supplier
-                %}{{e.quotation.candidate.supplier.supplier_id}}{% else %}NEW{%
-                endif %} · Score {{e.total_score}} · Price Var
+                {{e.request.request_no}} · {% if e.quotation.candidate.supplier %}{{e.quotation.candidate.supplier.supplier_id}}{% else %}NEW{% endif %} · Score {{e.total_score}} · Price Var
                 {{e.price_variance_pct}}%
               </option>
               {% endfor %}</select
@@ -605,8 +602,7 @@ block content %}
             <td>{{r.target_price}} {{r.target_currency}}</td>
             <td>{{r.status}}</td>
             <td>
-              {% for h in handoffs %}{% if h.request_id == r.id
-              %}{{h.supplier.supplier_id}} →
+              {% for h in handoffs %}{% if h.request_id == r.id %}{{h.supplier.supplier_id}} →
               {{h.procurement_request.request_no}}{% endif %}{% endfor %}
             </td>
           </tr>
@@ -640,9 +636,7 @@ block content %}
           <tr>
             <td>{{e.request.request_no}}</td>
             <td>
-              {% if e.quotation.candidate.supplier
-              %}{{e.quotation.candidate.supplier.supplier_id}}{% else
-              %}{{e.quotation.candidate.supplier_name}}{% endif %}
+              {% if e.quotation.candidate.supplier %}{{e.quotation.candidate.supplier.supplier_id}}{% else %}{{e.quotation.candidate.supplier_name}}{% endif %}
             </td>
             <td>{{e.quotation.quote_no}}</td>
             <td>{{e.quotation.landed_unit_cost}}</td>

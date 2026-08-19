@@ -87,14 +87,12 @@
         <td>{{x.dispatch_target_date}}</td>
         <td><b>{{x.effective_deadline}}</b></td>
         <td>
-          {% if x.overdue %}<b>OVERDUE {{x.days_remaining}}</b>{% else
-          %}{{x.days_remaining}}{% endif %}
+          {% if x.overdue %}<b>OVERDUE {{x.days_remaining}}</b>{% else %}{{x.days_remaining}}{% endif %}
         </td>
         <td>{{x.courier}}<br />{{x.tracking_number}}</td>
         <td><b>{{x.status}}</b></td>
         <td>
-          {% if x.exception_required
-          %}{{x.exception_reason|default:"Required"}}{% else %}—{% endif %}
+          {% if x.exception_required %}{{x.exception_reason|default:"Required"}}{% else %}—{% endif %}
         </td>
       </tr>
       {% empty %}

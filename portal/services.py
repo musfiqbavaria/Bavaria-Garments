@@ -44,14 +44,31 @@ def record_variance(*, reference, expected, actual, department='', currency='BDT
         Alert.objects.create(title='Value Variance Red Alert',message=f'{reference}: expected {expected} BDT, actual {actual} BDT, variance {variance} BDT.',level='RED',department=department,reference=reference)
     return obj
 
-def attendance_schedule(role_or_category):
-    role=(role_or_category or '').strip().lower()
-    if role in {'operator','helper'}:
-        return {
-            'start':time(8,0),'break1_in':time(13,0),'break1_out':time(14,0),
-            'break2_in':None,'break2_out':None,'end':time(17,0),
-            'scheduled_minutes':480,'grace_minutes':10,'ot_start':time(17,30)
-        }
+def attendance_schedule(*hints):
+    """Resolve the working shift from any number of hints (category, role).
+
+    Accepts several hints because Employee.category defaults to 'STAFF', which
+    is always truthy. The previous single-argument form was called as
+    `category or role`, so the default swallowed the role and every operator or
+    helper whose category had not been set explicitly was scheduled on the
+    660-minute Staff shift with a 20:00 checkout instead of 480 minutes to
+    17:00. That corrupted worked/late/early-leave/unpaid minutes, per-minute
+    cost and the OT eligibility window for most of the factory workforce.
+
+    Any hint naming an operator or helper selects the 480-minute shift.
+
+    These two shifts are still hardcoded. AttendanceShift already models
+    check-in, breaks, checkout, mandatory and grace minutes per category but is
+    never read, so shifts configured in admin have no effect - a blocker for
+    multi-factory operation. See TECHNICAL_ASSESSMENT.md 5.4.
+    """
+    for hint in hints:
+        if (hint or '').strip().lower() in {'operator','helper'}:
+            return {
+                'start':time(8,0),'break1_in':time(13,0),'break1_out':time(14,0),
+                'break2_in':None,'break2_out':None,'end':time(17,0),
+                'scheduled_minutes':480,'grace_minutes':10,'ot_start':time(17,30)
+            }
     return {
         'start':time(8,0),'break1_in':time(13,0),'break1_out':time(14,0),
         'break2_in':time(17,0),'break2_out':time(17,15),'end':time(20,0),
@@ -61,7 +78,7 @@ def attendance_schedule(role_or_category):
 def calculate_attendance_day(employee, work_date):
     from decimal import Decimal
     events=list(AttendanceEvent.objects.filter(employee=employee,occurred_at__date=work_date).order_by('occurred_at'))
-    schedule=attendance_schedule(getattr(employee,'category',None) or employee.role)
+    schedule=attendance_schedule(getattr(employee,'category',None),getattr(employee,'role',None))
 
     # Project 1 working week: Saturday-Thursday. Friday is weekly closed.
     is_weekly_closed=(work_date.weekday()==4)

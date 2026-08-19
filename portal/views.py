@@ -12,7 +12,25 @@ from django.db.models import Q
 from django.urls import reverse
 import qrcode
 from .models import *
-from .services import apply_stock_scan, record_variance, calculate_attendance_day
+from .services import apply_stock_scan, record_variance, calculate_attendance_day, attendance_schedule
+
+# --- form field name lists rendered by the department dashboards ------------
+# Previously these lived in the templates as {% for n in "a b c".split %},
+# which is not valid Django template syntax and raised TemplateSyntaxError.
+FINISHING_PRODUCTION_FIELDS=[
+ 'target_qty','actual_qty','wip_qty','process_minutes','npt_minutes','downtime_minutes',
+ 'trimmed_qty','stain_checked_qty','cleaned_qty','measurement_checked_qty',
+ 'accessory_checked_qty','appearance_checked_qty','label_checked_qty','folding_ready_qty',
+ 'labour_cost','process_cost','utility_cost','rework_cost',
+]
+PACKING_COST_FIELDS=[
+ 'carton_cost','poly_cost','label_sticker_cost','hanger_tissue_accessory_cost',
+ 'labour_cost','process_cost','utility_cost','rework_wastage_cost',
+]
+SHIPPING_COST_FIELDS=[
+ 'freight','forwarder','customs','port_airport','truck_vehicle','loading','documentation',
+ 'insurance','duty_tax','handling','demurrage_detention','courier','other_approved',
+]
 
 
 def login_view(request):
@@ -65,7 +83,6 @@ def forms_master(request):
     if dept: qs=qs.filter(department=dept)
     return render(request,'forms_master.html',{'forms':qs[:650],'departments':FormDefinition.objects.values_list('department',flat=True).distinct().order_by('department'),'count':qs.count()})
 
-@login_required
 def _report_master_department_catalog():
     return [
         ('Executive / CEO','ceo-dashboard','CEO Executive Command & Report Center'),
@@ -2007,7 +2024,7 @@ def attendance_dashboard(request):
                 approval=ApprovalRequest.objects.filter(pk=request.POST.get('approval_id')).first()
                 if not approval or approval.status!='APPROVED':
                     raise PermissionError('Overtime requires an APPROVED authorization.')
-                schedule=attendance_schedule(emp.category or emp.role)
+                schedule=attendance_schedule(emp.category,emp.role)
                 earliest=timezone.make_aware(datetime.combine(start_at.date(),schedule['ot_start']),timezone.get_current_timezone())
                 if start_at < earliest:
                     raise PermissionError(f'OT cannot start before {schedule["ot_start"].strftime("%H:%M")} for {emp.category}.')
@@ -4075,7 +4092,7 @@ def finishing_dashboard(request):
             messages.success(request,"Finishing action completed.")
         except Exception as e:messages.error(request,str(e))
         return redirect("finishing_dashboard")
-    return render(request,"finishing_dashboard.html",{"today":today,"payload":_finishing_payload(today),"plans":FinishingPlan.objects.select_related("order").order_by("-created_at")[:150],"orders":MasterOrder.objects.order_by("-created_at")[:300],"bundles":CuttingBundle.objects.order_by("-created_at")[:500],"employees":Employee.objects.filter(status="ACTIVE")[:500],"machines":AssetMachine.objects.filter(asset_type__in=["MACHINE","EQUIPMENT"])[:500],"approvals":ApprovalRequest.objects.filter(status="APPROVED").order_by("-created_at")[:300],"production":FinishingProduction.objects.select_related("plan","bundle").filter(work_date=today)[:100],"qc_rows":FinishingQC.objects.select_related("plan","bundle").order_by("-checked_at")[:100],"reports":FinishingAutoReport.objects.filter(report_date=today).order_by("slot"),"defect_types":[x[0] for x in FinishingQC.DEFECTS]})
+    return render(request,"finishing_dashboard.html",{"today":today,"payload":_finishing_payload(today),"plans":FinishingPlan.objects.select_related("order").order_by("-created_at")[:150],"orders":MasterOrder.objects.order_by("-created_at")[:300],"bundles":CuttingBundle.objects.order_by("-created_at")[:500],"employees":Employee.objects.filter(status="ACTIVE")[:500],"machines":AssetMachine.objects.filter(asset_type__in=["MACHINE","EQUIPMENT"])[:500],"approvals":ApprovalRequest.objects.filter(status="APPROVED").order_by("-created_at")[:300],"production":FinishingProduction.objects.select_related("plan","bundle").filter(work_date=today)[:100],"qc_rows":FinishingQC.objects.select_related("plan","bundle").order_by("-checked_at")[:100],"reports":FinishingAutoReport.objects.filter(report_date=today).order_by("slot"),"defect_types":[x[0] for x in FinishingQC.DEFECTS],"production_fields":FINISHING_PRODUCTION_FIELDS})
 
 @login_required
 def finishing_report_csv(request):
@@ -4302,6 +4319,7 @@ def packing_dashboard(request):
         'reports':PackingAutoReport.objects.filter(report_date=today).order_by('slot'),
         'defect_types':[x[0] for x in PackingQC.DEFECTS],
     }
+    ctx['cost_fields']=PACKING_COST_FIELDS
     return render(request,'packing_dashboard.html',ctx)
 
 @login_required
@@ -4382,6 +4400,7 @@ def _shipping_sla_info(plan):
 def shipping_dashboard(request):
     from django.contrib import messages
     from decimal import Decimal
+    from django.db.models import Sum
     from django.utils import timezone
     today=timezone.localdate()
 
@@ -4604,6 +4623,7 @@ def shipping_dashboard(request):
         'shipment_modes':[x[0] for x in ShippingPlan.MODES],
         'statuses':[x[0] for x in ShippingPlan.STATUS],
     }
+    ctx['cost_fields']=SHIPPING_COST_FIELDS
     return render(request,'shipping_dashboard.html',ctx)
 
 @login_required
@@ -4727,7 +4747,7 @@ def supplier_dashboard(request):
         try:_recalc_supplier_performance(s)
         except Exception:pass
     return render(request,'supplier_dashboard.html',{'today':today,'payload':_supplier_payload(),'suppliers':SupplierMaster.objects.order_by('-created_at')[:300],'orders':MasterOrder.objects.order_by('-created_at')[:300],
-        'materials':MaterialMaster.objects.order_by('item_name')[:500],'rfqs':SupplierRFQ.objects.select_related('supplier').order_by('-created_at')[:300],'pos':SupplierPurchaseOrder.objects.select_related('supplier').order_by('-created_at')[:300],
+        'materials':MaterialMaster.objects.order_by('name')[:500],'rfqs':SupplierRFQ.objects.select_related('supplier').order_by('-created_at')[:300],'pos':SupplierPurchaseOrder.objects.select_related('supplier').order_by('-created_at')[:300],
         'receipts':SupplierReceipt.objects.select_related('po__supplier').order_by('-received_at')[:150],'invoices':SupplierInvoice.objects.select_related('supplier','po').order_by('-created_at')[:150],
         'performances':SupplierPerformance.objects.select_related('supplier').order_by('-supplier_score')[:300],'documents':SupplierDocument.objects.select_related('supplier').order_by('-created_at')[:150],
         'approvals':ApprovalRequest.objects.filter(status='APPROVED').order_by('-created_at')[:300],'reports':SupplierAutoReport.objects.filter(report_date=today).order_by('slot'),

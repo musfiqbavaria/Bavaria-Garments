@@ -9,11 +9,55 @@
 
 ---
 
+## 0. Remediation status
+
+The findings below record the state of the package **as delivered**. They are kept intact as the evidence record. This section tracks what has since been fixed.
+
+**Phase 0 — complete** (branch `phase-0/version-control-and-guards`)
+
+| Item | Status |
+|---|---|
+| Version control established; `main` is a byte-exact as-received baseline | Done |
+| `.gitignore` — `.env` verified absent from history before the first commit | Done |
+| `.prettierignore` + `.vscode/` guards against HTML formatters | Done |
+| `scripts/backup.sh` rewritten; verified against a stubbed Docker CLI | Done |
+| Executable bit set on all three shell scripts | Done |
+| A real database backup | **Not possible** — Docker not running, stack has never started, no data exists yet |
+
+**Phase 1 — complete** (branch `phase-1/restore-running-application`)
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | `core/settings.py` fails to import under the installed Celery (§2.1) | **Fixed** — `from celery.schedules import crontab` |
+| 2 | 30 of 39 templates do not compile; 34 routes and 91 pages return 500 (§2.2) | **Fixed** — 39/39 compile, 0 routes 5xx, 95/95 pages render 200 |
+| 4 | `Decimal` not imported at module level (§2.3) | **Fixed** — three gate models now save |
+| — | Four further `NameError`/`TypeError`/`FieldError` defects (§2.4) | **Fixed** |
+| — | Four pre-existing `"literal".split` templates (§3.4) | **Fixed** — field lists moved to view constants; two dead loops removed |
+| — | No migrations; `makemigrations` run on the production server (§6.3) | **Fixed** — `0001_initial.py` committed and reviewed; deploy now fails on drift instead |
+| 5 | Operators/helpers scheduled on the Staff shift (§5.1) | **Fixed** — `test_operator_schedule` now passes |
+| — | No regression gate | **Added** — template-integrity and route-smoke tests, verified to fail on reintroduced damage; `scripts/check.sh` |
+
+Measured before and after, on a seeded database:
+
+| | As delivered | After Phase 1 |
+|---|---|---|
+| Templates compiling | 9 / 39 | **39 / 39** |
+| Portal routes without a 5xx | 60 / 94 | **94 / 94** |
+| Registry pages rendering 200 | 4 / 95 | **95 / 95** |
+| Test suite | 3 pass, 1 fail | **8 pass, 0 fail** |
+| Committed migrations | 0 | **1 (171 models, 19 constraints)** |
+
+**Still outstanding — nothing in Phases 2–4 has been started.** In particular the self-approval bypass (§4.1), the absent authorisation model (§4.2), the file-access leaks (§4.3), the deployment hardening (§4.6), the remaining payroll defects (§5.2, §5.3, §5.4), the timezone problem (§5.5), the currency mixing (§5.6) and the hardcoded supplier price score (§5.7) are all unchanged. **This platform is now runnable, but it is not yet safe to expose to real users or real data.**
+
+---
+
 ## 1. Executive summary
 
 The project is an ambitious, single-app Django platform: **172 models, 5,391 lines of views, 95 registered pages, 650 catalogued forms, 32 documented feature waves (v2–v32)**. The domain modelling is genuinely broad and, in places, well thought through — the bundle-scan traceability chain, the QC/Final-QC release gates and the material lot ledger are real, coherent designs.
 
-However, in its current state **the application is not deliverable and not safely deployable.** Three independent problems compound:
+However, **as delivered** the application was neither deliverable nor safely deployable. Three independent problems
+compounded. Blockers 1, 2 and 4 have since been fixed in Phase 1 — see §0 for current status; the security and
+correctness findings below are unchanged.
 
 | # | Finding | Severity | Evidence |
 |---|---|---|---|
@@ -592,4 +636,4 @@ The endpoint also sets no cache headers and re-renders on every request — a la
 
 ---
 
-*Every finding above was reproduced or verified directly against the source in this directory. No project file was modified during this assessment.*
+*Every finding above was reproduced or verified directly against the source in this directory. The assessment itself modified no project file; the fixes recorded in §0 were made afterwards, each in its own reviewable commit.*

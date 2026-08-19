@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Procurement Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Procurement Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #071921;
@@ -468,16 +467,13 @@ block content %}
             <td>{{r.budget_value}}</td>
             <td>{{r.status}}</td>
             <td>
-              {% for c in commitments %}{% if c.request_id == r.id
-              %}{{c.supplier.supplier_id}}{% endif %}{% endfor %}
+              {% for c in commitments %}{% if c.request_id == r.id %}{{c.supplier.supplier_id}}{% endif %}{% endfor %}
             </td>
             <td>
-              {% for c in commitments %}{% if c.request_id == r.id
-              %}{{c.committed_value}}{% endif %}{% endfor %}
+              {% for c in commitments %}{% if c.request_id == r.id %}{{c.committed_value}}{% endif %}{% endfor %}
             </td>
             <td>
-              {% for c in commitments %}{% if c.request_id == r.id and c.po
-              %}{{c.po.po_no}}{% endif %}{% endfor %}
+              {% for c in commitments %}{% if c.request_id == r.id and c.po %}{{c.po.po_no}}{% endif %}{% endfor %}
             </td>
           </tr>
           {% empty %}

@@ -258,8 +258,7 @@
         <td><b>{{g.system_recommendation}}</b></td>
         <td><b>{{g.final_decision}}</b></td>
         <td>
-          {% if g.approval %}{{g.approval.reference}} · {{g.approval.status}}{%
-          else %}—{% endif %}
+          {% if g.approval %}{{g.approval.reference}} · {{g.approval.status}}{% else %}—{% endif %}
         </td>
         <td>
           {% if g.gate_passed %}<b>PASS</b>{% else %}<b>BLOCKED</b>{% endif %}

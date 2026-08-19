@@ -48,7 +48,7 @@
       ><label
         >Channel<select name="channel">
           {% for x in channels %}
-          <option {% if x="" ="CHAT_24_7" %}selected{% endif %}>{{x}}</option>
+          <option {% if x == "CHAT_24_7" %}selected{% endif %}>{{x}}</option>
           {% endfor %}
         </select></label
       >
@@ -111,7 +111,7 @@
       <label
         >Channel<select name="channel">
           {% for x in channels %}
-          <option {% if x="" ="CHAT_24_7" %}selected{% endif %}>{{x}}</option>
+          <option {% if x == "CHAT_24_7" %}selected{% endif %}>{{x}}</option>
           {% endfor %}
         </select></label
       >
@@ -269,7 +269,7 @@
     <select name="channel">
       <option value="">All channels</option>
       {% for x in channels %}
-      <option {% if request.GET.channel="" ="x" %}selected{% endif %}>
+      <option {% if request.GET.channel == x %}selected{% endif %}>
         {{x}}
       </option>
       {% endfor %}
@@ -387,8 +387,7 @@
           <td>{{n.notice_type}}</td>
           <td><b>{{n.title}}</b><br />{{n.body|truncatechars:140}}</td>
           <td>
-            {% if n.target_all %}All Users{% elif n.department
-            %}{{n.department.name}}{% else %}{{n.target_role}}{% endif %}
+            {% if n.target_all %}All Users{% elif n.department %}{{n.department.name}}{% else %}{{n.target_role}}{% endif %}
           </td>
           <td>{{n.created_at}}</td>
         </tr>
@@ -415,8 +414,7 @@
           <td><b>{{t.thread_no}}</b><br />{{t.subject}}</td>
           <td>{{t.thread_type}}<br />{{t.priority}}</td>
           <td>
-            {{t.reference}}{% if t.buyer_opportunity %}<br />{{t.buyer_opportunity.opportunity_no}}{%
-            endif %}{% if t.order %}<br />{{t.order.master_order_id}}{% endif %}
+            {{t.reference}}{% if t.buyer_opportunity %}<br />{{t.buyer_opportunity.opportunity_no}}{% endif %}{% if t.order %}<br />{{t.order.master_order_id}}{% endif %}
           </td>
           <td>{{t.assigned_to|default:"—"}}</td>
           <td>{{t.status}}</td>

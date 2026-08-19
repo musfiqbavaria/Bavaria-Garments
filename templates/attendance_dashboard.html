@@ -1,5 +1,4 @@
-{% extends "base.html" %}{% block title %}Attendance Dashboard{% endblock %}{%
-block content %}
+{% extends "base.html" %}{% block title %}Attendance Dashboard{% endblock %}{% block content %}
 <style>
   body {
     background: #061724;
@@ -1170,8 +1169,7 @@ block content %}
             <tr>
               <td>NPT</td>
               <td>
-                {% if n.employee %}{{n.employee.employee_id}}{% else
-                %}{{n.department.name}}{% endif %}
+                {% if n.employee %}{{n.employee.employee_id}}{% else %}{{n.department.name}}{% endif %}
               </td>
               <td>{{n.minutes}}m</td>
             </tr>

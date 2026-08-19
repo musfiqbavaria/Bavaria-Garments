@@ -129,7 +129,7 @@
     <select name="stage">
       <option value="">All stages</option>
       {% for x in stages %}
-      <option {% if request.GET.stage="" ="x" %}selected{% endif %}>
+      <option {% if request.GET.stage == x %}selected{% endif %}>
         {{x}}
       </option>
       {% endfor %}
@@ -167,14 +167,11 @@
           <td>{{x.probability_percent}}%</td>
           <td>{{x.currency}} {{x.weighted_value}}</td>
           <td>
-            {{x.required_delivery_date|default:"—"}}<br />{% if
-            x.follow_up_overdue %}<b>OVERDUE: {{x.follow_up_date}}</b>{% else
-            %}{{x.follow_up_date|default:"—"}}{% endif %}
+            {{x.required_delivery_date|default:"—"}}<br />{% if x.follow_up_overdue %}<b>OVERDUE: {{x.follow_up_date}}</b>{% else %}{{x.follow_up_date|default:"—"}}{% endif %}
           </td>
           <td>{{x.stage}}<br /><small>{{x.priority}}</small></td>
           <td>
-            {% if x.converted_order
-            %}<b>{{x.converted_order.master_order_id}}</b>{% else %}—{% endif %}
+            {% if x.converted_order %}<b>{{x.converted_order.master_order_id}}</b>{% else %}—{% endif %}
           </td>
         </tr>
         {% empty %}

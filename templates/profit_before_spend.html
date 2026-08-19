@@ -129,8 +129,7 @@
       <tr>
         <td><b>{{x.reference}}</b><br />{{x.vendor}}</td>
         <td>
-          {% if x.order %}{{x.order.master_order_id}}{% endif %}{% if
-          x.opportunity %}<br />{{x.opportunity.opportunity_no}}{% endif %}
+          {% if x.order %}{{x.order.master_order_id}}{% endif %}{% if x.opportunity %}<br />{{x.opportunity.opportunity_no}}{% endif %}
         </td>
         <td>{{x.spend_category}}<br />{{x.description}}</td>
         <td>{{x.currency}} {{x.requested_amount}}</td>
