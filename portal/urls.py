@@ -1,7 +1,9 @@
 from django.urls import path
 from . import views
 urlpatterns=[path('account-master/',views.account_master,name='account_master'),path('ceo-dashboard/',views.ceo_dashboard,name='ceo_dashboard'),path('ceo-dashboard/report.csv',views.ceo_report_csv,name='ceo_report_csv'),path('api/ceo-dashboard/',views.api_ceo_dashboard,name='api_ceo_dashboard'),
- path('',views.home,name='home'),path('login/',views.login_view,name='login'),path('logout/',views.logout_view,name='logout'),path('dashboard/',views.dashboard,name='dashboard'),
+ path('franchise/',views.franchise_portal,name='franchise_portal'),path('investor-relations/',views.investor_portal,name='investor_portal'),path('limerick-factory/',views.factory_public_portal,name='factory_public_portal'),path('corporate-bulk/',views.corporate_portal,name='corporate_portal'),path('virtual-try-on/',views.try_on_portal,name='try_on_portal'),path('returns-refunds/',views.returns_portal,name='returns_portal'),path('wishlist/',views.wishlist_portal,name='wishlist_portal'),
+ path('factory-resource-core/',views.factory_resource_core,name='factory_resource_core'),
+ path('',views.home,name='home'),path('storefront/preferences/',views.storefront_preferences,name='storefront_preferences'),path('login/',views.login_view,name='login'),path('logout/',views.logout_view,name='logout'),path('dashboard/',views.dashboard,name='dashboard'),
  path('forms-master/',views.forms_master,name='forms_master'),path('report-master/',views.report_master,name='report_master'),path('bundle-barcode/',views.barcode_master,name='barcode_master'),path('barcode/<str:code>.png',views.barcode_png,name='barcode_png'),
  path('report-master/report.csv',views.report_master_csv,name='report_master_csv'),path('api/report-master/',views.api_report_master,name='api_report_master'),
  path('api/summary/',views.api_summary,name='api_summary'),path('api/finance/overseas-preview/',views.finance_overseas_preview,name='finance_overseas_preview'),

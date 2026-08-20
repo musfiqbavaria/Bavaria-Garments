@@ -55,6 +55,14 @@ def _spread(names, policy):
 ROUTE_POLICY = {
     # --- public ------------------------------------------------------------
     'home': PUBLIC,
+    'storefront_preferences': PUBLIC,
+    'franchise_portal': PUBLIC,
+    'investor_portal': PUBLIC,
+    'factory_public_portal': PUBLIC,
+    'corporate_portal': PUBLIC,
+    'try_on_portal': PUBLIC,
+    'returns_portal': PUBLIC,
+    'wishlist_portal': PUBLIC,
     'login': PUBLIC,
     'logout': PUBLIC,
 
@@ -122,6 +130,7 @@ ROUTE_POLICY = {
 
     # --- production --------------------------------------------------------
     **_spread([
+        'factory_resource_core',
         'cutting_dashboard', 'cutting_report_csv', 'api_cutting_dashboard',
         'embroidery_dashboard', 'embroidery_report_csv', 'api_embroidery_dashboard',
         'label_dashboard', 'label_report_csv', 'api_label_dashboard',

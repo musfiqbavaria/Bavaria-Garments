@@ -8,7 +8,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.core.cache import cache
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -145,7 +145,131 @@ def login_view(request):
 
 def logout_view(request): logout(request); return redirect('login')
 
-def home(request): return render(request,'public_home.html')
+def home(request):
+    """Render the approved public storefront with live operational data."""
+    selected_storefront = request.session.get('storefront_code', '')
+    storefront = StorefrontConfiguration.objects.select_related('scope').filter(code=selected_storefront, active=True).first()
+    product_qs = StockItem.objects.filter(qty__gt=0)
+    if storefront: product_qs = product_qs.filter(Q(scope=storefront.scope) | Q(scope__isnull=True))
+    product_rows = list(product_qs.order_by('-updated_at').values(
+        'sku', 'name', 'category', 'qty', 'unit_cost', 'currency')[:6])
+    defaults = [
+        ('ER-CLASSIC','Classic Caps','8.50',120), ('ER-SPORT','Sports Caps','9.90',96),
+        ('ER-TRUCKER','Trucker Caps','9.20',74), ('ER-SNAPBACK','Snapback Caps','9.50',82),
+        ('ER-BUCKET','Bucket Hats','10.20',58), ('ER-BEANIE','Beanies','6.80',133),
+    ]
+    products = product_rows or [
+        {'sku':sku,'name':name,'category':'Finished Product','qty':qty,'unit_cost':price,'currency':'EUR'}
+        for sku,name,price,qty in defaults
+    ]
+    for product in products:
+        product['qty'], product['unit_cost'] = str(product['qty']), str(product['unit_cost'])
+    revenue = FinanceTransaction.objects.filter(transaction_type='INCOME', currency='EUR').aggregate(total=Sum('amount'))['total']
+    storefronts = list(StorefrontConfiguration.objects.filter(active=True).select_related('scope').values('code','scope__name','channel_type','country_code','default_language','supported_languages','default_currency','supported_currencies'))
+    languages = storefront.supported_languages if storefront else ['en','ga']
+    currencies = storefront.supported_currencies if storefront else ['EUR','GBP','USD']
+    homepage_data = {
+        'products': products,
+        'countries': OrganizationNode.objects.filter(node_type='Country', active=True).count() or 50,
+        'customer_satisfaction': 98, 'annual_revenue': str(revenue or '250000'),
+        'active_orders': MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED']).count(),
+        'contact': {'phone': '+353 89 978 8187', 'email': 'urmos@rozalia.ie', 'location': 'Limerick, Ireland'},
+        'storefronts': storefronts,
+        'selection': {'storefront': storefront.code if storefront else '', 'country': storefront.country_code if storefront else request.session.get('country_code','IE'), 'language': request.session.get('language_code', storefront.default_language if storefront else 'en'), 'currency': request.session.get('currency_code', storefront.default_currency if storefront else 'EUR')},
+        'languages': languages, 'currencies': currencies,
+    }
+    return render(request, 'public_home.html', {'homepage_data': homepage_data})
+
+@require_http_methods(['POST'])
+def storefront_preferences(request):
+    storefront = StorefrontConfiguration.objects.filter(code=request.POST.get('storefront',''), active=True).first()
+    if storefront:
+        request.session['storefront_code'], request.session['country_code'] = storefront.code, storefront.country_code
+        languages = storefront.supported_languages or [storefront.default_language]
+        currencies = storefront.supported_currencies or [storefront.default_currency]
+    else: languages, currencies = ['en','ga'], ['EUR','GBP','USD']
+    language, currency = request.POST.get('language','en'), request.POST.get('currency','EUR')
+    if language in languages: request.session['language_code'] = language
+    if currency in currencies: request.session['currency_code'] = currency
+    return redirect('home')
+
+PORTAL_VISUALS={
+    'franchise':('Franchise Portal & Application System','img/portals/franchise.png'),
+    'investor':('Investor Relations Portal','img/portals/investor.png'),
+    'factory':('Limerick Manufacturing & Interactive Factory Portal','img/portals/factory.png'),
+    'corporate':('Corporate & Bulk Order Portal','img/portals/corporate.png'),
+    'try-on':('Virtual Try-On Studio','img/portals/try-on.png'),
+    'returns':('Returns, Refunds & Exchange Portal','img/portals/returns.png'),
+    'wishlist':('Wishlist & Saved Products','img/portals/wishlist.png'),
+}
+
+def _portal_live_data(portal):
+    today=timezone.localdate()
+    stock=StockItem.objects.filter(qty__gt=0)
+    common={'active_products':stock.count(),'active_orders':MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED']).count(),'countries':OrganizationNode.objects.filter(node_type='Country',active=True).count(),'companies':OrganizationNode.objects.filter(node_type='Company',active=True).count()}
+    if portal=='franchise':
+        common.update(franchises=OrganizationNode.objects.filter(node_type='Franchise',active=True).count(),franchise_stores=OrganizationNode.objects.filter(node_type='Franchise Retail Store',active=True).count(),available_territories=OrganizationNode.objects.filter(node_type='Country',active=True).count())
+    elif portal=='investor':
+        income=FinanceTransaction.objects.filter(transaction_type='INCOME').aggregate(v=Sum('amount'))['v'] or 0
+        expense=FinanceTransaction.objects.filter(transaction_type='EXPENSE').aggregate(v=Sum('amount'))['v'] or 0
+        common.update(total_revenue=str(income),net_position=str(income-expense),order_book=str(MasterOrder.objects.aggregate(v=Sum('order_value'))['v'] or 0),factories=OrganizationNode.objects.filter(node_type='Factory',active=True).count())
+    elif portal=='factory':
+        prod_rows,actual,target,cost=_ceo_production_summary(today)
+        common.update(today_production=actual,target=target,efficiency=round(actual/target*100,2) if target else 0,production_cost=str(cost),production_units=OrganizationNode.objects.filter(node_type='Production Unit',active=True).count(),departments=Department.objects.filter(active=True).count())
+    elif portal=='corporate':
+        common.update(stock_units=str(stock.aggregate(v=Sum('qty'))['v'] or 0),bulk_orders=MasterOrder.objects.filter(quantity__gte=100).count(),buyer_opportunities=BuyerOpportunity.objects.exclude(stage__in=['LOST','CANCELLED']).count(),ready_to_ship=MasterOrder.objects.filter(status='READY_TO_SHIP').count())
+    elif portal=='try-on':
+        common.update(styles=list(stock.order_by('-updated_at').values('sku','name','qty','unit_cost','currency')[:8]))
+    elif portal=='returns':
+        common.update(return_movements=StockMovement.objects.filter(movement_type__icontains='RETURN').count(),delivered_orders=MasterOrder.objects.filter(status__in=['DELIVERED','COMPLETED']).count())
+    elif portal=='wishlist':
+        common.update(products=list(stock.order_by('-updated_at').values('sku','name','qty','unit_cost','currency')[:12]))
+    return common
+
+def portal_visual(request,portal):
+    if portal not in PORTAL_VISUALS: raise Http404
+    title,image_path=PORTAL_VISUALS[portal]
+    return render(request,'portal_visual.html',{'portal':portal,'title':title,'image_path':image_path,'live_data':_portal_live_data(portal)})
+
+def franchise_portal(request): return portal_visual(request,'franchise')
+def investor_portal(request): return portal_visual(request,'investor')
+def factory_public_portal(request): return portal_visual(request,'factory')
+def corporate_portal(request): return portal_visual(request,'corporate')
+def try_on_portal(request): return portal_visual(request,'try-on')
+def returns_portal(request): return portal_visual(request,'returns')
+def wishlist_portal(request): return portal_visual(request,'wishlist')
+
+@login_required
+def factory_resource_core(request):
+    """Factory resource, workforce, process-minute cost and profit control core."""
+    from datetime import timedelta
+    today=timezone.localdate(); period=request.GET.get('period','today')
+    ranges={'yesterday':(today-timedelta(days=1),today-timedelta(days=1)),'today':(today,today),'tomorrow':(today+timedelta(days=1),today+timedelta(days=1)),'this_week':(today-timedelta(days=today.weekday()),today+timedelta(days=6-today.weekday())),'this_month':(today.replace(day=1),today),'this_year':(today.replace(month=1,day=1),today)}
+    start,end=ranges.get(period,ranges['today'])
+    if period=='custom':
+        try: start=timezone.datetime.fromisoformat(request.GET.get('from')).date(); end=timezone.datetime.fromisoformat(request.GET.get('to')).date()
+        except (TypeError,ValueError): start,end=ranges['today']
+    factory=OrganizationNode.objects.filter(pk=request.GET.get('factory'),node_type='Factory',active=True).first()
+    unit=OrganizationNode.objects.filter(pk=request.GET.get('unit'),node_type='Production Unit',active=True,parent=factory).first() if factory else None
+    employees=Employee.objects.filter(status='ACTIVE').select_related('department','scope')
+    if unit: employees=employees.filter(Q(scope=unit)|Q(scope__path__startswith=unit.path))
+    elif factory: employees=employees.filter(Q(scope=factory)|Q(scope__path__startswith=factory.path))
+    summaries=AttendanceDailySummary.objects.filter(employee__in=employees,work_date__range=(start,end)).select_related('employee__department')
+    scheduled=summaries.count(); present=summaries.filter(status='PRESENT').count(); absent=summaries.filter(status='ABSENT').count()
+    leaves=HRLeaveRequest.objects.filter(employee__in=employees,start_date__lte=end,end_date__gte=start)
+    sick=leaves.filter(status='APPROVED',leave_type__icontains='sick').count(); authorised=leaves.filter(status='APPROVED').exclude(leave_type__icontains='sick').count()
+    unauthorised=max(absent-sick-authorised,0)
+    sums=summaries.aggregate(scheduled_m=Sum('scheduled_minutes'),worked_m=Sum('worked_minutes'),npt_m=Sum('npt_minutes'),scheduled_c=Sum('scheduled_cost'),worked_c=Sum('worked_cost'),npt_c=Sum('npt_cost'))
+    sums={k:(v or 0) for k,v in sums.items()}
+    standards=FactoryProcessStandard.objects.filter(active=True,effective_from__lte=end).filter(Q(effective_to__isnull=True)|Q(effective_to__gte=start)).select_related('factory','production_unit','department')
+    if factory: standards=standards.filter(factory=factory)
+    if unit: standards=standards.filter(production_unit=unit)
+    dept_rows=[]
+    for dep in Department.objects.filter(employee__in=employees).distinct().order_by('name'):
+        ds=summaries.filter(employee__department=dep); sc=ds.count(); pr=ds.filter(status='PRESENT').count(); totals=ds.aggregate(worked=Sum('worked_minutes'),npt=Sum('npt_minutes'),cost=Sum('worked_cost'))
+        dept_rows.append({'name':dep.name,'scheduled':sc,'present':pr,'absent':ds.filter(status='ABSENT').count(),'sick':leaves.filter(employee__department=dep,status='APPROVED',leave_type__icontains='sick').count(),'unauthorised':max(ds.filter(status='ABSENT').count()-leaves.filter(employee__department=dep,status='APPROVED').count(),0),'worked_hm':_hm(totals['worked'] or 0),'npt_hm':_hm(totals['npt'] or 0),'hm_cost':totals['cost'] or 0,'standards':standards.filter(department=dep)})
+    ctx={'factories':OrganizationNode.objects.filter(node_type='Factory',active=True).order_by('name'),'units':OrganizationNode.objects.filter(node_type='Production Unit',active=True,parent=factory).order_by('name') if factory else OrganizationNode.objects.none(),'factory':factory,'unit':unit,'period':period,'start':start,'end':end,'scheduled':scheduled,'present':present,'absent':absent,'sick':sick,'authorised':authorised,'unauthorised':unauthorised,'scheduled_hm':_hm(sums['scheduled_m']),'worked_hm':_hm(sums['worked_m']),'npt_hm':_hm(sums['npt_m']),'scheduled_cost':sums['scheduled_c'],'worked_cost':sums['worked_c'],'npt_cost':sums['npt_c'],'standards':standards,'dept_rows':dept_rows,'today':today}
+    return render(request,'factory_resource_core.html',ctx)
 
 @login_required
 def dashboard(request):

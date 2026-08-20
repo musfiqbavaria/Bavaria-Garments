@@ -1,22 +1,22 @@
 {% load static %}<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
-    <title>Emerald Rozalia</title>
-  </head>
-  <body class="public">
-    <section class="hero">
-      <div class="brand big"><img src="{% static 'img/logo.png' %}" alt="Emerald Rozalia Limited" /></div>
-      <h1>Ethical Irish Manufacturing.<br />Global Vision.</h1>
-      <p>
-        Unified commerce, manufacturing, franchise and operational intelligence.
-      </p>
-      <div>
-        <a class="btn" href="/login/">Portal Login</a
-        ><a class="btn alt" href="/p/product-detail/">Explore Products</a>
-      </div>
-    </section>
-  </body>
-</html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#020604"><meta name="description" content="Premium hats and caps, proudly made in Limerick, Ireland.">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}"><link rel="stylesheet" href="{% static 'css/homepage.css' %}"><link rel="stylesheet" href="{% static 'css/storefront.css' %}"><title>Emerald Rozalia | Ethical Irish Manufacturing</title>
+</head><body class="public homepage-reference">
+  <a class="skip-link" href="#homepage">Skip to homepage</a>
+  <main id="homepage" class="homepage-canvas" aria-label="Emerald Rozalia homepage">
+    <img class="homepage-art" src="{% static 'img/hero_ref.png' %}" alt="Emerald Rozalia homepage: ethical Irish manufacturing, products, franchise, investment, sustainability and rewards" width="1024" height="1536">
+    <nav class="visual-hotspots" aria-label="Homepage navigation">
+      <a class="hotspot home" href="/" aria-label="Home"></a><button class="hotspot shop" type="button" data-panel="shop" aria-label="Shop collection"></button>
+      <a class="hotspot franchise" href="{% url 'franchise_portal' %}" aria-label="Explore franchise opportunities"></a><a class="hotspot invest" href="{% url 'investor_portal' %}" aria-label="Investor relations"></a>
+      <button class="hotspot story" type="button" data-panel="story" aria-label="Read our story"></button><a class="hotspot factory" href="{% url 'factory_public_portal' %}" aria-label="Explore Limerick factory"></a>
+      <a class="hotspot tryon" href="{% url 'try_on_portal' %}" aria-label="Open virtual try-on"></a><a class="hotspot sustainability" href="/p/sustainability-dashboard/" aria-label="Sustainability impact"></a>
+      <a class="hotspot rewards" href="/p/rewards-loyalty-master/" aria-label="Emerald Rewards"></a><a class="hotspot contact" href="mailto:{{ homepage_data.contact.email }}" aria-label="Email Emerald Rozalia"></a><a class="hotspot portal" href="/login/" aria-label="Portal login"></a>
+    </nav>
+    <form class="storefront-switcher" method="post" action="{% url 'storefront_preferences' %}" aria-label="Country, language and currency selector">{% csrf_token %}<select name="storefront" aria-label="Storefront"><option value="">Ireland · Main Store</option>{% for store in homepage_data.storefronts %}<option value="{{ store.code }}" {% if store.code == homepage_data.selection.storefront %}selected{% endif %}>{{ store.scope__name }} · {{ store.channel_type }}</option>{% endfor %}</select><select name="language" aria-label="Language">{% for language in homepage_data.languages %}<option value="{{ language }}" {% if language == homepage_data.selection.language %}selected{% endif %}>{{ language|upper }}</option>{% endfor %}</select><select name="currency" aria-label="Currency">{% for currency in homepage_data.currencies %}<option value="{{ currency }}" {% if currency == homepage_data.selection.currency %}selected{% endif %}>{{ currency }}</option>{% endfor %}</select><button type="submit">Apply</button></form>
+    <div class="live-indicator" title="Live data connected to website fields"><span></span> LIVE DATA</div>
+  </main>
+  <dialog id="homepage-dialog" class="homepage-dialog"><button class="dialog-close" type="button" aria-label="Close">×</button><div id="dialog-content"></div></dialog>
+  {{ homepage_data|json_script:"homepage-data" }}<script src="{% static 'js/homepage.js' %}" defer></script>
+</body></html>

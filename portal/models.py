@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .tenancy import ScopedManager
@@ -19,7 +20,7 @@ class OrganizationNode(TimeStamped):
     so no record could be attributed to a site. It is now the scoping backbone -
     see portal/tenancy.py and TECHNICAL_ASSESSMENT.md 6.2.
     """
-    TYPES=[(x,x) for x in ['Country','Company','Factory','Production Unit','Area','Branch','Department','Warehouse','Retail Store','Franchise Store']]
+    TYPES=[(x,x) for x in ['Global','Country','Company','Factory','Production Unit','Area','Branch','Department','Warehouse','E-commerce Store','Vendor','Franchise','Franchise Retail Store','Retail Store','Online Store','POS']]
     name=models.CharField(max_length=180); node_type=models.CharField(max_length=40,choices=TYPES,db_index=True); parent=models.ForeignKey('self',null=True,blank=True,on_delete=models.PROTECT,related_name='children')
     #: Materialised path, e.g. '/1/4/9/'. Subtree membership is then one indexed
     #: prefix match rather than a recursive walk. Maintained by save().
@@ -37,6 +38,42 @@ class OrganizationNode(TimeStamped):
 
     def compute_path(self):
         return f'{self.parent.path}{self.pk}/' if self.parent_id and self.parent.path else f'/{self.pk}/'
+
+    PARENT_TYPES={
+        'Country': {'Global'}, 'Company': {'Country'},
+        'Factory': {'Country','Company'}, 'Production Unit': {'Factory'},
+        'Warehouse': {'Company','Factory','Production Unit'},
+        'Vendor': {'Country','Company'}, 'Franchise': {'Company'},
+        'Franchise Retail Store': {'Company','Franchise'},
+        'E-commerce Store': {'Company'}, 'Online Store': {'Company'},
+        'Retail Store': {'Company'}, 'POS': {'Company','Retail Store','Franchise Retail Store'},
+        'Department': {'Company','Factory','Production Unit'},
+        'Area': {'Country','Company'}, 'Branch': {'Company','Area'},
+    }
+
+    def clean(self):
+        super().clean()
+        if self.parent_id:
+            allowed=self.PARENT_TYPES.get(self.node_type)
+            if allowed and self.parent.node_type not in allowed:
+                raise ValidationError({'parent':f'{self.node_type} must belong to: {", ".join(sorted(allowed))}.'})
+
+    @property
+    def factories(self):
+        """All factories directly owned by this country or company."""
+        return self.children.filter(node_type='Factory',active=True)
+
+    @property
+    def production_units(self):
+        """All production units directly owned by this factory."""
+        return self.children.filter(node_type='Production Unit',active=True)
+
+    @property
+    def franchise_stores(self):
+        """All franchise organisations and stores below this company."""
+        direct=self.children.filter(node_type__in=['Franchise','Franchise Retail Store'],active=True)
+        nested=OrganizationNode.objects.filter(parent__parent=self,node_type='Franchise Retail Store',active=True)
+        return direct | nested
 
     @property
     def effective_timezone(self):
@@ -80,6 +117,41 @@ class OrganizationNode(TimeStamped):
 
     def __str__(self):
         return f'{self.node_type}: {self.name}'
+
+class StorefrontConfiguration(TimeStamped):
+    CHANNELS=[(x,x) for x in ['E-commerce Store','Online Store','Franchise Retail Store','Retail Store','POS']]
+    scope=models.OneToOneField(OrganizationNode,on_delete=models.PROTECT,related_name='storefront_configuration')
+    channel_type=models.CharField(max_length=40,choices=CHANNELS,db_index=True)
+    code=models.SlugField(max_length=80,unique=True); domain=models.CharField(max_length=255,blank=True)
+    country_code=models.CharField(max_length=2,default='IE',db_index=True)
+    default_language=models.CharField(max_length=12,default='en'); supported_languages=models.JSONField(default=list)
+    default_currency=models.CharField(max_length=10,default='EUR'); supported_currencies=models.JSONField(default=list)
+    active=models.BooleanField(default=True,db_index=True)
+    def __str__(self): return f'{self.code} · {self.channel_type}'
+
+class LocalizedContent(TimeStamped):
+    storefront=models.ForeignKey(StorefrontConfiguration,on_delete=models.CASCADE,related_name='translations')
+    resource_type=models.CharField(max_length=80,db_index=True); resource_key=models.CharField(max_length=120,db_index=True)
+    field_name=models.CharField(max_length=80); language_code=models.CharField(max_length=12,db_index=True); value=models.TextField()
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['storefront','resource_type','resource_key','field_name','language_code'],name='uq_storefront_localized_field')]
+
+class FactoryProcessStandard(TimeStamped):
+    factory=models.ForeignKey(OrganizationNode,on_delete=models.PROTECT,related_name='process_standards',limit_choices_to={'node_type':'Factory'})
+    production_unit=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='unit_process_standards',limit_choices_to={'node_type':'Production Unit'})
+    department=models.ForeignKey('Department',on_delete=models.PROTECT,related_name='factory_process_standards')
+    process_name=models.CharField(max_length=180); style_reference=models.CharField(max_length=120,blank=True)
+    sam=models.DecimalField(max_digits=10,decimal_places=4,default=0); smv=models.DecimalField(max_digits=10,decimal_places=4,default=0)
+    cost_per_minute=models.DecimalField(max_digits=14,decimal_places=4,default=0)
+    effective_from=models.DateField(default=timezone.localdate); effective_to=models.DateField(null=True,blank=True)
+    active=models.BooleanField(default=True,db_index=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['factory','production_unit','department','process_name','style_reference','effective_from'],name='uq_factory_process_standard')]
+    def clean(self):
+        super().clean()
+        if self.production_unit_id and self.production_unit.parent_id != self.factory_id:
+            raise ValidationError({'production_unit':'Production unit must belong to the selected factory.'})
+    def __str__(self): return f'{self.factory.name} · {self.department.name} · {self.process_name}'
 
 
 class Department(TimeStamped):
