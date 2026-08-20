@@ -370,22 +370,149 @@ role and organisation site; keep `admin` for break-glass only.
 
 ---
 
-## 12. Deploying an update
+## 12. Deploying a change
+
+The routine, every time. Two machines: **your PC** for building and testing,
+**the server** for running.
+
+### On your PC
+
+**1. Make the change, then test it locally.**
 
 ```bash
-ssh deploy@YOUR_SERVER_IP
+cd "g:/Projects/Emerald Rozalia/Emerald_Rozalia_Project1_Python_Server_Ready"
+bash ./scripts/run_local.sh
+docker compose exec web python manage.py test portal --settings=core.settings_test
+```
+
+The suite must pass before you push. It checks that every template compiles, no
+route returns a server error, every page renders, and the authorisation,
+file-access and payroll rules still hold.
+
+**2. If you changed a model, generate the migration here** - never on the server.
+
+```bash
+docker compose exec web python manage.py makemigrations portal
+```
+
+Read the generated file before committing it. Look for `RemoveField`,
+`DeleteModel` or `RenameField`: those destroy data, and Django guesses at renames.
+
+**3. Commit and push.**
+
+```bash
+git add -A
+git status                    # confirm nothing unexpected, and no .env
+git commit -m "what changed and why"
+git push origin main
+```
+
+### On the server
+
+**4. Pull and deploy.**
+
+```bash
+ssh root@YOUR_SERVER_IP
 cd ~/app
 git pull origin main
 bash ./scripts/deploy.sh
 docker compose restart nginx
 ```
 
-`deploy.sh` **refuses to continue** if the code has model changes with no
-committed migration — generate and review that migration locally, never on the
-server.
+`deploy.sh` rebuilds the images, verifies the code matches the committed
+migrations, applies them, re-seeds the registry, collects static files and runs
+Django's checks.
 
-The `restart nginx` is not optional: recreating `web` gives it a new address and
-nginx caches the old one, which is the 502 above.
+**5. Verify.**
+
+```bash
+curl -I http://localhost/login/       # expect 200
+docker compose ps                     # all six up; db, redis, web healthy
+docker compose logs --tail 30 web     # no tracebacks
+```
+
+Then load the page in a browser and **hard refresh** (`Ctrl` + `F5`).
+
+---
+
+### Why each step is there
+
+**`git status` before committing.** `.env` is gitignored, but this catches a stray
+file you did not mean to ship.
+
+**Migrations generated on your PC, not the server.** `deploy.sh` runs
+`makemigrations --check --dry-run` and **refuses to continue** if the models have
+drifted from the committed migrations. That is deliberate: a migration invented on
+the server is untracked, unreviewed, and will differ between environments.
+
+**`docker compose restart nginx`.** Rebuilding recreates the `web` container with
+a new address, and nginx caches the old one at startup. Skip this and you get
+**502 Bad Gateway** while static files still load - the tell-tale sign.
+
+**Hard refresh.** nginx serves static files with a seven-day cache. Without
+`Ctrl` + `F5` you will swear your CSS change did nothing.
+
+---
+
+### Special cases
+
+**You added a new setting to `.env.example`.** `.env` is not in git, so the server
+does not get it. Add it by hand *before* deploying:
+
+```bash
+nano .env          # add the new line
+docker compose up -d
+```
+
+Note `up -d`, not `restart` - env files are read when a container is **created**.
+
+**You changed `requirements.txt`.** `deploy.sh` already builds with `--build`, so
+it is handled. If a dependency still looks stale:
+
+```bash
+docker compose build --no-cache web && docker compose up -d web
+```
+
+**You only changed a template or CSS.** Still needs a rebuild: the source is baked
+into the image, not mounted from disk. `deploy.sh` handles it.
+
+**Nothing seems to have changed.** Work through the ordered checks in the "I
+changed the code but the site looks the same" section of `RUNNING_LOCALLY.md` -
+the same procedure applies on the server.
+
+---
+
+### If a deploy breaks the site
+
+Roll the code back and redeploy:
+
+```bash
+cd ~/app
+git log --oneline -5              # find the last good commit
+git reset --hard <that-commit>
+bash ./scripts/deploy.sh
+docker compose restart nginx
+```
+
+**A migration that has already applied is NOT undone by this.** The code goes
+back; the database does not. If the bad deploy changed the schema, restore from
+backup instead:
+
+```bash
+gunzip -c backups/db_<STAMP>.sql.gz | docker compose exec -T db psql -U emerald -d emerald_rozalia_project1
+```
+
+Which is why step 11 says to test a restore *before* you need one.
+
+---
+
+### Quick sanity check any time
+
+```bash
+cd ~/app && git log --oneline -1 && docker compose ps
+```
+
+Tells you which commit is live and whether everything is running.
 
 ---
 
