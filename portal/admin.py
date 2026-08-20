@@ -26,6 +26,8 @@ class ReadOnlyAuditAdmin(admin.ModelAdmin):
 for m in [OrganizationNode,Department,UserProfile,DashboardPage,Employee,AttendanceEvent,MasterOrder,StockItem,StockMovement,FormDefinition,FormSubmission,Alert,ActionItem,Communication,DocumentRecord,BarcodeAsset,FinanceTransaction,ReportSnapshot]:
     admin.site.register(m)
 
+admin.site.register(BarcodeScanEvent, ReadOnlyAuditAdmin)
+
 for m in [AuditLog, FileAccessLog, ApprovalDecisionLog]:
     try: admin.site.register(m, ReadOnlyAuditAdmin)
     except admin.sites.AlreadyRegistered: pass
@@ -74,6 +76,10 @@ except admin.sites.AlreadyRegistered:
     pass
 
 for m in [StaffSelfServiceProfile,StaffApplication,StaffDocument,StaffDutySummary,StaffPayrollSummary,StaffScheduleEntry,StaffNotification,StaffAnnouncement,StaffEvent]:
+    try: admin.site.register(m)
+    except admin.sites.AlreadyRegistered: pass
+
+for m in [HRVacancy, HRRecruitment]:
     try: admin.site.register(m)
     except admin.sites.AlreadyRegistered: pass
 

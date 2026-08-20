@@ -1542,3 +1542,210 @@ class EnvironmentConfigTests(TestCase):
         source = Path('core/settings.py').read_text(encoding='utf-8')
         self.assertIn("django.db.backends.sqlite3", source)
         self.assertIn("DB_ENGINE", source)
+
+
+class PublicRecruitmentHardeningTests(TestCase):
+    """Controls on the public /careers/ endpoint and the HR decision path.
+
+    /careers/ is the only unauthenticated route that writes rows and stores
+    uploaded files, and the HR screen that decides those applications is the
+    only place outside api_approval_decision that settles an ApprovalRequest.
+    Both arrived without the protections the rest of the platform relies on: no
+    rate limit, no server-side validation, and a decision path that wrote
+    ApprovalRequest.status directly - skipping the role check, the
+    already-decided check and the append-only log that
+    TECHNICAL_ASSESSMENT.md 4.1 exists to guarantee.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import tempfile
+        from django.test import override_settings
+        # Uploads must not land in the working tree when the suite runs.
+        cls._media = tempfile.mkdtemp(prefix='er-test-media-')
+        cls._override = override_settings(MEDIA_ROOT=cls._media)
+        cls._override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        cls._override.disable()
+        shutil.rmtree(cls._media, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        from django.core.cache import cache
+        from portal.models import HRVacancy
+        # LocMemCache is shared across tests in a process; a counter left by
+        # another test would make the throttle assertions meaningless.
+        cache.clear()
+        self.vacancy = HRVacancy.objects.create(
+            reference='VAC-TEST-1', title='Sewing Operator',
+            description='Machine operator, Limerick.', status='PUBLISHED')
+
+    def _apply(self, client=None, **overrides):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        data = {'vacancy_id': self.vacancy.pk, 'candidate_name': 'Jane Doe',
+                'email': 'jane@example.com', 'phone': '+353 1 234',
+                'country': 'Ireland', 'consent': 'yes'}
+        data.update(overrides)
+        data.setdefault('cv', SimpleUploadedFile('cv.pdf', b'%PDF-1.4 test'))
+        return (client or Client()).post('/careers/', data)
+
+    # --- rate limiting -----------------------------------------------------
+
+    def test_public_applications_are_rate_limited_per_ip(self):
+        from django.test import override_settings
+        from portal.models import HRRecruitment
+        with override_settings(CAREERS_SUBMISSION_LIMIT=3,
+                               CAREERS_SUBMISSION_WINDOW_SECONDS=60):
+            client = Client()
+            codes = [self._apply(client, email='c{}@example.com'.format(i)).status_code
+                     for i in range(9)]
+        self.assertEqual(codes.count(429), 6, codes)
+        self.assertEqual(HRRecruitment.objects.count(), 3)
+        # The approval queue is bounded with it, not just the application table.
+        self.assertEqual(ApprovalRequest.objects.count(), 3)
+
+    def test_rejected_submissions_also_count_towards_the_limit(self):
+        """Otherwise a loop of deliberately invalid posts would never trip it."""
+        from django.test import override_settings
+        from portal.models import HRRecruitment
+        with override_settings(CAREERS_SUBMISSION_LIMIT=2,
+                               CAREERS_SUBMISSION_WINDOW_SECONDS=60):
+            client = Client()
+            codes = [client.post('/careers/', {'vacancy_id': self.vacancy.pk,
+                                               'consent': 'no'}).status_code
+                     for _ in range(5)]
+        self.assertEqual(codes.count(429), 3, codes)
+        self.assertEqual(HRRecruitment.objects.count(), 0)
+
+    def test_throttle_fails_open_when_the_cache_is_unavailable(self):
+        """A security control must not become an outage - same rule as /login/."""
+        from unittest import mock
+        with mock.patch('portal.views.cache.get', side_effect=RuntimeError('cache down')), \
+             mock.patch('portal.views.cache.add', side_effect=RuntimeError('cache down')):
+            response = self._apply()
+        self.assertEqual(response.status_code, 200)
+
+    # --- server-side validation --------------------------------------------
+
+    def test_over_length_input_is_rejected_and_nothing_is_stored(self):
+        """candidate_name is max_length=180. PostgreSQL raises DataError on
+        overflow, which is not an IntegrityError and so was not in
+        EXPECTED_POST_ERRORS: one long field from an anonymous visitor was an
+        unhandled 500."""
+        from portal.models import HRRecruitment
+        response = self._apply(candidate_name='N' * 5000)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(HRRecruitment.objects.count(), 0)
+        self.assertContains(response, 'at most 180 characters')
+
+    def test_invalid_email_is_rejected(self):
+        from portal.models import HRRecruitment
+        response = self._apply(email='definitely not an email')
+        self.assertEqual(HRRecruitment.objects.count(), 0)
+        self.assertContains(response, 'valid email address')
+
+    def test_a_valid_application_is_still_accepted(self):
+        from portal.models import HRRecruitment
+        response = self._apply()
+        self.assertEqual(response.status_code, 200)
+        application = HRRecruitment.objects.get()
+        self.assertEqual(application.status, 'PENDING_APPROVAL')
+        self.assertTrue(application.application_reference.startswith('ER-APP-'))
+        self.assertIsNotNone(application.approval)
+        self.assertEqual(application.approval.approval_type, 'RECRUITMENT_APPLICATION')
+
+    def test_a_failed_submission_does_not_report_success(self):
+        response = self._apply(candidate_name='N' * 5000)
+        self.assertNotContains(response, 'APPLICATION RECEIVED')
+
+    # --- the HR decision path ----------------------------------------------
+
+    def _application(self):
+        from portal.models import HRRecruitment
+        self._apply()
+        return HRRecruitment.objects.get()
+
+    def _decide(self, user, application, decision):
+        return _client_for(user).post('/hr-dashboard/', {
+            'action': 'recruitment_decision', 'application_id': application.pk,
+            'decision': decision})
+
+    def test_hr_decision_is_written_to_the_append_only_log(self):
+        from portal import roles
+        hr = _make_user('hr-decider', roles.HR_MANAGER)
+        application = self._application()
+        self._decide(hr, application, 'REJECTED')
+        application.refresh_from_db()
+        application.approval.refresh_from_db()
+        self.assertEqual(application.status, 'REJECTED')
+        self.assertEqual(application.approval.status, 'REJECTED')
+        log = ApprovalDecisionLog.objects.get(approval_id=application.approval_id)
+        self.assertEqual((log.previous_status, log.decision), ('PENDING', 'REJECTED'))
+        self.assertEqual(log.decided_by, hr)
+        self.assertIn('HR Manager', log.approver_roles)
+
+    def test_a_decided_recruitment_approval_cannot_be_flipped(self):
+        """The regression this class exists for: rejecting an application and
+        then posting ACTIVE used to flip the settled approval to APPROVED and
+        record nothing anywhere."""
+        from portal import roles
+        hr = _make_user('hr-flipper', roles.HR_MANAGER)
+        application = self._application()
+        self._decide(hr, application, 'REJECTED')
+        self._decide(hr, application, 'ACTIVE')
+        application.refresh_from_db()
+        application.approval.refresh_from_db()
+        self.assertEqual(application.approval.status, 'REJECTED')
+        self.assertEqual(application.status, 'REJECTED')
+        self.assertEqual(ApprovalDecisionLog.objects.filter(
+            approval_id=application.approval_id).count(), 1)
+
+    def test_on_hold_leaves_the_approval_pending_and_still_decidable(self):
+        from portal import roles
+        hr = _make_user('hr-holder', roles.HR_MANAGER)
+        application = self._application()
+        self._decide(hr, application, 'ON_HOLD')
+        application.refresh_from_db()
+        application.approval.refresh_from_db()
+        self.assertEqual(application.status, 'ON_HOLD')
+        self.assertEqual(application.approval.status, 'PENDING')
+        self.assertEqual(ApprovalDecisionLog.objects.count(), 0)
+        # A held application can still be taken forward later.
+        self._decide(hr, application, 'ACTIVE')
+        application.refresh_from_db()
+        application.approval.refresh_from_db()
+        self.assertEqual(application.status, 'ACTIVE')
+        self.assertEqual(application.approval.status, 'APPROVED')
+
+    def test_a_manager_outside_hr_cannot_decide_a_recruitment_approval(self):
+        """RECRUITMENT_* is narrowed to HR rather than left on the sixteen-role
+        management default, because the decision ends in a real Employee record
+        and a portal account."""
+        from portal import roles
+        shipping = _make_user('ship-decider', roles.SHIPPING_MANAGER)
+        application = self._application()
+        self._decide(shipping, application, 'ACTIVE')
+        application.refresh_from_db()
+        application.approval.refresh_from_db()
+        self.assertEqual(application.approval.status, 'PENDING')
+        self.assertEqual(application.status, 'PENDING_APPROVAL')
+        self.assertEqual(ApprovalDecisionLog.objects.count(), 0)
+
+    def test_no_view_settles_an_approval_outside_the_shared_control(self):
+        """Guard against a future caller assigning ApprovalRequest.status inline
+        again and quietly skipping the four rules."""
+        from pathlib import Path
+        import re
+        source = Path('portal/views.py').read_text(encoding='utf-8')
+        # Matches a dotted path too, so app.approval.status = 'APPROVED' is
+        # caught and not just approval.status = 'APPROVED'.
+        pattern = re.compile(r'^\s*[\w.]*approval[\w.]*\.status\s*=\s*[\'"](APPROVED|REJECTED)[\'"]',
+                             re.IGNORECASE)
+        offenders = [line.strip() for line in source.splitlines() if pattern.match(line)]
+        self.assertEqual(offenders, [],
+                         'ApprovalRequest.status assigned outside '
+                         '_apply_approval_decision:\n' + '\n'.join(offenders))

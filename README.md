@@ -161,6 +161,29 @@ Page #84 implements Hand Iron / Manual Ironing. Workflow: approved Master Order 
 
 The system blocks Bundle OUT when a valid Bundle IN scan or QC PASS is missing. Barcode mismatch, duplicate scan and quantity mismatch are blocked and generate Red Alert records. Plan-level fabric type and min/max temperatures are enforced; temperature above the maximum blocks production.
 
+## Barcode generation, scanning and traceability
+
+- `/bundle-barcode/` — unique barcode generator with format and duplicate validation.
+- `/barcode-instructions/generation/` — approved correct/wrong generation instructions.
+- `/barcode-instructions/scan/` — operator correct/wrong scanning instructions.
+- `/barcode-instructions/traceability/` — hat/cap 14-part routing and prevention visuals.
+- `/barcode-scan-control/` — live sequential bundle/part/machine/operator/helper validation. Wrong or out-of-sequence scans block production and are written to the audit log.
+- `/bundle-traceability-finder/` — complete bundle operation journey and current assignment.
+
+Run `python manage.py migrate` after upgrading so migration `0005_barcode_scan_event_and_types` creates the scan audit table and expands the global barcode types.
+
+## Sewing Manager
+
+`/sewing-master/` is the Operation Manager's live sewing control page. It links machine, operator, helper, bundle, order, line, workstation and operation; supports start, hold, complete and reject actions; calculates SAM efficiency, NPT, active H/M, machine/labour cost per minute and total process cost; and exports `/sewing-master/report.csv`. Run migration `0006_sewing_assignment_costs` after upgrading.
+
+## Public recruitment and HR hiring
+
+- `/careers/` is public: published vacancies and recruitment application, with CV/supporting-document upload and a unique application reference.
+- `/careers/track/` lets a candidate track status using the application reference plus their email address.
+- `/hr/recruitment/applications/` is HR-only: Active/On Hold/Reject, screening, interview, selection, document verification, hiring approval, employee ID creation, portal permission, and login/mobile-app activation.
+
+Applicants are never placed in Staff Self-Service. After approved hiring, the recruitment record is linked to the new Employee and an initially inactive portal account; HR must explicitly activate access. Run migration `0007_public_recruitment_workflow` after upgrading.
+
 Production tracks target/actual, start/end, process minutes, NPT, actual temperature, cost/minute, labour cost, utility cost, process cost and total Hand Iron cost. Manual production entry requires senior approved authorization.
 
 Quality controls include scorch/burn, shine/glazing, colour change, water/steam marks, crease and shape distortion, with reject and re-iron quantities and mandatory re-QC before release. Automatic reports use 08:00, 13:00 and 20:00 Bangladesh-local slots. Hand Iron instruction files, QC photos and generated reports use Universal File Controls: VIEW, PREVIEW, DOWNLOAD and PRINT.

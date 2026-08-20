@@ -157,6 +157,14 @@ else:
 LOGIN_ATTEMPT_LIMIT=_int('DJANGO_LOGIN_ATTEMPT_LIMIT',default=10)
 LOGIN_ATTEMPT_WINDOW_SECONDS=_int('DJANGO_LOGIN_ATTEMPT_WINDOW',default=900)
 
+# --- public recruitment throttle --------------------------------------------
+# /careers/ is the only unauthenticated endpoint that writes rows and stores
+# uploaded files, so it is the one place where an anonymous caller can consume
+# disk and flood the HR approval queue. Every POST is counted, valid or not, so
+# a loop of rejected submissions is bounded too.
+CAREERS_SUBMISSION_LIMIT=_int('DJANGO_CAREERS_SUBMISSION_LIMIT',default=5)
+CAREERS_SUBMISSION_WINDOW_SECONDS=_int('DJANGO_CAREERS_SUBMISSION_WINDOW',default=3600)
+
 # --- logging ----------------------------------------------------------------
 # LOGGING was not configured at all, so no failure anywhere in the platform was
 # recorded server-side - including the dashboards' blanket `except Exception`,

@@ -109,6 +109,11 @@ APPROVAL_AUTHORITY = {
     'ASSET_RETIREMENT': FINANCE | {OPERATION_MANAGER},
     'BANK_DETAIL_CHANGE': FINANCE,
     'SUPPLIER_PAYMENT': FINANCE,
+    # Recruitment approvals carry a candidate's personal data and end in a real
+    # Employee record and a portal account, so they are narrowed to HR rather
+    # than left on the sixteen-role management default.
+    'RECRUITMENT_APPLICATION': HR,
+    'RECRUITMENT_HIRING': HR,
 }
 
 

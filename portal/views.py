@@ -1,8 +1,8 @@
-import io, json, logging, os
+import csv, io, json, logging, os, re, uuid
 from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
@@ -104,6 +104,37 @@ def _clear_failed_logins(request):
         cache.delete(_login_throttle_key(request))
     except Exception:
         pass
+
+
+def _submission_throttle_key(request, scope):
+    ip=_file_access_ip(request) or 'unknown'
+    return f'{scope}-submissions:{ip}'
+
+
+def _submission_count(request, scope):
+    """Submissions from this IP inside the window. Fails open, like the login throttle."""
+    try:
+        return cache.get(_submission_throttle_key(request, scope), 0)
+    except Exception:
+        logger.warning('%s submission throttle unavailable: cache backend error', scope)
+        return 0
+
+
+def _record_submission(request, scope, window):
+    """Count one attempt, accepted or rejected.
+
+    Rejected attempts count too: otherwise a loop of deliberately invalid posts
+    would never trip the limit while still costing a request and an upload each
+    time.
+    """
+    key=_submission_throttle_key(request, scope)
+    try:
+        # add() only sets the key if absent, so the window starts at the first
+        # submission and is not extended by later ones.
+        cache.add(key,0,window)
+        cache.incr(key)
+    except Exception:
+        logger.warning('%s submission throttle unavailable: could not record attempt', scope)
 
 
 def _safe_next_url(request):
@@ -239,6 +270,71 @@ def try_on_portal(request): return portal_visual(request,'try-on')
 def returns_portal(request): return portal_visual(request,'returns')
 def wishlist_portal(request): return portal_visual(request,'wishlist')
 
+def _validate_recruitment_upload(file,field_name):
+    if not file: return
+    if file.size > 10*1024*1024: raise ValueError(f'{field_name} must be 10 MB or smaller.')
+    ext=os.path.splitext(file.name)[1].lower()
+    if ext not in {'.pdf','.doc','.docx','.jpg','.jpeg','.png'}: raise ValueError(f'{field_name} must be PDF, DOC, DOCX, JPG or PNG.')
+
+@require_http_methods(['GET','POST'])
+def careers(request):
+    """Public vacancy list and application form; no employee login required."""
+    from django.contrib import messages
+    vacancies=HRVacancy.objects.filter(status='PUBLISHED').filter(Q(closing_date__isnull=True)|Q(closing_date__gte=timezone.localdate())).select_related('department').order_by('closing_date','title')
+    created=None
+    if request.method=='POST':
+        # This is the only unauthenticated endpoint that creates rows and stores
+        # files, so it is rate limited per IP. Without this a single host can
+        # exhaust the disk and bury HR under approval requests.
+        limit=getattr(settings,'CAREERS_SUBMISSION_LIMIT',5)
+        window=getattr(settings,'CAREERS_SUBMISSION_WINDOW_SECONDS',3600)
+        if _submission_count(request,'careers') >= limit:
+            logger.warning('careers submission throttled: ip=%s', _file_access_ip(request))
+            messages.error(request,'Too many applications have been submitted from this connection. Please try again later.')
+            return render(request,'careers.html',{'vacancies':vacancies,'created':None},status=429)
+        _record_submission(request,'careers',window)
+        try:
+            with transaction.atomic():
+                vacancy=get_object_or_404(vacancies,pk=request.POST.get('vacancy_id'))
+                cv=request.FILES.get('cv'); supporting=request.FILES.get('supporting_document')
+                _validate_recruitment_upload(cv,'CV'); _validate_recruitment_upload(supporting,'Supporting document')
+                if not cv: raise ValueError('CV is required.')
+                if request.POST.get('consent')!='yes': raise ValueError('Consent is required to submit the application.')
+                ref=f'ER-APP-{timezone.now():%Y%m%d}-{uuid.uuid4().hex[:6].upper()}'
+                created=HRRecruitment(application_reference=ref,vacancy=vacancy,candidate_name=request.POST.get('candidate_name','').strip(),email=request.POST.get('email','').strip(),phone=request.POST.get('phone','').strip(),department=vacancy.department,position=vacancy.title,country=request.POST.get('country','').strip(),address=request.POST.get('address','').strip(),cover_letter=request.POST.get('cover_letter','').strip(),consent=True,status='PENDING_APPROVAL',cv=cv,supporting_document=supporting)
+                # Anonymous input went straight to the database with no
+                # server-side validation: the HTML maxlength and type=email are
+                # advisory only. On PostgreSQL an over-length field raises
+                # DataError, which is not an IntegrityError and so was not in
+                # EXPECTED_POST_ERRORS - one long field was an unhandled 500.
+                try:
+                    created.full_clean()
+                except ValidationError as exc:
+                    created=None
+                    raise ValueError('; '.join(f'{name}: {" ".join(msgs)}' for name,msgs in exc.message_dict.items()))
+                created.save()
+                approval=ApprovalRequest.objects.create(approval_type='RECRUITMENT_APPLICATION',reference=ref,reason='New public recruitment application requires HR decision: Active / On Hold / Reject.',payload={'application_id':created.pk,'candidate':created.candidate_name,'position':created.position})
+                created.approval=approval; created.save(update_fields=['approval','updated_at'])
+                messages.success(request,f'Application submitted. Your reference is {ref}.')
+        except EXPECTED_POST_ERRORS as exc:
+            created=None
+            _handle_post_error(request,exc)
+    return render(request,'careers.html',{'vacancies':vacancies,'created':created})
+
+@require_http_methods(['GET','POST'])
+def recruitment_tracking(request):
+    application=None; error=''
+    if request.method=='POST':
+        reference=request.POST.get('reference','').strip().upper(); email=request.POST.get('email','').strip().lower()
+        application=HRRecruitment.objects.filter(application_reference=reference,email__iexact=email).select_related('vacancy','department').first()
+        if not application: error='No matching application was found. Check the reference number and email address.'
+    return render(request,'recruitment_tracking.html',{'application':application,'error':error})
+
+@login_required
+def hr_recruitment_applications(request):
+    applications=HRRecruitment.objects.select_related('vacancy','department','approval','hiring_approval','employee','portal_user').order_by('-submitted_at')
+    return render(request,'hr_recruitment_applications.html',{'applications':applications,'vacancies':HRVacancy.objects.select_related('department').order_by('-created_at'),'departments':Department.objects.order_by('name')})
+
 @login_required
 def factory_resource_core(request):
     """Factory resource, workforce, process-minute cost and profit control core."""
@@ -272,12 +368,169 @@ def factory_resource_core(request):
     return render(request,'factory_resource_core.html',ctx)
 
 @login_required
+def bundle_traceability_finder(request):
+    """Find the complete bundle → machine → operator → helper sewing journey."""
+    query=(request.GET.get('bundle') or request.GET.get('machine') or request.GET.get('operator') or request.GET.get('helper') or '').strip()
+    assignments=SewingBundleAssignment.objects.select_related('bundle__plan__order','machine','operator','helper')
+    if request.GET.get('bundle'): assignments=assignments.filter(Q(bundle__barcode=query)|Q(bundle__bundle_no=query))
+    elif request.GET.get('machine'): assignments=assignments.filter(Q(machine__barcode=query)|Q(machine__asset_code=query))
+    elif request.GET.get('operator'): assignments=assignments.filter(operator__employee_id=query)
+    elif request.GET.get('helper'): assignments=assignments.filter(helper__employee_id=query)
+    assignments=assignments.order_by('operation_no')
+    current=assignments.filter(status='IN_PRODUCTION').first() or assignments.exclude(status='COMPLETED').first() or assignments.last()
+    bundle=current.bundle if current else CuttingBundle.objects.filter(Q(barcode=query)|Q(bundle_no=query)).select_related('plan__order').first() if query else None
+    today=timezone.localdate(); all_today=SewingBundleAssignment.objects.filter(created_at__date=today)
+    summary={'today_bundles':CuttingBundle.objects.filter(created_at__date=today).count(),'in_production':all_today.filter(status='IN_PRODUCTION').count(),'completed':all_today.filter(status='COMPLETED').count(),'pending':all_today.filter(status='PENDING').count(),'hold':all_today.filter(status='HOLD').count(),'reject':all_today.filter(status='REJECTED').count()}
+    payload=None
+    if bundle:
+        rows=[]
+        for a in assignments:
+            rows.append({'operation_no':a.operation_no,'operation':a.operation_name,'code':a.operation_code,'workstation':a.workstation,'machine':a.machine.asset_code if a.machine else None,'machine_barcode':a.machine.barcode if a.machine else None,'operator_id':a.operator.employee_id if a.operator else None,'operator':a.operator.name if a.operator else None,'helper_id':a.helper.employee_id if a.helper else None,'helper':a.helper.name if a.helper else None,'active_hm':_hm(a.active_minutes),'output':a.output_qty,'reject':a.reject_qty,'rework':a.rework_qty,'npt':a.npt_minutes,'sam':str(a.standard_sam),'efficiency':str(a.efficiency_percent),'status':a.status})
+        payload={'bundle':bundle.barcode,'bundle_no':bundle.bundle_no,'order':bundle.plan.order.master_order_id,'product':bundle.plan.product,'style':getattr(bundle.plan,'style_no',''),'size':bundle.size,'colour':bundle.colour,'planned_qty':bundle.quantity,'produced_qty':sum(a.output_qty for a in assignments),'reject_qty':sum(a.reject_qty for a in assignments),'status':current.status if current else bundle.status,'current_operation':current.operation_name if current else None,'machine':current.machine.asset_code if current and current.machine else None,'operator':current.operator.name if current and current.operator else None,'helper':current.helper.name if current and current.helper else None,'history':rows}
+    return render(request,'bundle_traceability_finder.html',{'summary':summary,'payload':payload,'query':query,'factories':OrganizationNode.objects.filter(node_type='Factory',active=True),'units':OrganizationNode.objects.filter(node_type='Production Unit',active=True)})
+
+@login_required
+@require_http_methods(['GET','POST'])
+@transaction.atomic
+def sewing_master(request):
+    """Operation Manager sewing control: machine/operator/helper/bundle linkage."""
+    from django.contrib import messages
+    if request.method=='POST':
+        try:
+            with transaction.atomic():
+                action=request.POST.get('action','assign')
+                if action=='assign':
+                    bundle=get_object_or_404(CuttingBundle,Q(barcode=request.POST.get('bundle'))|Q(bundle_no=request.POST.get('bundle')))
+                    machine=get_object_or_404(AssetMachine,Q(barcode=request.POST.get('machine'))|Q(asset_code=request.POST.get('machine')))
+                    operator=get_object_or_404(Employee,employee_id=request.POST.get('operator'))
+                    helper=get_object_or_404(Employee,employee_id=request.POST.get('helper'))
+                    op_no=int(request.POST.get('operation_no') or 1)
+                    assignment,created=SewingBundleAssignment.objects.update_or_create(
+                        bundle=bundle,operation_no=op_no,
+                        defaults={'machine':machine,'operator':operator,'helper':helper,
+                        'operation_name':request.POST.get('operation_name','Sewing Operation'),
+                        'operation_code':request.POST.get('operation_code',''),
+                        'workstation':request.POST.get('workstation',''),'sewing_line':request.POST.get('sewing_line',''),
+                        'standard_sam':Decimal(request.POST.get('standard_sam') or 0),
+                        'target_per_hour':int(request.POST.get('target_per_hour') or 0),
+                        'machine_cost_per_minute':Decimal(request.POST.get('machine_cost_per_minute') or 0),
+                        'labour_cost_per_minute':Decimal(request.POST.get('labour_cost_per_minute') or 0),'status':'PENDING'})
+                    messages.success(request,f'Assignment {"created" if created else "updated"}: {bundle.barcode} → {machine.asset_code}.')
+                else:
+                    assignment=get_object_or_404(SewingBundleAssignment,pk=request.POST.get('assignment_id'))
+                    status={'start':'IN_PRODUCTION','hold':'HOLD','complete':'COMPLETED','reject':'REJECTED'}.get(action)
+                    if not status: raise ValueError('Invalid sewing action.')
+                    assignment.status=status
+                    if action=='start' and not assignment.started_at: assignment.started_at=timezone.now()
+                    if action=='complete': assignment.ended_at=timezone.now()
+                    for name in ['output_qty','reject_qty','rework_qty','npt_minutes','active_minutes']:
+                        if request.POST.get(name) not in (None,''): setattr(assignment,name,int(request.POST[name]))
+                    assignment.save()
+                    messages.success(request,f'{assignment.bundle.barcode} marked {assignment.get_status_display()}.')
+        except EXPECTED_POST_ERRORS as exc: _handle_post_error(request,exc)
+        return redirect('sewing_master')
+    qs=SewingBundleAssignment.objects.select_related('bundle__plan__order','machine','operator','helper').order_by('-updated_at')
+    query=(request.GET.get('machine') or request.GET.get('operator') or request.GET.get('bundle') or request.GET.get('operation') or '').strip()
+    if request.GET.get('machine'): qs=qs.filter(Q(machine__barcode=query)|Q(machine__asset_code=query))
+    elif request.GET.get('operator'): qs=qs.filter(Q(operator__employee_id=query)|Q(helper__employee_id=query))
+    elif request.GET.get('bundle'): qs=qs.filter(Q(bundle__barcode=query)|Q(bundle__bundle_no=query))
+    elif request.GET.get('operation'): qs=qs.filter(Q(operation_name__icontains=query)|Q(operation_code__icontains=query))
+    selected=qs.first()
+    machines=AssetMachine.objects.filter(asset_type='MACHINE')
+    agg=SewingBundleAssignment.objects.filter(created_at__date=timezone.localdate()).aggregate(active=Sum('active_minutes'),output=Sum('output_qty'),reject=Sum('reject_qty'),rework=Sum('rework_qty'),npt=Sum('npt_minutes'),cost=Sum('total_process_cost'))
+    total=machines.count(); active=machines.filter(status='ACTIVE').count()
+    kpis={'total_machines':total,'active_machines':active,'service':machines.filter(status='UNDER_MAINTENANCE').count(),'damaged':machines.filter(Q(status='BREAKDOWN')|Q(condition__in=['POOR','UNSERVICEABLE'])).count(),'waiting':machines.filter(status='HOLD').count(),'assigned':SewingBundleAssignment.objects.filter(status__in=['PENDING','IN_PRODUCTION']).values('machine').distinct().count(),'active_hm':_hm(agg['active'] or 0),'machine_cost':agg['cost'] or 0,'output':agg['output'] or 0,'reject':agg['reject'] or 0,'rework':agg['rework'] or 0,'npt':agg['npt'] or 0}
+    alerts=Alert.objects.filter(actioned=False).filter(Q(reference__icontains='sew')|Q(department__icontains='sew')|Q(title__icontains='sew')).order_by('-created_at')[:8]
+    return render(request,'sewing_master.html',{'assignments':qs[:100],'selected':selected,'query':query,'kpis':kpis,'machines':machines.order_by('asset_code')[:500],'operators':Employee.objects.filter(status='ACTIVE',category='OPERATOR').order_by('employee_id'),'helpers':Employee.objects.filter(status='ACTIVE',category='HELPER').order_by('employee_id'),'bundles':CuttingBundle.objects.exclude(status='REJECTED').order_by('-created_at')[:500],'alerts':alerts})
+
+@login_required
+def sewing_master_report_csv(request):
+    response=HttpResponse(content_type='text/csv'); response['Content-Disposition']='attachment; filename="sewing-master-report.csv"'
+    w=csv.writer(response); w.writerow(['Bundle','Order','Line','Workstation','Operation','Machine','Operator','Helper','Status','SAM','Target/Hr','Active Minutes','Output','Reject','Rework','NPT','Efficiency %','Machine Cost/Min','Labour Cost/Min','Machine Cost','Labour Cost','Total Process Cost','Start','End'])
+    for a in SewingBundleAssignment.objects.select_related('bundle__plan__order','machine','operator','helper').order_by('bundle__barcode','operation_no'):
+        w.writerow([a.bundle.barcode,a.bundle.plan.order.master_order_id,a.sewing_line,a.workstation,a.operation_name,a.machine.asset_code if a.machine else '',a.operator.employee_id if a.operator else '',a.helper.employee_id if a.helper else '',a.status,a.standard_sam,a.target_per_hour,a.active_minutes,a.output_qty,a.reject_qty,a.rework_qty,a.npt_minutes,a.efficiency_percent,a.machine_cost_per_minute,a.labour_cost_per_minute,a.machine_cost,a.labour_cost,a.total_process_cost,a.started_at,a.ended_at])
+    return response
+
+@login_required
 def dashboard(request):
+    """Bangladesh country operations command centre.
+
+    This is deliberately the authenticated landing page.  It consolidates live
+    records instead of displaying the old static page registry, while the full
+    module directory remains available at /global-dashboard/.
+    """
+    today=timezone.localdate()
+    country=(OrganizationNode.objects.filter(node_type='Country',name__icontains='Bangladesh').first())
+    tree=country.descendants() if country else OrganizationNode.objects.all()
+    factories=tree.filter(node_type='Factory',active=True)
+    units=tree.filter(node_type='Production Unit',active=True)
+
+    production_models=[CuttingProductionEntry,EmbroideryProductionEntry,
+                       LabelProductionEntry,HandIronProductionEntry,
+                       PolyPackingEntry,IronProductionEntry,
+                       FinishingProduction,PackingProduction]
+    target=actual=Decimal('0'); total_cost=Decimal('0')
+    for model in production_models:
+        fields={f.name for f in model._meta.fields}
+        qs=model.objects.all()
+        if 'work_date' in fields: qs=qs.filter(work_date=today)
+        elif 'created_at' in fields: qs=qs.filter(created_at__date=today)
+        sums=qs.aggregate(target=Sum('target_qty'),actual=Sum('actual_qty'))
+        target+=Decimal(sums.get('target') or 0); actual+=Decimal(sums.get('actual') or 0)
+        cost_field='total_cost' if 'total_cost' in fields else ('process_cost' if 'process_cost' in fields else None)
+        if cost_field: total_cost+=Decimal(qs.aggregate(v=Sum(cost_field))['v'] or 0)
+    sewing=SewingBundleAssignment.objects.filter(created_at__date=today).aggregate(
+        target=Sum('target_per_hour'),actual=Sum('output_qty'),cost=Sum('total_process_cost'))
+    target+=Decimal(sewing['target'] or 0); actual+=Decimal(sewing['actual'] or 0); total_cost+=Decimal(sewing['cost'] or 0)
+    efficiency=(actual*Decimal('100')/target).quantize(Decimal('0.01')) if target else Decimal('0')
+    active_orders=MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED','HOLD']).count()
+    orders_at_risk=MasterOrder.objects.filter(Q(status='HOLD')|Q(delivery_due__lt=timezone.now())).exclude(status__in=['DELIVERED','COMPLETED']).count()
+    employees=Employee.objects.filter(status='ACTIVE').count()
+    open_alerts=Alert.objects.filter(actioned=False).order_by('-created_at')
+    stock_value=sum((lot.total_value for lot in MaterialLot.objects.all()),Decimal('0'))
+    ctx={
+      'country':country,'factories':factories,'units':units,'today':today,
+      'kpis':{'factories':factories.count(),'units':units.count(),'orders':active_orders,
+              'employees':employees,'output':actual,'efficiency':efficiency,
+              'cost':total_cost,'risk':orders_at_risk,'stock_value':stock_value},
+      'alerts':open_alerts[:8],'red_alerts':open_alerts.filter(level='RED').count(),
+      'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:8],
+      'recent_orders':MasterOrder.objects.order_by('-updated_at')[:8],
+    }
+    return render(request,'bangladesh_command_center.html',ctx)
+
+@login_required
+def api_country_command_center(request):
+    """Small live endpoint used by the command page auto-refresh."""
+    today=timezone.localdate()
+    payload={
+      'factories':OrganizationNode.objects.filter(node_type='Factory',active=True).count(),
+      'units':OrganizationNode.objects.filter(node_type='Production Unit',active=True).count(),
+      'employees':Employee.objects.filter(status='ACTIVE').count(),
+      'orders':MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED','HOLD']).count(),
+      'risk':MasterOrder.objects.filter(Q(status='HOLD')|Q(delivery_due__lt=timezone.now())).exclude(status__in=['DELIVERED','COMPLETED']).count(),
+      'alerts':Alert.objects.filter(actioned=False).count(),
+      'red_alerts':Alert.objects.filter(actioned=False,level='RED').count(),
+      'as_of':timezone.localtime().isoformat(),'date':today.isoformat(),
+    }
+    return JsonResponse(payload)
+
+@login_required
+def global_dashboard(request):
+    """The full module directory.
+
+    Handing /dashboard/ to the country command centre left this listing with no
+    route at all: the command centre's docstring pointed at /p/global-dashboard/,
+    but no DashboardPage carries that slug, so the link 404'd and
+    templates/dashboard.html was rendered by nothing. Every one of the 95
+    registered modules was then reachable only by typing its /p/<slug>/ URL.
+    """
     pages=DashboardPage.objects.filter(enabled=True).order_by('page_id')
     return render(request,'dashboard.html',{'pages':pages,'orders':MasterOrder.objects.order_by('-updated_at')[:8]})
 
 @login_required
 def page_view(request,slug):
+    if slug=='sewing-dashboard': return redirect('sewing_master')
     if slug=='stock-material-master': return redirect('stock_material_master')
     if slug=='asset-machine-master': return redirect('asset_machine_master')
     if slug=='buyer-opportunity': return redirect('buyer_opportunity')
@@ -486,12 +739,90 @@ def api_report_master(request):
 def barcode_master(request):
     created=None
     if request.method=='POST':
-        code=request.POST.get('code','').strip() or f'BUNDLE-{timezone.now():%Y%m%d%H%M%S}'
-        typ=request.POST.get('asset_type','BUNDLE')
-        ref=request.POST.get('reference','').strip()
-        asset,_=BarcodeAsset.objects.get_or_create(code=code,defaults={'asset_type':typ,'reference':ref,'payload':{'created_by':request.user.username}})
-        created=asset
-    return render(request,'barcode_master.html',{'created':created,'assets':BarcodeAsset.objects.order_by('-created_at')[:50]})
+        from django.contrib import messages
+        typ=request.POST.get('asset_type','BUNDLE').upper().strip()
+        ref=request.POST.get('reference','').upper().strip()
+        code=request.POST.get('code','').upper().strip() or f'{typ}-{timezone.now():%Y%m%d%H%M%S}'
+        payload={k:request.POST.get(k,'').strip() for k in ['order_no','style_no','bundle_no','part_no','operation_code','machine_code','employee_id','quantity'] if request.POST.get(k)}
+        try:
+            allowed={x[0] for x in BarcodeAsset.TYPES}
+            if typ not in allowed: raise ValueError('Select a valid barcode type.')
+            if not re.fullmatch(r'[A-Z0-9][A-Z0-9._/-]{3,179}',code): raise ValueError('Use 4–180 characters: A–Z, 0–9, dash, dot, slash or underscore only.')
+            if not ref: raise ValueError('Reference is required for traceability.')
+            if BarcodeAsset.objects.filter(code=code).exists(): raise ValueError('Duplicate barcode found. Every barcode must be unique.')
+            payload.update({'created_by':request.user.username,'generated_at':timezone.now().isoformat()})
+            created=BarcodeAsset.objects.create(code=code,asset_type=typ,reference=ref,payload=payload)
+            messages.success(request,f'{code} generated and verified successfully.')
+        except (ValueError,IntegrityError) as exc:
+            messages.error(request,str(exc))
+    return render(request,'barcode_master.html',{'created':created,'types':BarcodeAsset.TYPES,'assets':BarcodeAsset.objects.order_by('-created_at')[:50]})
+
+@login_required
+def barcode_instruction_center(request,mode='generation'):
+    generation=['barcode_generation_instruction_14.png','barcode_generation_instruction.png']
+    scan=['barcode_scan_instruction_operator.png','barcode_scan_instruction.png']
+    trace=['barcode_master_1.png','barcode_master_2.png','barcode_master_3.png']
+    groups={'generation':generation,'scan':scan,'traceability':trace}
+    mode=mode if mode in groups else 'generation'
+    return render(request,'barcode_instruction_center.html',{'mode':mode,'images':groups[mode],'groups':groups})
+
+def _scan_expected(assignment,step):
+    bundle=assignment.bundle
+    values={
+        'BUNDLE':bundle.barcode,
+        'PART':f'HP{assignment.operation_no:02d}-{bundle.bundle_no}',
+        'MACHINE':assignment.machine.barcode if assignment.machine else '',
+        'OPERATOR':assignment.operator.employee_id if assignment.operator else '',
+        'HELPER':assignment.helper.employee_id if assignment.helper else '',
+    }
+    return values.get(step,'')
+
+@login_required
+@require_http_methods(['GET','POST'])
+def barcode_scan_control(request):
+    """Sequential production scan control. A wrong scan is recorded and blocked."""
+    from django.contrib import messages
+    state=request.session.get('barcode_scan_state',{})
+    if request.GET.get('reset')=='1':
+        state={}; request.session['barcode_scan_state']=state
+    if request.method=='POST':
+        step=request.POST.get('scan_type','').upper().strip(); code=request.POST.get('code','').upper().strip()
+        sequence=['BUNDLE','PART','MACHINE','OPERATOR','HELPER']
+        bundle=None; assignment=None; expected=''; accepted=False; reason=''
+        try:
+            if step not in sequence: raise ValueError('Invalid scan type.')
+            if not code: raise ValueError('Scan value is required.')
+            required=sequence[len(state.get('accepted',[]))] if len(state.get('accepted',[])) < len(sequence) else None
+            if step!=required: raise ValueError(f'Out of sequence. Scan {required or "RESET"} next.')
+            if step=='BUNDLE':
+                bundle=CuttingBundle.objects.filter(Q(barcode=code)|Q(bundle_no=code)).first()
+                if not bundle: raise ValueError('Wrong or unknown bundle barcode.')
+                assignment=bundle.sewing_assignments.exclude(status='COMPLETED').order_by('operation_no').first()
+                if not assignment: raise ValueError('No pending sewing operation is assigned to this bundle.')
+                expected=bundle.barcode
+                state={'assignment_id':assignment.pk,'bundle_id':bundle.pk,'accepted':[]}
+            else:
+                assignment=SewingBundleAssignment.objects.select_related('bundle','machine','operator','helper').get(pk=state.get('assignment_id'))
+                bundle=assignment.bundle; expected=_scan_expected(assignment,step).upper()
+                if not expected or code not in {expected, getattr(assignment.machine,'asset_code','').upper() if step=='MACHINE' else expected}:
+                    raise ValueError(f'Wrong {step.lower()}. Expected {expected or "assigned record"}.')
+            state.setdefault('accepted',[]).append({'type':step,'code':code})
+            accepted=True; reason='Correct scan'
+            if step=='HELPER':
+                assignment.status='IN_PRODUCTION'
+                if not assignment.started_at: assignment.started_at=timezone.now()
+                assignment.save(update_fields=['status','started_at','updated_at'])
+                reason='All validations passed. Production started.'
+            request.session['barcode_scan_state']=state
+            messages.success(request,reason)
+        except (ValueError,SewingBundleAssignment.DoesNotExist) as exc:
+            reason=str(exc); messages.error(request,f'PRODUCTION BLOCKED — {reason}')
+            assignment=SewingBundleAssignment.objects.filter(pk=state.get('assignment_id')).select_related('bundle').first()
+            bundle=assignment.bundle if assignment else bundle
+        BarcodeScanEvent.objects.create(scan_type=step or 'BUNDLE',scanned_code=code,expected_code=expected,result='ACCEPTED' if accepted else 'BLOCKED',reason=reason,bundle=bundle,assignment=assignment,performed_by=request.user,workstation=request.POST.get('workstation',''),metadata={'session_sequence':state.get('accepted',[])})
+        return redirect('barcode_scan_control')
+    assignment=SewingBundleAssignment.objects.filter(pk=state.get('assignment_id')).select_related('bundle__plan__order','machine','operator','helper').first()
+    return render(request,'barcode_scan_control.html',{'state':state,'assignment':assignment,'sequence':['BUNDLE','PART','MACHINE','OPERATOR','HELPER'],'events':BarcodeScanEvent.objects.select_related('bundle','assignment','performed_by')[:30]})
 
 @login_required
 def barcode_png(request,code):
@@ -555,6 +886,61 @@ def api_approval_request(request):
     obj=ApprovalRequest.objects.create(approval_type=str(payload.get('approval_type','GENERAL')).strip().upper(),reference=reference,requested_by=request.user,reason=str(payload.get('reason','')),payload=payload.get('payload') or {})
     return JsonResponse({'ok':True,'approval_id':obj.id,'status':obj.status})
 
+class ApprovalConflict(ValueError):
+    """Raised when an already-decided ApprovalRequest is decided a second time.
+
+    Subclasses ValueError so a form-based caller inside EXPECTED_POST_ERRORS
+    reports it to the operator, while api_approval_decision can still catch it
+    separately and answer 409.
+    """
+
+
+def _apply_approval_decision(request, approval, decision, reason=None):
+    """Decide an ApprovalRequest under the four rules of TECHNICAL_ASSESSMENT.md 4.1.
+
+    This lives apart from api_approval_decision because the HR recruitment
+    screen also decides approvals. It previously wrote ApprovalRequest.status
+    inline, which skipped the role check, the self-approval check, the
+    already-decided check and the append-only log - so a rejected recruitment
+    approval could be flipped to APPROVED with a second POST and nothing
+    recorded it. Any future caller that decides an approval must come through
+    here rather than assigning .status itself.
+
+    Raises ValueError for a bad decision value, PermissionError for rules 1
+    and 2, and ApprovalConflict for rule 3.
+    """
+    if decision not in {'APPROVED','REJECTED'}:
+        raise ValueError('decision must be APPROVED or REJECTED')
+
+    if not can_decide_approval(request.user, approval.approval_type):
+        _log_authorization_refusal(request, f'approval_type={approval.approval_type!r}')
+        raise PermissionError('You do not hold a role permitted to decide this approval type.')
+
+    if approval.requested_by_id and approval.requested_by_id == request.user.id:
+        _log_authorization_refusal(request, f'self-approval of approval {approval.pk}')
+        raise PermissionError('You cannot decide an approval request you raised yourself.')
+
+    if approval.status != 'PENDING':
+        raise ApprovalConflict(
+            f'This request was already {approval.status.lower()} and cannot be decided again.')
+
+    previous_status=approval.status
+    approval.status=decision
+    approval.approved_by=request.user
+    approval.approved_at=timezone.now()
+    if reason is not None:
+        approval.reason=reason
+    approval.save(update_fields=['status','approved_by','approved_at','reason','updated_at'])
+
+    ApprovalDecisionLog.objects.create(
+        approval=approval,decided_by=request.user,previous_status=previous_status,
+        decision=decision,reason=reason or '',
+        approver_roles=','.join(sorted(user_roles(request.user)))[:255],
+        ip=_file_access_ip(request),
+        user_agent=request.META.get('HTTP_USER_AGENT','')[:500],
+    )
+
+
 @login_required
 @require_http_methods(['POST'])
 @transaction.atomic
@@ -594,34 +980,18 @@ def api_approval_decision(request,pk):
         return JsonResponse({'ok':False,'error':'Request body must be a JSON object.'},status=400)
 
     decision=str(payload.get('decision','')).strip().upper()
-    if decision not in {'APPROVED','REJECTED'}:
-        return JsonResponse({'ok':False,'error':'decision must be APPROVED or REJECTED'},status=400)
+    reason=str(payload['reason']) if 'reason' in payload else None
 
-    if not can_decide_approval(request.user,obj.approval_type):
-        _log_authorization_refusal(request,f'approval_type={obj.approval_type!r}')
-        return JsonResponse({'ok':False,'error':'You do not hold a role permitted to decide this approval type.'},status=403)
-
-    if obj.requested_by_id and obj.requested_by_id==request.user.id:
-        _log_authorization_refusal(request,f'self-approval of approval {obj.pk}')
-        return JsonResponse({'ok':False,'error':'You cannot decide an approval request you raised yourself.'},status=403)
-
-    if obj.status!='PENDING':
-        return JsonResponse({'ok':False,'error':f'This request was already {obj.status.lower()} and cannot be decided again.','status':obj.status},status=409)
-
-    previous_status=obj.status
-    obj.status=decision
-    obj.approved_by=request.user
-    obj.approved_at=timezone.now()
-    obj.reason=str(payload.get('reason',obj.reason))
-    obj.save(update_fields=['status','approved_by','approved_at','reason','updated_at'])
-
-    ApprovalDecisionLog.objects.create(
-        approval=obj,decided_by=request.user,previous_status=previous_status,
-        decision=decision,reason=str(payload.get('reason','')),
-        approver_roles=','.join(sorted(user_roles(request.user)))[:255],
-        ip=_file_access_ip(request),
-        user_agent=request.META.get('HTTP_USER_AGENT','')[:500],
-    )
+    # The four rules live in _apply_approval_decision so that every caller gets
+    # them; this endpoint only maps the outcome onto HTTP.
+    try:
+        _apply_approval_decision(request,obj,decision,reason)
+    except ApprovalConflict as exc:
+        return JsonResponse({'ok':False,'error':str(exc),'status':obj.status},status=409)
+    except PermissionError as exc:
+        return JsonResponse({'ok':False,'error':str(exc)},status=403)
+    except ValueError as exc:
+        return JsonResponse({'ok':False,'error':str(exc)},status=400)
     return JsonResponse({'ok':True,'approval_id':obj.id,'status':obj.status})
 
 @login_required
@@ -2254,6 +2624,58 @@ def hr_dashboard(request):
                         cv=request.FILES.get('cv') or None,created_by=request.user
                     )
                     messages.success(request,'Recruitment candidate added.')
+                elif action=='vacancy':
+                    seq=HRVacancy.objects.filter(created_at__date=today).count()+1
+                    HRVacancy.objects.create(reference=f'VAC-{timezone.now():%Y%m%d}-{seq:03d}',title=request.POST.get('title','').strip(),department=Department.objects.filter(pk=request.POST.get('department_id')).first(),location=request.POST.get('location','').strip() or 'Limerick, Ireland',employment_type=request.POST.get('employment_type','Full Time'),description=request.POST.get('description','').strip(),requirements=request.POST.get('requirements','').strip(),closing_date=request.POST.get('closing_date') or None,status=request.POST.get('status','DRAFT'),created_by=request.user)
+                    messages.success(request,'Vacancy saved.')
+                elif action=='recruitment_decision':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'))
+                    decision=request.POST.get('decision')
+                    if decision not in {'ACTIVE','ON_HOLD','REJECTED'}: raise ValueError('Select Active, On Hold or Reject.')
+                    # Only an undecided application may be decided. Without this
+                    # a HIRED or REJECTED candidate could be reset to ACTIVE.
+                    if app.status not in {'PENDING_APPROVAL','ON_HOLD'}:
+                        raise ValueError(f'{app.application_reference} is already at the {app.get_status_display()} stage and cannot be decided again.')
+                    # ON_HOLD is not a decision: the approval stays PENDING so it
+                    # can still be decided later. Active and Reject go through
+                    # _apply_approval_decision, which enforces the role check,
+                    # the self-approval check and the already-decided check, and
+                    # writes the append-only ApprovalDecisionLog.
+                    if decision!='ON_HOLD' and app.approval_id:
+                        approval=ApprovalRequest.objects.select_for_update().get(pk=app.approval_id)
+                        _apply_approval_decision(request,approval,
+                            'APPROVED' if decision=='ACTIVE' else 'REJECTED',
+                            reason=request.POST.get('reason','').strip() or None)
+                    app.status=decision; app.reviewed_by=request.user
+                    app.save(); messages.success(request,f'{app.application_reference} marked {app.get_status_display()}.')
+                elif action=='recruitment_advance':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'))
+                    transitions={'ACTIVE':'SCREENING','SCREENING':'INTERVIEW','INTERVIEW':'SELECTION','SELECTION':'DOCUMENT_VERIFICATION'}
+                    if app.status not in transitions: raise ValueError('This application cannot advance from its current stage.')
+                    app.status=transitions[app.status]; app.reviewed_by=request.user; app.save(); messages.success(request,f'Application advanced to {app.get_status_display()}.')
+                elif action=='request_hiring_approval':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'),status='DOCUMENT_VERIFICATION')
+                    approval=ApprovalRequest.objects.create(approval_type='RECRUITMENT_HIRING',reference=app.application_reference,requested_by=request.user,reason='Candidate passed screening, interview, selection and document verification.',payload={'application_id':app.pk,'candidate':app.candidate_name,'position':app.position})
+                    app.hiring_approval=approval; app.status='HIRING_APPROVAL'; app.save(); messages.success(request,'Hiring approval requested.')
+                elif action=='create_recruitment_employee':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'),status='HIRING_APPROVAL')
+                    if not app.hiring_approval or app.hiring_approval.status!='APPROVED': raise ValueError('Hiring approval must be approved before Employee ID creation.')
+                    emp_id=request.POST.get('employee_id','').strip() or f'ER-{timezone.now():%Y}-{app.pk:05d}'
+                    app.employee=Employee.objects.create(employee_id=emp_id,name=app.candidate_name,role=app.position,department=app.department,category=request.POST.get('category','STAFF'),status='ONBOARDING')
+                    app.save(); messages.success(request,f'Employee ID {emp_id} created. Portal permission is still required.')
+                elif action=='grant_recruitment_portal':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'),employee__isnull=False,portal_user__isnull=True)
+                    base=(app.email.split('@')[0] if app.email else app.employee.employee_id).lower(); username=re.sub(r'[^a-z0-9._-]','',base) or app.employee.employee_id.lower()
+                    if User.objects.filter(username=username).exists(): username=f'{username}-{app.pk}'
+                    user=User.objects.create(username=username,email=app.email,is_active=False); user.set_unusable_password(); user.save(); user.groups.add(Group.objects.get_or_create(name='Staff')[0])
+                    StaffSelfServiceProfile.objects.create(user=user,employee=app.employee,designation=app.position,phone=app.phone,email=app.email,active=False)
+                    app.portal_user=user; app.portal_permission_at=timezone.now(); app.save(); messages.success(request,'Portal permission created. Login remains inactive until activation.')
+                elif action=='activate_recruitment_access':
+                    app=get_object_or_404(HRRecruitment,pk=request.POST.get('application_id'),employee__isnull=False,portal_user__isnull=False)
+                    app.portal_user.is_active=True; app.portal_user.save(update_fields=['is_active'])
+                    profile=app.portal_user.staff_self_service_profile; profile.active=True; profile.save(update_fields=['active','updated_at'])
+                    app.employee.status='ACTIVE'; app.employee.save(update_fields=['status','updated_at'])
+                    app.mobile_app_activated_at=timezone.now(); app.status='HIRED'; app.save(); messages.success(request,'Login and mobile-app access activated. Recruitment record is linked to Staff Self-Service.')
                 elif action=='leave_decision':
                     leave=get_object_or_404(HRLeaveRequest,pk=request.POST.get('leave_id'))
                     leave.status=request.POST.get('status','PENDING')
@@ -2282,7 +2704,8 @@ def hr_dashboard(request):
     leave=HRLeaveRequest.objects.select_related('employee').order_by('-created_at')
     docs=StaffDocument.objects.select_related('employee').order_by('-created_at')
     applications=StaffApplication.objects.select_related('employee').order_by('-created_at')
-    recruitment=HRRecruitment.objects.select_related('department').order_by('-created_at')
+    recruitment=HRRecruitment.objects.select_related('department','vacancy','approval','hiring_approval','employee','portal_user').order_by('-created_at')
+    vacancies=HRVacancy.objects.select_related('department').order_by('-created_at')
     training=HRTrainingRecord.objects.select_related('employee').order_by('due_date')
     cases=HRComplaintIncident.objects.select_related('employee').order_by('-created_at')
     performance=HRPerformanceReview.objects.filter(created_at__date__gte=year_start)
@@ -2336,7 +2759,7 @@ def hr_dashboard(request):
     ctx={
       'page':DashboardPage.objects.filter(slug='hr-dashboard').first(),
       'today':today,'departments':Department.objects.all().order_by('name'),
-      'employees':employees[:100],'recruitment':recruitment[:20],'leave_rows':leave[:20],
+      'employees':employees[:100],'recruitment':recruitment[:100],'vacancies':vacancies[:100],'leave_rows':leave[:20],
       'training_rows':training[:20],'case_rows':cases[:20],'docs':docs[:100],
       'total_employees':employees.count(),'active_employees':active.count(),'inactive_employees':inactive.count(),
       'pending_joining':pending_joining,'new_joiners':new_joiners,'on_leave':approved_leave,

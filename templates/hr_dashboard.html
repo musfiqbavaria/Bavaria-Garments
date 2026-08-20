@@ -738,6 +738,7 @@
         </div>
         <div class="card" id="recruitment">
           <h2>RECRUITMENT / PENDING JOINING</h2>
+          <p><a class="btn" href="{% url 'hr_recruitment_applications' %}">Open Recruitment & Hiring Applications</a></p>
           <form method="post" enctype="multipart/form-data" class="form">
             {% csrf_token %}<input
               type="hidden"

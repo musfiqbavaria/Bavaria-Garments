@@ -65,14 +65,28 @@ ROUTE_POLICY = {
     'wishlist_portal': PUBLIC,
     'login': PUBLIC,
     'logout': PUBLIC,
+    'careers': PUBLIC,
+    'recruitment_tracking': PUBLIC,
 
     # --- navigation, self-service and shared tools -------------------------
     'dashboard': AUTHENTICATED,
+    # Refresh feed behind the command centre. It is the same classification as
+    # 'dashboard' because it returns the same aggregate counts that page shows;
+    # without an entry here the deny-by-default middleware would 403 it and the
+    # auto-refresh would fail silently.
+    'api_country_command_center': AUTHENTICATED,
+    # The 95-module directory. Same classification as 'dashboard', which it used
+    # to be before the command centre took that route.
+    'global_dashboard': AUTHENTICATED,
     'page': AUTHENTICATED,
     'forms_master': AUTHENTICATED,
     'api_summary': AUTHENTICATED,
     'barcode_master': AUTHENTICATED,
     'barcode_png': AUTHENTICATED,
+    'barcode_instruction_center': AUTHENTICATED,
+    # Workstation scanner is intentionally available to assigned Operators and
+    # Helpers; every decision is validated and written to BarcodeScanEvent.
+    'barcode_scan_control': AUTHENTICATED,
     'staff_self_service': AUTHENTICATED,
     'api_staff_self_service': AUTHENTICATED,
     # Every user may raise an approval request; only senior roles may decide one.
@@ -109,6 +123,7 @@ ROUTE_POLICY = {
 
     # --- HR and workforce --------------------------------------------------
     **_spread(['hr_dashboard', 'api_hr_dashboard'], roles.HR),
+    'hr_recruitment_applications': roles.HR,
     **_spread(['attendance_dashboard', 'attendance_export_csv',
                'api_attendance_dashboard', 'api_attendance_summary'], roles.HR),
 
@@ -131,6 +146,8 @@ ROUTE_POLICY = {
     # --- production --------------------------------------------------------
     **_spread([
         'factory_resource_core',
+        'bundle_traceability_finder',
+        'sewing_master', 'sewing_master_report_csv',
         'cutting_dashboard', 'cutting_report_csv', 'api_cutting_dashboard',
         'embroidery_dashboard', 'embroidery_report_csv', 'api_embroidery_dashboard',
         'label_dashboard', 'label_report_csv', 'api_label_dashboard',

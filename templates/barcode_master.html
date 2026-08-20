@@ -1,61 +1,12 @@
-{% extends 'base.html' %}{% block title %}Bundle Barcode Master{% endblock %}{% block content %}
-<section class="wrap">
-  <div class="pagehead">
-    <div>
-      <h1>#68 Bundle Barcode Generator Master</h1>
-      <p>
-        Unique QR/barcode references for bundles, stock, products, cartons,
-        employees, assets and documents.
-      </p>
-    </div>
-    <div class="pill">TRACEABILITY</div>
-  </div>
+{% extends 'base.html' %}{% block title %}Barcode Generation Master{% endblock %}{% block content %}
+<section class="wrap barcode-hub">
+  <div class="pagehead"><div><h1>Barcode Generation & Traceability Master</h1><p>Accurate • Unique • Traceable • Error Free</p></div><div class="pill">SMART FACTORY</div></div>
+  <nav class="barcode-nav"><a href="{% url 'barcode_instruction_center' 'generation' %}">Generation Instructions</a><a href="{% url 'barcode_instruction_center' 'scan' %}">Scan Instructions</a><a href="{% url 'barcode_instruction_center' 'traceability' %}">14-Part Traceability</a><a class="primary" href="{% url 'barcode_scan_control' %}">Live Scan & Validate</a><a href="{% url 'bundle_traceability_finder' %}">Traceability Finder</a></nav>
   <div class="split">
-    <form method="post" class="panel formpanel">
-      {% csrf_token %}
-      <h2>Generate</h2>
-      <label
-        >Code<input name="code" placeholder="BUNDLE-MO-2026-0001-001" /></label
-      ><label
-        >Type<select name="asset_type">
-          <option>BUNDLE</option>
-          <option>MATERIAL</option>
-          <option>STOCK</option>
-          <option>PRODUCT</option>
-          <option>CARTON</option>
-          <option>EMPLOYEE</option>
-          <option>ASSET</option>
-          <option>DOCUMENT</option>
-        </select></label
-      ><label
-        >Reference<input name="reference" placeholder="MO-2026-0001" /></label
-      ><button>Generate QR</button>{% if created %}
-      <div class="qr">
-        <img src="/barcode/{{ created.code }}.png" /><b>{{ created.code }}</b>
-      </div>
-      {% endif %}
+    <form method="post" class="panel formpanel">{% csrf_token %}<h2>Generate verified barcode</h2>
+      <label>Barcode Type<select name="asset_type">{% for value,label in types %}<option value="{{value}}">{{label}}</option>{% endfor %}</select></label><label>Unique Code<input name="code" required placeholder="HB-240516-000125" pattern="[A-Za-z0-9][A-Za-z0-9._/-]{3,179}"></label><label>Master Reference<input name="reference" required placeholder="ORD-240516-000125"></label><label>Order No.<input name="order_no"></label><label>Style No.<input name="style_no"></label><label>Bundle No.<input name="bundle_no"></label><label>Part No.<input name="part_no" placeholder="01–14"></label><label>Operation Code<input name="operation_code"></label><label>Machine Code<input name="machine_code"></label><label>Employee ID<input name="employee_id"></label><label>Quantity<input name="quantity" type="number" min="0"></label><button>Confirm, Save & Generate</button>
+      {% if created %}<div class="qr"><img src="{% url 'barcode_png' created.code %}"><b>{{created.code}}</b><a href="{% url 'barcode_png' created.code %}" download>Download / Print</a></div>{% endif %}
     </form>
-    <section class="panel">
-      <h2>Recent Codes</h2>
-      <table>
-        <tr>
-          <th>Code</th>
-          <th>Type</th>
-          <th>Reference</th>
-          <th>QR</th>
-        </tr>
-        {% for a in assets %}
-        <tr>
-          <td>{{ a.code }}</td>
-          <td>{{ a.asset_type }}</td>
-          <td>{{ a.reference }}</td>
-          <td>
-            <a href="/barcode/{{ a.code }}.png" target="_blank">Preview</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </table>
-    </section>
+    <section class="panel"><h2>Recent unique codes</h2><table><tr><th>Code</th><th>Type</th><th>Reference</th><th>Generated</th><th>QR</th></tr>{% for a in assets %}<tr><td>{{a.code}}</td><td>{{a.asset_type}}</td><td>{{a.reference}}</td><td>{{a.created_at|date:'d M Y H:i'}}</td><td><a href="{% url 'barcode_png' a.code %}" target="_blank">Preview</a></td></tr>{% empty %}<tr><td colspan="5">No barcodes generated yet.</td></tr>{% endfor %}</table></section>
   </div>
-</section>
-{% endblock %}
+</section>{% endblock %}

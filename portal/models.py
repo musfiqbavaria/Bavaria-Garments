@@ -300,12 +300,29 @@ class BarcodeAsset(TimeStamped):
     scope=models.ForeignKey(OrganizationNode,null=True,blank=True,on_delete=models.PROTECT,related_name='%(class)s_records',db_index=True)
     all_objects=models.Manager()
     objects=ScopedManager()
-    TYPES=[(x,x) for x in ['BUNDLE','MATERIAL','STOCK','PRODUCT','CARTON','EMPLOYEE','ASSET','DOCUMENT']]
+    TYPES=[(x,x) for x in ['ORDER','STYLE','BUNDLE','PART','OPERATION','MACHINE','OPERATOR','HELPER','MATERIAL','STOCK','PRODUCT','CARTON','EMPLOYEE','ASSET','DOCUMENT']]
     code=models.CharField(max_length=180,unique=True); asset_type=models.CharField(max_length=30,choices=TYPES); reference=models.CharField(max_length=120,blank=True,db_index=True); payload=models.JSONField(default=dict); active=models.BooleanField(default=True,db_index=True)
 
     class Meta:
         base_manager_name='all_objects'
         default_manager_name='all_objects'
+
+class BarcodeScanEvent(TimeStamped):
+    """Immutable production scan decision used for traceability and blocking."""
+    RESULTS=[(x,x.replace('_',' ').title()) for x in ['ACCEPTED','BLOCKED','WARNING']]
+    scan_type=models.CharField(max_length=30,choices=BarcodeAsset.TYPES,db_index=True)
+    scanned_code=models.CharField(max_length=180,db_index=True)
+    expected_code=models.CharField(max_length=180,blank=True,db_index=True)
+    result=models.CharField(max_length=20,choices=RESULTS,db_index=True)
+    reason=models.CharField(max_length=255,blank=True)
+    bundle=models.ForeignKey('CuttingBundle',null=True,blank=True,on_delete=models.PROTECT,related_name='barcode_scan_events')
+    assignment=models.ForeignKey('SewingBundleAssignment',null=True,blank=True,on_delete=models.PROTECT,related_name='barcode_scan_events')
+    performed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='barcode_scan_events')
+    workstation=models.CharField(max_length=80,blank=True)
+    metadata=models.JSONField(default=dict,blank=True)
+
+    class Meta:
+        ordering=['-created_at']
 
 class FinanceTransaction(TimeStamped):
     #: Organisation site this record belongs to. Null means unassigned and,
@@ -1294,16 +1311,44 @@ class StaffEvent(TimeStamped):
     details=models.TextField(blank=True)
 
 
+class HRVacancy(TimeStamped):
+    STATUS=[(x,x.title()) for x in ['DRAFT','PUBLISHED','ON_HOLD','CLOSED']]
+    reference=models.CharField(max_length=80,unique=True)
+    title=models.CharField(max_length=180)
+    department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL,related_name='vacancies')
+    location=models.CharField(max_length=180,default='Limerick, Ireland')
+    employment_type=models.CharField(max_length=80,default='Full Time')
+    description=models.TextField()
+    requirements=models.TextField(blank=True)
+    closing_date=models.DateField(null=True,blank=True)
+    status=models.CharField(max_length=20,choices=STATUS,default='DRAFT',db_index=True)
+    created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
+
 class HRRecruitment(TimeStamped):
-    STATUS=[(x,x.replace('_',' ').title()) for x in ['OPEN','SHORTLISTED','INTERVIEW','OFFERED','HIRED','REJECTED','CLOSED']]
+    STATUS=[(x,x.replace('_',' ').title()) for x in ['PENDING_APPROVAL','ACTIVE','ON_HOLD','SCREENING','INTERVIEW','SELECTION','DOCUMENT_VERIFICATION','HIRING_APPROVAL','HIRED','REJECTED','CLOSED','OPEN','SHORTLISTED','OFFERED']]
+    application_reference=models.CharField(max_length=80,unique=True,null=True,blank=True,db_index=True)
+    vacancy=models.ForeignKey(HRVacancy,null=True,blank=True,on_delete=models.SET_NULL,related_name='applications')
     candidate_name=models.CharField(max_length=180)
     email=models.EmailField(blank=True)
     phone=models.CharField(max_length=80,blank=True)
     department=models.ForeignKey(Department,null=True,blank=True,on_delete=models.SET_NULL)
     position=models.CharField(max_length=160)
-    status=models.CharField(max_length=30,choices=STATUS,default='OPEN',db_index=True)
+    country=models.CharField(max_length=80,blank=True)
+    address=models.TextField(blank=True)
+    cover_letter=models.TextField(blank=True)
+    consent=models.BooleanField(default=False)
+    submitted_at=models.DateTimeField(default=timezone.now,db_index=True)
+    status=models.CharField(max_length=30,choices=STATUS,default='PENDING_APPROVAL',db_index=True)
     joining_date=models.DateField(null=True,blank=True)
     cv=models.FileField(upload_to='hr/recruitment/%Y/%m/',blank=True)
+    supporting_document=models.FileField(upload_to='hr/recruitment/supporting/%Y/%m/',blank=True)
+    approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='recruitment_activation_requests')
+    hiring_approval=models.ForeignKey(ApprovalRequest,null=True,blank=True,on_delete=models.SET_NULL,related_name='recruitment_hiring_requests')
+    employee=models.OneToOneField(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='recruitment_record')
+    portal_user=models.OneToOneField(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='recruitment_record')
+    portal_permission_at=models.DateTimeField(null=True,blank=True)
+    mobile_app_activated_at=models.DateTimeField(null=True,blank=True)
+    reviewed_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL,related_name='recruitment_reviews')
     created_by=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL)
 
 class HRLeaveRequest(TimeStamped):
@@ -1551,6 +1596,37 @@ class CuttingBundle(TimeStamped):
     stock_in_scan=models.CharField(max_length=180,blank=True)
     stock_out_scan=models.CharField(max_length=180,blank=True)
     next_department=models.CharField(max_length=100,default='Sewing')
+
+class SewingBundleAssignment(TimeStamped):
+    STATUS=[(x,x.replace('_',' ').title()) for x in ['PENDING','IN_PRODUCTION','COMPLETED','HOLD','REJECTED']]
+    bundle=models.ForeignKey(CuttingBundle,on_delete=models.PROTECT,related_name='sewing_assignments')
+    machine=models.ForeignKey(AssetMachine,null=True,blank=True,on_delete=models.PROTECT,related_name='sewing_bundle_assignments')
+    operator=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='sewing_operator_assignments')
+    helper=models.ForeignKey(Employee,null=True,blank=True,on_delete=models.SET_NULL,related_name='sewing_helper_assignments')
+    operation_no=models.PositiveSmallIntegerField(default=1); operation_name=models.CharField(max_length=140); operation_code=models.CharField(max_length=40,blank=True)
+    workstation=models.CharField(max_length=80,blank=True); sewing_line=models.CharField(max_length=80,blank=True)
+    standard_sam=models.DecimalField(max_digits=10,decimal_places=4,default=0); target_per_hour=models.PositiveIntegerField(default=0)
+    started_at=models.DateTimeField(null=True,blank=True,db_index=True); ended_at=models.DateTimeField(null=True,blank=True)
+    active_minutes=models.PositiveIntegerField(default=0); output_qty=models.PositiveIntegerField(default=0)
+    reject_qty=models.PositiveIntegerField(default=0); rework_qty=models.PositiveIntegerField(default=0); npt_minutes=models.PositiveIntegerField(default=0)
+    efficiency_percent=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    machine_cost_per_minute=models.DecimalField(max_digits=12,decimal_places=4,default=0)
+    labour_cost_per_minute=models.DecimalField(max_digits=12,decimal_places=4,default=0)
+    machine_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    labour_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    total_process_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=30,choices=STATUS,default='PENDING',db_index=True)
+    notes=models.TextField(blank=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['bundle','operation_no'],name='uq_bundle_sewing_operation')]
+        ordering=['bundle','operation_no']
+    def save(self,*args,**kwargs):
+        if self.active_minutes and self.standard_sam and self.output_qty:
+            self.efficiency_percent=(Decimal(self.output_qty)*self.standard_sam/Decimal(self.active_minutes)*100).quantize(Decimal('0.01'))
+        self.machine_cost=(Decimal(self.active_minutes)*self.machine_cost_per_minute).quantize(Decimal('0.01'))
+        self.labour_cost=(Decimal(self.active_minutes)*self.labour_cost_per_minute).quantize(Decimal('0.01'))
+        self.total_process_cost=self.machine_cost+self.labour_cost
+        super().save(*args,**kwargs)
 
 class CuttingProductionEntry(TimeStamped):
     plan=models.ForeignKey(CuttingPlan,on_delete=models.CASCADE,related_name='production_entries')

@@ -66,3 +66,11 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# The SQLite database named by DB_NAME/POSTGRES_DB has no .sqlite3 suffix, so
+# the rule above does not catch it. An empty copy was committed in c694d97;
+# a populated one would put live company data into the repository.
+emerald_rozalia_project1
+emerald_rozalia_project1-journal
+emerald_rozalia_project1-wal
+emerald_rozalia_project1-shm

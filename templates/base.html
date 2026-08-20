@@ -12,12 +12,14 @@
       <a class="brand" href="/dashboard/"><img src="{% static 'img/logo.png' %}" alt="Emerald Rozalia Limited" /></a>
       <nav>
         <a href="/dashboard/">Dashboard</a
+        ><a href="{% url 'global_dashboard' %}">All Modules</a
         ><a href="/account-master/"><b>ACCOUNT MASTER</b></a
         ><a href="/report-master/"><b>REPORT MASTER</b></a
         ><a href="/ceo-dashboard/"><b>CEO REPORT</b></a
         ><a href="/staff-self-service/">Staff Self-Service</a
         ><a href="/stock-material-master/">Stock & Material</a
         ><a href="/forms-master/">Forms Master</a
+        ><a href="{% url 'sewing_master' %}"><b>SEWING MASTER</b></a
         ><a href="/bundle-barcode/">Barcode</a><a href="/admin/">Admin</a
         ><a href="/logout/">Logout</a
         ><a href="{% url 'universal_file_center' %}">Universal File Center</a>
