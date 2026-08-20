@@ -404,12 +404,12 @@
           <h2>DEPARTMENT AUTOMATIC REPORTS — TODAY</h2>
           <table class="tbl">
             <tr>
-              <th>Department</th>
-              <th>Slot</th>
-              <th>Alerts</th>
-              <th>Pending</th>
-              <th>Escalated</th>
-              <th>Generated</th>
+              <th scope="col">Department</th>
+              <th scope="col">Slot</th>
+              <th scope="col">Alerts</th>
+              <th scope="col">Pending</th>
+              <th scope="col">Escalated</th>
+              <th scope="col">Generated</th>
             </tr>
             {% for r in auto_reports %}
             <tr>
@@ -464,10 +464,10 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Type</th>
-                <th>Reference</th>
-                <th>Requested</th>
-                <th>By</th>
+                <th scope="col">Type</th>
+                <th scope="col">Reference</th>
+                <th scope="col">Requested</th>
+                <th scope="col">By</th>
               </tr>
               {% for a in approvals %}
               <tr>
@@ -492,12 +492,12 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Order</th>
-                <th>Buyer</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Value</th>
-                <th>Status</th>
+                <th scope="col">Order</th>
+                <th scope="col">Buyer</th>
+                <th scope="col">Product</th>
+                <th scope="col">Qty</th>
+                <th scope="col">Value</th>
+                <th scope="col">Status</th>
               </tr>
               {% for o in orders %}
               <tr>
@@ -521,10 +521,10 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>ID</th>
-                <th>Title</th>
-                <th>Dept.</th>
-                <th>Ref.</th>
+                <th scope="col">ID</th>
+                <th scope="col">Title</th>
+                <th scope="col">Dept.</th>
+                <th scope="col">Ref.</th>
               </tr>
               {% for d in documents %}
               <tr>
@@ -549,10 +549,10 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Channel</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Reference</th>
+                <th scope="col">Channel</th>
+                <th scope="col">From</th>
+                <th scope="col">To</th>
+                <th scope="col">Reference</th>
               </tr>
               {% for c in communications %}
               <tr>
@@ -575,9 +575,9 @@
         <h2>REPORT MASTER SNAPSHOT HISTORY</h2>
         <table class="tbl">
           <tr>
-            <th>Generated</th>
-            <th>Type</th>
-            <th>Data</th>
+            <th scope="col">Generated</th>
+            <th scope="col">Type</th>
+            <th scope="col">Data</th>
           </tr>
           {% for s in snapshots %}
           <tr>

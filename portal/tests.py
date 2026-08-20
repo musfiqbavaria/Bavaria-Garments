@@ -2795,3 +2795,113 @@ class DeadWeightTests(TestCase):
             orphans, [],
             'these images are shipped in the Docker image and referenced by '
             f'nothing: {orphans}')
+
+
+class FormAccessibilityTests(TestCase):
+    """Counted baselines for form controls and data tables.
+
+    Of 1,407 form controls, 238 were implicitly associated by sitting inside a
+    <label>, 4 had an explicit label-for and 22 carried aria-label. The other 987
+    had nothing but a placeholder, which is not an accessible name: it is not
+    announced as a label by every screen reader, it disappears the moment the
+    field has content, and it fails contrast. And all 641 <th> elements had no
+    scope, so a screen reader on a production table cannot tell which header
+    belongs to the cell it is reading.
+
+    A correction to the register: the original finding said "0 label-for across
+    1,404 controls", which read as nothing being labelled. 238 were validly
+    labelled implicitly. The genuinely unnamed count was 987.
+    """
+
+    CONTROL = r'<(input|select|textarea)\b[^>]*?/?>'
+    SKIP_TYPES = r'type="(hidden|submit|button|reset)"'
+
+    def _named_positions(self, text):
+        import re
+        positions = set()
+        for block in re.finditer(r'<label\b[^>]*>.*?</label>', text, re.S):
+            for control in re.finditer(r'<(input|select|textarea)\b', block.group(0)):
+                positions.add(block.start() + control.start())
+        return positions, set(re.findall(r'<label\b[^>]*\bfor="([^"]+)"', text))
+
+    def test_every_form_control_has_an_accessible_name(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            positions, labelled_ids = self._named_positions(text)
+            for match in re.finditer(self.CONTROL, text):
+                tag = match.group(0)
+                if match.start() in positions or re.search(self.SKIP_TYPES, tag):
+                    continue
+                control_id = re.search(r'\bid="([^"]+)"', tag)
+                if control_id and control_id.group(1) in labelled_ids:
+                    continue
+                if 'aria-label' in tag or 'aria-labelledby' in tag:
+                    continue
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}: {tag[:70]}')
+        self.assertEqual(
+            len(offenders), 0,
+            f'{len(offenders)} form control(s) have no accessible name. A '
+            'placeholder is not one - it is not announced as a label, it '
+            'disappears once the field has content, and it fails contrast:\n'
+            + '\n'.join(offenders[:25]))
+
+    def test_a_placeholder_is_never_the_only_name(self):
+        """The specific shape that produced 987 unnamed controls."""
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            positions, labelled_ids = self._named_positions(text)
+            for match in re.finditer(self.CONTROL, text):
+                tag = match.group(0)
+                if 'placeholder=' not in tag or match.start() in positions:
+                    continue
+                control_id = re.search(r'\bid="([^"]+)"', tag)
+                if control_id and control_id.group(1) in labelled_ids:
+                    continue
+                if 'aria-label' not in tag and 'aria-labelledby' not in tag:
+                    line = text[:match.start()].count('\n') + 1
+                    offenders.append(f'{path.name}:{line}')
+        self.assertEqual(offenders, [],
+                         'controls named only by a placeholder:\n' + '\n'.join(offenders[:25]))
+
+    def test_every_table_header_declares_its_scope(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            # (?!ead) so <thead> is not counted as a <th>.
+            for match in re.finditer(r'<th\b(?!ead)(?![^>]*\bscope=)', text):
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}')
+        self.assertEqual(
+            len(offenders), 0,
+            f'{len(offenders)} table header(s) have no scope, so a screen reader '
+            'cannot associate them with their cells:\n' + '\n'.join(offenders[:25]))
+
+    def test_no_thead_was_corrupted_by_the_scope_pass(self):
+        """A regex adding scope to <th> can match inside <thead>. It did once."""
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            with self.subTest(template=path.name):
+                self.assertNotIn('scope="col"ead', text)
+                self.assertNotIn('scope="row"ead', text)
+
+    def test_the_named_controls_are_still_valid_markup(self):
+        """Inserting an attribute must not have broken a self-closing tag."""
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'<input\b[^>]*>', text):
+                tag = match.group(0)
+                if tag.count('aria-label=') > 1:
+                    line = text[:match.start()].count('\n') + 1
+                    offenders.append(f'{path.name}:{line}: duplicate aria-label')
+            # An unterminated tag would swallow the rest of the line.
+            if re.search(r'<input\b[^>]*<', text):
+                offenders.append(f'{path.name}: an <input> tag is not closed')
+        self.assertEqual(offenders, [], '\n'.join(offenders))

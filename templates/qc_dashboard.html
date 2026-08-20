@@ -403,13 +403,13 @@
           <h2>QC INSPECTION PLANS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Stage</th>
-              <th>AQL</th>
-              <th>Lot</th>
-              <th>Sample</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Stage</th>
+              <th scope="col">AQL</th>
+              <th scope="col">Lot</th>
+              <th scope="col">Sample</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":14" %}
             <tr>
@@ -432,11 +432,11 @@
           <h2>LATEST INSPECTIONS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Qty</th>
-              <th>Defects</th>
-              <th>DHU</th>
-              <th>Result</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Defects</th>
+              <th scope="col">DHU</th>
+              <th scope="col">Result</th>
             </tr>
             {% for i in inspections|slice:":14" %}
             <tr>
@@ -488,7 +488,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -496,45 +496,45 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><select name="stage">
+            ><select aria-label="Stage" name="stage">
               {% for s in stages %}
               <option>{{s}}</option>
               {% endfor %}</select
-            ><input name="buyer" placeholder="Buyer" /><input
+            ><input aria-label="Buyer" name="buyer" placeholder="Buyer" /><input aria-label="Style No."
               name="style_no"
               placeholder="Style No."
-            /><input name="product" placeholder="Product" /><input
+            /><input aria-label="Product" name="product" placeholder="Product" /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input name="size_range" placeholder="Size Range" /><input
+            /><input aria-label="Size Range" name="size_range" placeholder="Size Range" /><input aria-label="Specification version"
               name="specification_version"
               value="1.0"
-            /><input name="aql_level" value="2.5" /><input
+            /><input aria-label="Aql level" name="aql_level" value="2.5" /><input aria-label="Lot Size"
               type="number"
               name="lot_size"
               placeholder="Lot Size"
-            /><input
+            /><input aria-label="Sample Size"
               type="number"
               name="sample_size"
               placeholder="Sample Size"
-            /><input type="date" name="planned_inspection_date" /><select
+            /><input aria-label="Planned inspection date" type="date" name="planned_inspection_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
             ><label
-              >Specification<input
+              >Specification<input aria-label="Specification file"
                 type="file"
                 name="specification_file" /></label
             ><label
-              >Approved Sample<input
+              >Approved Sample<input aria-label="Approved sample file"
                 type="file"
                 name="approved_sample_file" /></label
             ><button class="btn full">Create QC Plan</button>
@@ -548,27 +548,27 @@
               type="hidden"
               name="action"
               value="bundle_scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">QC Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Optional Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}} · {{b.barcode}}</option>
               {% endfor %}</select
-            ><select name="direction">
+            ><select aria-label="Direction" name="direction">
               <option value="IN">QC BUNDLE IN SCAN</option>
               <option value="OUT">QC BUNDLE OUT SCAN</option></select
-            ><input name="barcode" placeholder="Barcode / QR" /><input
+            ><input aria-label="Barcode / QR" name="barcode" placeholder="Barcode / QR" /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input
+            /><input aria-label="Source Department"
               name="source_department"
               placeholder="Source Department"
-            /><input
+            /><input aria-label="Destination Department"
               name="destination_department"
               placeholder="Destination Department"
             /><button class="btn full">Validate & Scan</button>
@@ -582,74 +582,74 @@
               type="hidden"
               name="action"
               value="inspection"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">QC Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Optional Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Inspected Qty"
               type="number"
               name="inspected_qty"
               placeholder="Inspected Qty"
-            /><input
+            /><input aria-label="Pass Qty"
               type="number"
               name="pass_qty"
               placeholder="Pass Qty"
-            /><input
+            /><input aria-label="Critical"
               type="number"
               name="critical_defects"
               placeholder="Critical"
-            /><input
+            /><input aria-label="Major"
               type="number"
               name="major_defects"
               placeholder="Major"
-            /><input
+            /><input aria-label="Minor"
               type="number"
               name="minor_defects"
               placeholder="Minor"
-            /><input
+            /><input aria-label="Rework"
               type="number"
               name="rework_qty"
               placeholder="Rework"
-            /><input
+            /><input aria-label="Reject"
               type="number"
               name="reject_qty"
               placeholder="Reject"
-            /><input
+            /><input aria-label="Measurement Fail"
               type="number"
               name="measurement_fail_qty"
               placeholder="Measurement Fail"
-            /><input
+            /><input aria-label="Shade Fail"
               type="number"
               name="shade_fail_qty"
               placeholder="Shade Fail"
-            /><input
+            /><input aria-label="Label Fail"
               type="number"
               name="label_fail_qty"
               placeholder="Label Fail"
-            /><input
+            /><input aria-label="Workmanship Fail"
               type="number"
               name="workmanship_fail_qty"
               placeholder="Workmanship Fail"
-            /><input
+            /><input aria-label="Packing Fail"
               type="number"
               name="packing_fail_qty"
               placeholder="Packing Fail"
-            /><select name="result">
+            /><select aria-label="Result" name="result">
               <option>PASS</option>
               <option>HOLD</option>
               <option>REWORK</option>
               <option>REJECT</option>
               <option>CONDITIONAL_PASS</option></select
-            ><textarea name="comments" placeholder="Comments"></textarea
-            ><label>Inspection Photo<input type="file" name="photo" /></label
+            ><textarea aria-label="Comments" name="comments" placeholder="Comments"></textarea
+            ><label>Inspection Photo<input aria-label="Photo" type="file" name="photo" /></label
             ><label
-              >Inspection Sheet<input
+              >Inspection Sheet<input aria-label="Inspection sheet"
                 type="file"
                 name="inspection_sheet" /></label
             ><button class="btn full">Record Inspection</button>
@@ -663,7 +663,7 @@
               type="hidden"
               name="action"
               value="release"
-            /><select class="full" name="gate_id" required>
+            /><select aria-label="Gate id" class="full" name="gate_id" required>
               <option value="">Release Gate</option>
               {% for g in gates %}
               <option value="{{g.id}}">
@@ -671,19 +671,19 @@
                 {{g.final_decision}}
               </option>
               {% endfor %}</select
-            ><select name="final_decision">
+            ><select aria-label="Final decision" name="final_decision">
               <option>PENDING</option>
               <option>RELEASE</option>
               <option>RELEASE_WITH_APPROVAL</option>
               <option>HOLD</option>
               <option>REWORK</option>
               <option>REJECT</option></select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval if conditional</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><textarea
+            ><textarea aria-label="Decision reason"
               name="decision_reason"
               placeholder="Decision reason"
             ></textarea
@@ -700,39 +700,39 @@
               type="hidden"
               name="action"
               value="defect"
-            /><select class="full" name="inspection_id" required>
+            /><select aria-label="Inspection id" class="full" name="inspection_id" required>
               <option value="">Inspection</option>
               {% for i in inspections %}
               <option value="{{i.id}}">
                 {{i.plan.plan_no}} · {{i.result}}
               </option>
               {% endfor %}</select
-            ><input name="defect_code" placeholder="Defect Code" /><select
+            ><input aria-label="Defect Code" name="defect_code" placeholder="Defect Code" /><select aria-label="Category"
               name="category"
             >
               {% for c in defect_categories %}
               <option>{{c}}</option>
               {% endfor %}</select
-            ><select name="severity">
+            ><select aria-label="Severity" name="severity">
               <option>CRITICAL</option>
               <option>MAJOR</option>
               <option>MINOR</option></select
-            ><input type="number" name="quantity" value="1" /><textarea
+            ><input aria-label="Quantity" type="number" name="quantity" value="1" /><textarea aria-label="Description"
               name="description"
               placeholder="Description"
               required
             ></textarea
-            ><textarea name="root_cause" placeholder="Root Cause"></textarea
-            ><textarea
+            ><textarea aria-label="Root Cause" name="root_cause" placeholder="Root Cause"></textarea
+            ><textarea aria-label="Corrective Action"
               name="corrective_action"
               placeholder="Corrective Action"
             ></textarea
-            ><select class="full" name="responsible_user_id">
+            ><select aria-label="Responsible user id" class="full" name="responsible_user_id">
               <option value="">Responsible User</option>
               {% for u in users %}
               <option value="{{u.id}}">{{u.username}}</option>
               {% endfor %}</select
-            ><input class="full" type="datetime-local" name="due_at" /><button
+            ><input aria-label="Due at" class="full" type="datetime-local" name="due_at" /><button
               class="btn full"
             >
               Add Defect
@@ -747,31 +747,31 @@
               type="hidden"
               name="action"
               value="capa"
-            /><select class="full" name="inspection_id" required>
+            /><select aria-label="Inspection id" class="full" name="inspection_id" required>
               <option value="">Inspection</option>
               {% for i in inspections %}
               <option value="{{i.id}}">{{i.plan.plan_no}}</option>
               {% endfor %}</select
-            ><textarea
+            ><textarea aria-label="Root Cause"
               name="root_cause"
               placeholder="Root Cause"
               required
             ></textarea
-            ><textarea
+            ><textarea aria-label="Corrective Action"
               name="corrective_action"
               placeholder="Corrective Action"
               required
             ></textarea
-            ><textarea
+            ><textarea aria-label="Preventive Action"
               name="preventive_action"
               placeholder="Preventive Action"
             ></textarea
-            ><select class="full" name="responsible_user_id">
+            ><select aria-label="Responsible user id" class="full" name="responsible_user_id">
               <option value="">Responsible User</option>
               {% for u in users %}
               <option value="{{u.id}}">{{u.username}}</option>
               {% endfor %}</select
-            ><input class="full" type="datetime-local" name="due_at" /><button
+            ><input aria-label="Due at" class="full" type="datetime-local" name="due_at" /><button
               class="btn full"
             >
               Open CAPA
@@ -783,11 +783,11 @@
           <h2>OPEN DEFECT / CAPA HISTORY</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Severity / Status</th>
-              <th>Issue</th>
-              <th>Responsible</th>
-              <th>Due</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Severity / Status</th>
+              <th scope="col">Issue</th>
+              <th scope="col">Responsible</th>
+              <th scope="col">Due</th>
             </tr>
             {% for d in defects|slice:":12" %}
             <tr>

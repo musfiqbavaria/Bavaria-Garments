@@ -154,29 +154,29 @@
       <label>Department<input name="department_name" /></label
       ><label>Message<textarea name="body" required></textarea></label>
       <label
-        ><input type="checkbox" name="create_action" /> Create Action
+        ><input aria-label="Create action" type="checkbox" name="create_action" /> Create Action
         Automatically</label
       >
-      <label>Action Title<input name="action_title" /></label
+      <label>Action Title<input aria-label="Action title" name="action_title" /></label
       ><label
-        >Assign To<select name="assigned_to">
+        >Assign To<select aria-label="Assigned to" name="assigned_to">
           <option value="">—</option>
           {% for u in users %}
           <option value="{{u.id}}">{{u.username}}</option>
           {% endfor %}
         </select></label
       >
-      <label>Due At<input type="datetime-local" name="due_at" /></label
+      <label>Due At<input aria-label="Due at" type="datetime-local" name="due_at" /></label
       ><button class="btn primary">Create Alert</button>
     </form>
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Date</th>
-          <th>Level</th>
-          <th>Alert</th>
-          <th>Reference</th>
-          <th>Actioned</th>
+          <th scope="col">Date</th>
+          <th scope="col">Level</th>
+          <th scope="col">Alert</th>
+          <th scope="col">Reference</th>
+          <th scope="col">Actioned</th>
         </tr>
         {% for a in alerts %}
         <tr>
@@ -195,36 +195,36 @@
     <h2>Action Center</h2>
     <form method="post">
       {% csrf_token %}<input type="hidden" name="action" value="action_item" />
-      <label>Action<input name="title" required /></label
+      <label>Action<input aria-label="Title" name="title" required /></label
       ><label
-        >Assign To<select name="assigned_to">
+        >Assign To<select aria-label="Assigned to" name="assigned_to">
           <option value="">—</option>
           {% for u in users %}
           <option value="{{u.id}}">{{u.username}}</option>
           {% endfor %}
         </select></label
       >
-      <label>Department<input name="department_name" /></label
+      <label>Department<input aria-label="Department name" name="department_name" /></label
       ><label
-        >Priority<select name="priority">
+        >Priority<select aria-label="Priority" name="priority">
           <option>LOW</option>
           <option>NORMAL</option>
           <option>HIGH</option>
           <option>URGENT</option>
         </select></label
       >
-      <label>Due At<input type="datetime-local" name="due_at" /></label
+      <label>Due At<input aria-label="Due at" type="datetime-local" name="due_at" /></label
       ><button class="btn primary">Create Action</button>
     </form>
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Action</th>
-          <th>Assigned</th>
-          <th>Department</th>
-          <th>Due</th>
-          <th>Status</th>
-          <th>Control</th>
+          <th scope="col">Action</th>
+          <th scope="col">Assigned</th>
+          <th scope="col">Department</th>
+          <th scope="col">Due</th>
+          <th scope="col">Status</th>
+          <th scope="col">Control</th>
         </tr>
         {% for a in action_items %}
         <tr>
@@ -258,12 +258,12 @@
 <div class="card">
   <h2>Unified Inbox / Chat 24/7 History</h2>
   <form method="get">
-    <input
+    <input aria-label="Search thread / subject / reference"
       name="q"
       value="{{request.GET.q}}"
       placeholder="Search thread / subject / reference"
     />
-    <select name="channel">
+    <select aria-label="Channel" name="channel">
       <option value="">All channels</option>
       {% for x in channels %}
       <option {% if request.GET.channel == x %}selected{% endif %}>
@@ -276,14 +276,14 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Date</th>
-        <th>Thread</th>
-        <th>Channel</th>
-        <th>From / To</th>
-        <th>Message</th>
-        <th>Status</th>
-        <th>Files</th>
-        <th>Action</th>
+        <th scope="col">Date</th>
+        <th scope="col">Thread</th>
+        <th scope="col">Channel</th>
+        <th scope="col">From / To</th>
+        <th scope="col">Message</th>
+        <th scope="col">Status</th>
+        <th scope="col">Files</th>
+        <th scope="col">Action</th>
       </tr>
       {% for m in comm_messages %}
       <tr>
@@ -349,23 +349,23 @@
     <h2>Notice Board / Broadcast / Red Alert</h2>
     <form method="post">
       {% csrf_token %}<input type="hidden" name="action" value="notice" /><label
-        >Type<select name="notice_type">
+        >Type<select aria-label="Notice type" name="notice_type">
           <option>NOTICE</option>
           <option>BROADCAST</option>
           <option>RED_ALERT</option>
         </select></label
-      ><label>Title<input name="title" required /></label
-      ><label>Message<textarea name="body" required></textarea></label
+      ><label>Title<input aria-label="Title" name="title" required /></label
+      ><label>Message<textarea aria-label="Body" name="body" required></textarea></label
       ><label
-        >Department<select name="department_id">
+        >Department<select aria-label="Department id" name="department_id">
           <option value="">—</option>
           {% for d in departments %}
           <option value="{{d.id}}">{{d.name}}</option>
           {% endfor %}
         </select></label
-      ><label>Target Role<input name="target_role" /></label
-      ><label><input type="checkbox" name="target_all" /> All Users</label
-      ><label>Expires At<input type="datetime-local" name="expires_at" /></label
+      ><label>Target Role<input aria-label="Target role" name="target_role" /></label
+      ><label><input aria-label="Target all" type="checkbox" name="target_all" /> All Users</label
+      ><label>Expires At<input aria-label="Expires at" type="datetime-local" name="expires_at" /></label
       ><button class="btn primary">Publish</button>
     </form>
   </div>
@@ -374,10 +374,10 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Type</th>
-          <th>Title</th>
-          <th>Target</th>
-          <th>Created</th>
+          <th scope="col">Type</th>
+          <th scope="col">Title</th>
+          <th scope="col">Target</th>
+          <th scope="col">Created</th>
         </tr>
         {% for n in notices %}
         <tr>
@@ -400,11 +400,11 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Thread</th>
-          <th>Type</th>
-          <th>Reference</th>
-          <th>Assigned</th>
-          <th>Status</th>
+          <th scope="col">Thread</th>
+          <th scope="col">Type</th>
+          <th scope="col">Reference</th>
+          <th scope="col">Assigned</th>
+          <th scope="col">Status</th>
         </tr>
         {% for t in threads %}
         <tr>
@@ -430,10 +430,10 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Connector</th>
-          <th>Type</th>
-          <th>Enabled</th>
-          <th>Status</th>
+          <th scope="col">Connector</th>
+          <th scope="col">Type</th>
+          <th scope="col">Enabled</th>
+          <th scope="col">Status</th>
         </tr>
         {% for c in connectors %}
         <tr>
@@ -458,12 +458,12 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Date</th>
-          <th>Channel</th>
-          <th>Thread</th>
-          <th>From / To</th>
-          <th>Status</th>
-          <th>Message</th>
+          <th scope="col">Date</th>
+          <th scope="col">Channel</th>
+          <th scope="col">Thread</th>
+          <th scope="col">From / To</th>
+          <th scope="col">Status</th>
+          <th scope="col">Message</th>
         </tr>
         {% for m in comm_messages %}
         <tr>
@@ -485,12 +485,12 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Date/Time</th>
-          <th>User</th>
-          <th>Method</th>
-          <th>Path / Action</th>
-          <th>Status</th>
-          <th>IP</th>
+          <th scope="col">Date/Time</th>
+          <th scope="col">User</th>
+          <th scope="col">Method</th>
+          <th scope="col">Path / Action</th>
+          <th scope="col">Status</th>
+          <th scope="col">IP</th>
         </tr>
         {% for l in audit_logs %}
         <tr>

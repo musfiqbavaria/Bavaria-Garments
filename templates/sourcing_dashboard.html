@@ -227,48 +227,48 @@
               type="hidden"
               name="action"
               value="request"
-            /><input
+            /><input aria-label="Sourcing Request No."
               name="request_no"
               placeholder="Sourcing Request No."
               required
-            /><select name="order_id">
+            /><select aria-label="Order id" name="order_id">
               <option value="">Master Order</option>
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><select name="material_id">
+            ><select aria-label="Material id" name="material_id">
               <option value="">Material</option>
               {% for m in materials %}
               <option value="{{m.id}}">{{m.material_code}} · {{m.name}}</option>
               {% endfor %}</select
-            ><select name="category">
+            ><select aria-label="Category" name="category">
               {% for c in categories %}
               <option>{{c}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Item / Service Description"
               class="full"
               name="description"
               placeholder="Item / Service Description"
-            /><textarea
+            /><textarea aria-label="Specification: composition/GSM/width/colour/technical requirements"
               class="full"
               name="specification"
               placeholder="Specification: composition/GSM/width/colour/technical requirements"
             ></textarea
-            ><input
+            ><input aria-label="Required Qty"
               type="number"
               step=".001"
               name="required_qty"
               placeholder="Required Qty"
-            /><input name="uom" placeholder="UOM" /><input
+            /><input aria-label="UOM" name="uom" placeholder="UOM" /><input aria-label="Required date"
               type="date"
               name="required_date"
-            /><input
+            /><input aria-label="Target Unit Price"
               type="number"
               step=".0001"
               name="target_price"
               placeholder="Target Unit Price"
-            /><input name="target_currency" value="BDT" /><label class="full"
-              >Specification File<input
+            /><input aria-label="Target currency" name="target_currency" value="BDT" /><label class="full"
+              >Specification File<input aria-label="Specification file"
                 type="file"
                 name="specification_file" /></label
             ><button class="btn full">
@@ -284,54 +284,54 @@
               type="hidden"
               name="action"
               value="candidate"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Sourcing Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">
                 {{r.request_no}} · Shortage {{r.shortage_qty}}
               </option>
               {% endfor %}</select
-            ><select name="source_type">
+            ><select aria-label="Source type" name="source_type">
               <option value="EXISTING">Existing Approved Supplier</option>
               <option value="NEW">New Supplier</option></select
-            ><select name="supplier_id">
+            ><select aria-label="Supplier id" name="supplier_id">
               <option value="">Approved Supplier</option>
               {% for s in suppliers %}
               <option value="{{s.id}}">
                 {{s.supplier_id}} · {{s.company_name}}
               </option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="New Supplier Name"
               name="supplier_name"
               placeholder="New Supplier Name"
-            /><input
+            /><input aria-label="Country / Origin"
               name="supplier_country"
               placeholder="Country / Origin"
-            /><input
+            /><input aria-label="Contact Details"
               name="contact_details"
               placeholder="Contact Details"
-            /><input
+            /><input aria-label="Compliance Status"
               name="compliance_status"
               value="PENDING"
               placeholder="Compliance Status"
-            /><input
+            /><input aria-label="Monthly Capacity"
               type="number"
               step=".001"
               name="capacity_per_month"
               placeholder="Monthly Capacity"
-            /><input
+            /><input aria-label="MOQ"
               type="number"
               step=".001"
               name="moq"
               placeholder="MOQ"
-            /><input
+            /><input aria-label="Lead Time Days"
               type="number"
               name="lead_time_days"
               placeholder="Lead Time Days"
-            /><input
+            /><input aria-label="Payment Terms"
               name="payment_terms"
               placeholder="Payment Terms"
-            /><textarea
+            /><textarea aria-label="Supplier Search Notes"
               class="full"
               name="notes"
               placeholder="Supplier Search Notes"
@@ -347,57 +347,57 @@
               type="hidden"
               name="action"
               value="quotation"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">{{r.request_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="candidate_id" required>
+            ><select aria-label="Candidate id" class="full" name="candidate_id" required>
               <option value="">Candidate</option>
               {% for c in candidates %}
               <option value="{{c.id}}">
                 {{c.request.request_no}} · {{c.supplier_name}}
               </option>
               {% endfor %}</select
-            ><select name="rfq_id">
+            ><select aria-label="Rfq id" name="rfq_id">
               <option value="">Linked RFQ</option>
               {% for r in rfqs %}
               <option value="{{r.id}}">{{r.rfq_no}}</option>
               {% endfor %}</select
-            ><input name="quote_no" placeholder="Quote No." required /><input
+            ><input aria-label="Quote No." name="quote_no" placeholder="Quote No." required /><input aria-label="Unit Price"
               type="number"
               step=".0001"
               name="unit_price"
               placeholder="Unit Price"
-            /><input name="currency" value="BDT" /><input
+            /><input aria-label="Currency" name="currency" value="BDT" /><input aria-label="Freight"
               type="number"
               step=".01"
               name="freight"
               placeholder="Freight"
-            /><input
+            /><input aria-label="Duty / Tax"
               type="number"
               step=".01"
               name="duty_tax"
               placeholder="Duty / Tax"
-            /><input
+            /><input aria-label="Other Cost"
               type="number"
               step=".01"
               name="other_cost"
               placeholder="Other Cost"
-            /><input
+            /><input aria-label="Lead Days"
               type="number"
               name="quoted_lead_days"
               placeholder="Lead Days"
-            /><input
+            /><input aria-label="MOQ"
               type="number"
               step=".001"
               name="moq"
               placeholder="MOQ"
-            /><input name="payment_terms" placeholder="Payment Terms" /><input
+            /><input aria-label="Payment Terms" name="payment_terms" placeholder="Payment Terms" /><input aria-label="Valid until"
               type="date"
               name="valid_until"
             /><label class="full"
-              >Quotation File<input type="file" name="quotation_file" /></label
+              >Quotation File<input aria-label="Quotation file" type="file" name="quotation_file" /></label
             ><button class="btn full">Save Quotation</button>
           </form>
         </div>
@@ -409,38 +409,38 @@
               type="hidden"
               name="action"
               value="sample"
-            /><select class="full" name="quotation_id" required>
+            /><select aria-label="Quotation id" class="full" name="quotation_id" required>
               <option value="">Quotation</option>
               {% for q in quotations %}
               <option value="{{q.id}}">
                 {{q.request.request_no}} · {{q.quote_no}}
               </option>
               {% endfor %}</select
-            ><input name="sample_no" placeholder="Sample No." required /><input
+            ><input aria-label="Sample No." name="sample_no" placeholder="Sample No." required /><input aria-label="Received at"
               type="datetime-local"
               name="received_at"
-            /><select name="quality_result">
+            /><select aria-label="Quality result" name="quality_result">
               <option>PENDING</option>
               <option>PASS</option>
               <option>HOLD</option>
               <option>REJECT</option></select
-            ><select name="compliance_result">
+            ><select aria-label="Compliance result" name="compliance_result">
               <option>PENDING</option>
               <option>PASS</option>
               <option>HOLD</option>
               <option>REJECT</option></select
-            ><select name="lab_test_result">
+            ><select aria-label="Lab test result" name="lab_test_result">
               <option>PENDING</option>
               <option>PASS</option>
               <option>HOLD</option>
               <option>REJECT</option></select
-            ><textarea
+            ><textarea aria-label="Sample / Lab Comments"
               class="full"
               name="comments"
               placeholder="Sample / Lab Comments"
             ></textarea
             ><label class="full"
-              >Sample / Test File<input type="file" name="sample_file" /></label
+              >Sample / Test File<input aria-label="Sample file" type="file" name="sample_file" /></label
             ><button class="btn full">Save Sample Evaluation</button>
           </form>
         </div>
@@ -452,7 +452,7 @@
               type="hidden"
               name="action"
               value="evaluate"
-            /><select class="full" name="quotation_id" required>
+            /><select aria-label="Quotation id" class="full" name="quotation_id" required>
               <option value="">Quotation</option>
               {% for q in quotations %}
               <option value="{{q.id}}">
@@ -460,32 +460,32 @@
                 {{q.landed_unit_cost}}
               </option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Price Score"
               type="number"
               step=".01"
               name="price_score"
               placeholder="Price Score"
-            /><input
+            /><input aria-label="Quality Score"
               type="number"
               step=".01"
               name="quality_score"
               placeholder="Quality Score"
-            /><input
+            /><input aria-label="Delivery Score"
               type="number"
               step=".01"
               name="delivery_score"
               placeholder="Delivery Score"
-            /><input
+            /><input aria-label="Compliance Score"
               type="number"
               step=".01"
               name="compliance_score"
               placeholder="Compliance Score"
-            /><input
+            /><input aria-label="Capacity Score"
               type="number"
               step=".01"
               name="capacity_score"
               placeholder="Capacity Score"
-            /><textarea
+            /><textarea aria-label="Evaluation / Negotiation Notes"
               class="full"
               name="nomination_reason"
               placeholder="Evaluation / Negotiation Notes"
@@ -501,7 +501,7 @@
               type="hidden"
               name="action"
               value="nominate"
-            /><select class="full" name="evaluation_id" required>
+            /><select aria-label="Evaluation id" class="full" name="evaluation_id" required>
               <option value="">Evaluation</option>
               {% for e in evaluations %}
               <option value="{{e.id}}">
@@ -509,12 +509,12 @@
                 {{e.price_variance_pct}}%
               </option>
               {% endfor %}</select
-            ><textarea
+            ><textarea aria-label="Nomination Reason"
               class="full"
               name="nomination_reason"
               placeholder="Nomination Reason"
             ></textarea
-            ><select class="full" name="approval_id" required>
+            ><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Mandatory Nomination Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -530,17 +530,17 @@
               type="hidden"
               name="action"
               value="handoff"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Nominated Sourcing Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">{{r.request_no}} · {{r.status}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="New Procurement Request No."
               class="full"
               name="procurement_request_no"
               placeholder="New Procurement Request No."
               required
-            /><input
+            /><input aria-label="Approved / Proposed Budget"
               class="full"
               type="number"
               step=".01"
@@ -572,17 +572,17 @@
         <h3>SOURCING REQUEST / NOMINATION STATUS</h3>
         <table class="tbl">
           <tr>
-            <th>Request</th>
-            <th>Order</th>
-            <th>Category</th>
-            <th>Material</th>
-            <th>Required</th>
-            <th>Stock</th>
-            <th>Reserved</th>
-            <th>Shortage</th>
-            <th>Target Price</th>
-            <th>Status</th>
-            <th>Nomination / Handoff</th>
+            <th scope="col">Request</th>
+            <th scope="col">Order</th>
+            <th scope="col">Category</th>
+            <th scope="col">Material</th>
+            <th scope="col">Required</th>
+            <th scope="col">Stock</th>
+            <th scope="col">Reserved</th>
+            <th scope="col">Shortage</th>
+            <th scope="col">Target Price</th>
+            <th scope="col">Status</th>
+            <th scope="col">Nomination / Handoff</th>
           </tr>
           {% for r in requests %}
           <tr>
@@ -615,19 +615,19 @@
         <h3>SUPPLIER EVALUATION / PRICE VARIANCE</h3>
         <table class="tbl">
           <tr>
-            <th>Request</th>
-            <th>Supplier</th>
-            <th>Quote</th>
-            <th>Landed</th>
-            <th>Last Purchase</th>
-            <th>Current Quote</th>
-            <th>Price Variance</th>
-            <th>Quality</th>
-            <th>Delivery</th>
-            <th>Compliance</th>
-            <th>Capacity</th>
-            <th>Total</th>
-            <th>Nominated</th>
+            <th scope="col">Request</th>
+            <th scope="col">Supplier</th>
+            <th scope="col">Quote</th>
+            <th scope="col">Landed</th>
+            <th scope="col">Last Purchase</th>
+            <th scope="col">Current Quote</th>
+            <th scope="col">Price Variance</th>
+            <th scope="col">Quality</th>
+            <th scope="col">Delivery</th>
+            <th scope="col">Compliance</th>
+            <th scope="col">Capacity</th>
+            <th scope="col">Total</th>
+            <th scope="col">Nominated</th>
           </tr>
           {% for e in evaluations %}
           <tr>

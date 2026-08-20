@@ -215,46 +215,46 @@
               type="hidden"
               name="action"
               value="supplier"
-            /><input
+            /><input aria-label="Supplier ID"
               name="supplier_id"
               placeholder="Supplier ID"
               required
-            /><input name="company_name" placeholder="Company" required /><input
+            /><input aria-label="Company" name="company_name" placeholder="Company" required /><input aria-label="Contact Person"
               name="contact_person"
               placeholder="Contact Person"
-            /><input name="email" placeholder="Email" /><input
+            /><input aria-label="Email" name="email" placeholder="Email" /><input aria-label="Phone"
               name="phone"
               placeholder="Phone"
-            /><input name="country" placeholder="Country" /><textarea
+            /><input aria-label="Country" name="country" placeholder="Country" /><textarea aria-label="Address"
               class="full"
               name="address"
               placeholder="Address"
             ></textarea
-            ><input name="vat_tax_tin" placeholder="VAT/Tax/TIN" /><input
+            ><input aria-label="VAT/Tax/TIN" name="vat_tax_tin" placeholder="VAT/Tax/TIN" /><input aria-label="Registration No"
               name="registration_no"
               placeholder="Registration No"
-            /><input name="categories" placeholder="Categories" /><input
+            /><input aria-label="Categories" name="categories" placeholder="Categories" /><input aria-label="Materials"
               name="materials"
               placeholder="Materials"
-            /><input name="moq" placeholder="MOQ" /><input
+            /><input aria-label="MOQ" name="moq" placeholder="MOQ" /><input aria-label="Lead Days"
               type="number"
               name="lead_time_days"
               placeholder="Lead Days"
-            /><input name="currency" value="BDT" /><input
+            /><input aria-label="Currency" name="currency" value="BDT" /><input aria-label="Payment Terms"
               name="payment_terms"
               placeholder="Payment Terms"
-            /><input name="bank_name" placeholder="Bank" /><input
+            /><input aria-label="Bank" name="bank_name" placeholder="Bank" /><input aria-label="Account Name"
               name="bank_account_name"
               placeholder="Account Name"
-            /><input name="bank_account_no" placeholder="Account No" /><input
+            /><input aria-label="Account No" name="bank_account_no" placeholder="Account No" /><input aria-label="SWIFT"
               name="bank_swift"
               placeholder="SWIFT"
-            /><textarea name="capacity_notes" placeholder="Capacity"></textarea
-            ><textarea
+            /><textarea aria-label="Capacity" name="capacity_notes" placeholder="Capacity"></textarea
+            ><textarea aria-label="Certifications"
               name="certifications"
               placeholder="Certifications"
             ></textarea
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Supplier Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -269,22 +269,22 @@
               type="hidden"
               name="action"
               value="document"
-            /><select class="full" name="supplier_id" required>
+            /><select aria-label="Supplier id" class="full" name="supplier_id" required>
               <option value="">Supplier</option>
               {% for s in suppliers %}
               <option value="{{s.id}}">
                 {{s.supplier_id}} · {{s.company_name}}
               </option>
               {% endfor %}</select
-            ><select name="document_type">
+            ><select aria-label="Document type" name="document_type">
               {% for d in doc_types %}
               <option>{{d}}</option>
               {% endfor %}</select
-            ><input name="document_no" placeholder="Document No" /><input
+            ><input aria-label="Document No" name="document_no" placeholder="Document No" /><input aria-label="Expiry date"
               type="date"
               name="expiry_date"
-            /><input type="file" name="file" required /><label class="full"
-              ><input type="checkbox" name="verified" /> Verified</label
+            /><input aria-label="File" type="file" name="file" required /><label class="full"
+              ><input aria-label="Verified" type="checkbox" name="verified" /> Verified</label
             ><button class="btn full">Upload</button>
           </form>
         </div>
@@ -295,7 +295,7 @@
               type="hidden"
               name="action"
               value="rfq"
-            /><input name="rfq_no" placeholder="RFQ No" required /><select
+            /><input aria-label="RFQ No" name="rfq_no" placeholder="RFQ No" required /><select aria-label="Supplier id"
               name="supplier_id"
               required
             >
@@ -303,45 +303,45 @@
               {% for s in suppliers %}
               <option value="{{s.id}}">{{s.supplier_id}}</option>
               {% endfor %}</select
-            ><select name="order_id">
+            ><select aria-label="Order id" name="order_id">
               <option value="">Order</option>
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><select name="material_id">
+            ><select aria-label="Material id" name="material_id">
               <option value="">Material</option>
               {% for m in materials %}
               <option value="{{m.id}}">{{m.item_name}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Item Description"
               class="full"
               name="item_description"
               placeholder="Item Description"
-            /><input
+            /><input aria-label="Qty"
               type="number"
               step=".001"
               name="quantity"
               placeholder="Qty"
-            /><input name="unit" placeholder="Unit" /><input
+            /><input aria-label="Unit" name="unit" placeholder="Unit" /><input aria-label="Unit Price"
               type="number"
               step=".0001"
               name="quoted_unit_price"
               placeholder="Unit Price"
-            /><input name="currency" value="BDT" /><input
+            /><input aria-label="Currency" name="currency" value="BDT" /><input aria-label="Lead Days"
               type="number"
               name="quoted_lead_days"
               placeholder="Lead Days"
-            /><input type="date" name="valid_until" /><select name="status">
+            /><input aria-label="Valid until" type="date" name="valid_until" /><select aria-label="Status" name="status">
               <option>QUOTED</option>
               <option>SENT</option>
               <option>SELECTED</option></select
             ><label
-              ><input type="checkbox" name="sample_approved" /> Sample
+              ><input aria-label="Sample approved" type="checkbox" name="sample_approved" /> Sample
               Approved</label
             ><label
-              ><input type="checkbox" name="quality_approved" /> Quality
+              ><input aria-label="Quality approved" type="checkbox" name="quality_approved" /> Quality
               Approved</label
-            ><input class="full" type="file" name="quotation_file" /><button
+            ><input aria-label="Quotation file" class="full" type="file" name="quotation_file" /><button
               class="btn full"
             >
               Save RFQ
@@ -355,7 +355,7 @@
               type="hidden"
               name="action"
               value="po"
-            /><input name="po_no" placeholder="PO No" required /><select
+            /><input aria-label="PO No" name="po_no" placeholder="PO No" required /><select aria-label="Supplier id"
               name="supplier_id"
               required
             >
@@ -363,40 +363,40 @@
               {% for s in suppliers %}
               <option value="{{s.id}}">{{s.supplier_id}}</option>
               {% endfor %}</select
-            ><select name="rfq_id">
+            ><select aria-label="Rfq id" name="rfq_id">
               <option value="">RFQ</option>
               {% for r in rfqs %}
               <option value="{{r.id}}">{{r.rfq_no}}</option>
               {% endfor %}</select
-            ><select name="order_id">
+            ><select aria-label="Order id" name="order_id">
               <option value="">Order</option>
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><select name="material_id">
+            ><select aria-label="Material id" name="material_id">
               <option value="">Material</option>
               {% for m in materials %}
               <option value="{{m.id}}">{{m.item_name}}</option>
               {% endfor %}</select
-            ><input name="description" placeholder="Description" /><input
+            ><input aria-label="Description" name="description" placeholder="Description" /><input aria-label="Qty"
               type="number"
               step=".001"
               name="quantity"
               placeholder="Qty"
-            /><input name="unit" placeholder="Unit" /><input
+            /><input aria-label="Unit" name="unit" placeholder="Unit" /><input aria-label="Unit Price"
               type="number"
               step=".0001"
               name="unit_price"
               placeholder="Unit Price"
-            /><input name="currency" value="BDT" /><input
+            /><input aria-label="Currency" name="currency" value="BDT" /><input aria-label="Expected delivery"
               type="date"
               name="expected_delivery"
-            /><select class="full" name="approval_id" required>
+            /><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Profit-before-spend / Senior Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><input class="full" type="file" name="po_file" /><button
+            ><input aria-label="Po file" class="full" type="file" name="po_file" /><button
               class="btn full"
             >
               Create Approved PO
@@ -410,41 +410,41 @@
               type="hidden"
               name="action"
               value="receipt"
-            /><select class="full" name="po_id" required>
+            /><select aria-label="Po id" class="full" name="po_id" required>
               <option value="">PO</option>
               {% for p in pos %}
               <option value="{{p.id}}">
                 {{p.po_no}} · {{p.supplier.supplier_id}}
               </option>
               {% endfor %}</select
-            ><input name="grn_no" placeholder="GRN No" required /><input
+            ><input aria-label="GRN No" name="grn_no" placeholder="GRN No" required /><input aria-label="Delivery Note"
               name="delivery_note_no"
               placeholder="Delivery Note"
-            /><input
+            /><input aria-label="Received Qty"
               type="number"
               step=".001"
               name="received_qty"
               placeholder="Received Qty"
-            /><input
+            /><input aria-label="Accepted Qty"
               type="number"
               step=".001"
               name="accepted_qty"
               placeholder="Accepted Qty"
-            /><input
+            /><input aria-label="Rejected Qty"
               type="number"
               step=".001"
               name="rejected_qty"
               placeholder="Rejected Qty"
-            /><input
+            /><input aria-label="MANDATORY STOCK IN SCAN Barcode"
               name="stock_in_barcode"
               placeholder="MANDATORY STOCK IN SCAN Barcode"
               required
             /><label class="full"
-              ><input type="checkbox" name="inspection_pass" /> Inspection
+              ><input aria-label="Inspection pass" type="checkbox" name="inspection_pass" /> Inspection
               PASS</label
             ><label
-              >Delivery Note<input type="file" name="delivery_note" /></label
-            ><label>GRN<input type="file" name="grn_file" /></label
+              >Delivery Note<input aria-label="Delivery note" type="file" name="delivery_note" /></label
+            ><label>GRN<input aria-label="Grn file" type="file" name="grn_file" /></label
             ><button class="btn full">Receive / GRN</button>
           </form>
         </div>
@@ -455,20 +455,20 @@
               type="hidden"
               name="action"
               value="invoice"
-            /><select class="full" name="po_id" required>
+            /><select aria-label="Po id" class="full" name="po_id" required>
               <option value="">PO</option>
               {% for p in pos %}
               <option value="{{p.id}}">{{p.po_no}}</option>
               {% endfor %}</select
-            ><input name="invoice_no" placeholder="Invoice No" required /><input
+            ><input aria-label="Invoice No" name="invoice_no" placeholder="Invoice No" required /><input aria-label="Invoice date"
               type="date"
               name="invoice_date"
-            /><input
+            /><input aria-label="Amount"
               type="number"
               step=".01"
               name="amount"
               placeholder="Amount"
-            /><input name="currency" value="BDT" /><select
+            /><input aria-label="Currency" name="currency" value="BDT" /><select aria-label="Approval id"
               class="full"
               name="approval_id"
             >
@@ -476,7 +476,7 @@
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><input class="full" type="file" name="invoice_file" /><button
+            ><input aria-label="Invoice file" class="full" type="file" name="invoice_file" /><button
               class="btn full"
             >
               Save Invoice
@@ -490,18 +490,18 @@
               type="hidden"
               name="action"
               value="bank_change"
-            /><select class="full" name="supplier_id" required>
+            /><select aria-label="Supplier id" class="full" name="supplier_id" required>
               <option value="">Supplier</option>
               {% for s in suppliers %}
               <option value="{{s.id}}">{{s.supplier_id}}</option>
               {% endfor %}</select
-            ><input name="bank_name" placeholder="Bank" /><input
+            ><input aria-label="Bank" name="bank_name" placeholder="Bank" /><input aria-label="Account Name"
               name="bank_account_name"
               placeholder="Account Name"
-            /><input name="bank_account_no" placeholder="Account No" /><input
+            /><input aria-label="Account No" name="bank_account_no" placeholder="Account No" /><input aria-label="SWIFT"
               name="bank_swift"
               placeholder="SWIFT"
-            /><select class="full" name="approval_id" required>
+            /><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">MANDATORY Senior Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -516,11 +516,11 @@
               type="hidden"
               name="action"
               value="status"
-            /><select class="full" name="supplier_id">
+            /><select aria-label="Supplier id" class="full" name="supplier_id">
               {% for s in suppliers %}
               <option value="{{s.id}}">{{s.supplier_id}}</option>
               {% endfor %}</select
-            ><select class="full" name="status">
+            ><select aria-label="Status" class="full" name="status">
               {% for s in supplier_statuses %}
               <option>{{s}}</option>
               {% endfor %}</select
@@ -546,16 +546,16 @@
         <h3>SUPPLIER PERFORMANCE / RISK</h3>
         <table class="tbl">
           <tr>
-            <th>Supplier</th>
-            <th>On-Time</th>
-            <th>Quality Pass</th>
-            <th>Reject</th>
-            <th>Short</th>
-            <th>Lead Variance</th>
-            <th>Purchase</th>
-            <th>Outstanding</th>
-            <th>Score</th>
-            <th>Risk</th>
+            <th scope="col">Supplier</th>
+            <th scope="col">On-Time</th>
+            <th scope="col">Quality Pass</th>
+            <th scope="col">Reject</th>
+            <th scope="col">Short</th>
+            <th scope="col">Lead Variance</th>
+            <th scope="col">Purchase</th>
+            <th scope="col">Outstanding</th>
+            <th scope="col">Score</th>
+            <th scope="col">Risk</th>
           </tr>
           {% for p in performances %}
           <tr>

@@ -403,14 +403,14 @@
           <h2>POLY PLAN / ORDER</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Type</th>
-              <th>Code</th>
-              <th>Size</th>
-              <th>Micron</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Type</th>
+              <th scope="col">Code</th>
+              <th scope="col">Size</th>
+              <th scope="col">Micron</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":14" %}
             <tr>
@@ -434,11 +434,11 @@
           <h2>LATEST GARMENT/BUNDLE SCANS</h2>
           <table class="tbl">
             <tr>
-              <th>Time</th>
-              <th>Bundle</th>
-              <th>Dir.</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Time</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Dir.</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for s in scans|slice:":14" %}
             <tr>
@@ -491,7 +491,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -499,56 +499,56 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="buyer" placeholder="Buyer" /><input
+            ><input aria-label="Buyer" name="buyer" placeholder="Buyer" /><input aria-label="Brand"
               name="brand"
               placeholder="Brand"
-            /><input name="style_no" placeholder="Style No." /><input
+            /><input aria-label="Style No." name="style_no" placeholder="Style No." /><input aria-label="Product"
               name="product"
               placeholder="Product"
-            /><input name="colour" placeholder="Colour" /><input
+            /><input aria-label="Colour" name="colour" placeholder="Colour" /><input aria-label="Size Range"
               name="size_range"
               placeholder="Size Range"
-            /><select name="poly_type">
+            /><select aria-label="Poly type" name="poly_type">
               {% for x in poly_types %}
               <option>{{x}}</option>
               {% endfor %}</select
-            ><input name="poly_code" placeholder="Poly Code" required /><input
+            ><input aria-label="Poly Code" name="poly_code" placeholder="Poly Code" required /><input aria-label="Poly Size"
               name="poly_size"
               placeholder="Poly Size"
-            /><input
+            /><input aria-label="Thickness/Micron"
               type="number"
               step="0.01"
               name="thickness_micron"
               placeholder="Thickness/Micron"
-            /><input name="material" placeholder="Material" /><input
+            /><input aria-label="Material" name="material" placeholder="Material" /><input aria-label="Warning Text"
               class="full"
               name="warning_text"
               placeholder="Warning Text"
             /><label class="full"
-              ><input type="checkbox" name="barcode_required" checked />
+              ><input aria-label="Barcode required" type="checkbox" name="barcode_required" checked />
               Barcode/Sticker Required</label
-            ><input
+            ><input aria-label="Planned Qty"
               type="number"
               name="planned_qty"
               placeholder="Planned Qty"
               required
-            /><input type="date" name="target_date" /><select
+            /><input aria-label="Target date" type="date" name="target_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
             ><label
-              >Packing Specification<input
+              >Packing Specification<input aria-label="Packing specification"
                 type="file"
                 name="packing_specification" /></label
-            ><label>Artwork<input type="file" name="artwork" /></label
+            ><label>Artwork<input aria-label="Artwork" type="file" name="artwork" /></label
             ><button class="btn full">Create Poly Plan</button>
           </form>
         </div>
@@ -560,38 +560,38 @@
               type="hidden"
               name="action"
               value="stock_issue"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Poly Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select name="stock_item_id">
+            ><select aria-label="Stock item id" name="stock_item_id">
               <option value="">Stock Item</option>
               {% for s in stock_items %}
               <option value="{{s.id}}">{{s.name}}</option>
               {% endfor %}</select
-            ><input name="supplier" placeholder="Supplier" /><input
+            ><input aria-label="Supplier" name="supplier" placeholder="Supplier" /><input aria-label="Batch No."
               name="batch_no"
               placeholder="Batch No."
-            /><input name="lot_no" placeholder="Lot No." /><input
+            /><input aria-label="Lot No." name="lot_no" placeholder="Lot No." /><input aria-label="Issued Qty"
               type="number"
               name="issued_qty"
               placeholder="Issued Qty"
               required
-            /><input
+            /><input aria-label="Returned Qty"
               type="number"
               name="returned_qty"
               placeholder="Returned Qty"
-            /><input
+            /><input aria-label="Damaged Qty"
               type="number"
               name="damaged_qty"
               placeholder="Damaged Qty"
-            /><input
+            /><input aria-label="Mandatory POLY STOCK OUT SCAN"
               class="full"
               name="stock_out_scan"
               placeholder="Mandatory POLY STOCK OUT SCAN"
               required
-            /><input
+            /><input aria-label="Return STOCK IN SCAN"
               class="full"
               name="stock_in_return_scan"
               placeholder="Return STOCK IN SCAN"
@@ -606,29 +606,29 @@
               type="hidden"
               name="action"
               value="bundle_scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Poly Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">
                 {{b.bundle_no}} · {{b.barcode}} · {{b.quantity}}
               </option>
               {% endfor %}</select
-            ><select name="direction">
+            ><select aria-label="Direction" name="direction">
               <option value="IN">GARMENT/BUNDLE IN SCAN</option>
               <option value="OUT">GARMENT/BUNDLE OUT SCAN</option></select
-            ><input name="barcode" placeholder="Scan Barcode / QR" /><input
+            ><input aria-label="Scan Barcode / QR" name="barcode" placeholder="Scan Barcode / QR" /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input
+            /><input aria-label="Source Department"
               name="source_department"
               placeholder="Source Department"
-            /><input
+            /><input aria-label="Destination Department"
               name="destination_department"
               placeholder="Destination Department"
             /><button class="btn full">Validate & Scan</button>
@@ -642,82 +642,82 @@
               type="hidden"
               name="action"
               value="packing"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{today|date:'Y-m-d'}}"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Target"
               type="number"
               name="target_qty"
               placeholder="Target"
-            /><input
+            /><input aria-label="Actual"
               type="number"
               name="actual_qty"
               placeholder="Actual"
-            /><input
+            /><input aria-label="Process Minutes"
               type="number"
               name="process_minutes"
               placeholder="Process Minutes"
-            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+            /><input aria-label="NPT" type="number" name="npt_minutes" placeholder="NPT" /><input aria-label="Poly Used"
               type="number"
               name="poly_used_qty"
               placeholder="Poly Used"
-            /><input
+            /><input aria-label="Damaged"
               type="number"
               name="damaged_qty"
               placeholder="Damaged"
-            /><input
+            /><input aria-label="Rejected"
               type="number"
               name="rejected_qty"
               placeholder="Rejected"
-            /><input
+            /><input aria-label="Returned"
               type="number"
               name="returned_qty"
               placeholder="Returned"
-            /><input
+            /><input aria-label="Poly Cost/Piece"
               type="number"
               step="0.0001"
               name="poly_cost_per_piece"
               placeholder="Poly Cost/Piece"
-            /><input
+            /><input aria-label="Sticker/Barcode Cost"
               type="number"
               step="0.01"
               name="sticker_barcode_cost"
               placeholder="Sticker/Barcode Cost"
-            /><input
+            /><input aria-label="Labour Cost"
               type="number"
               step="0.01"
               name="labour_cost"
               placeholder="Labour Cost"
-            /><input
+            /><input aria-label="Cost/Minute"
               type="number"
               step="0.0001"
               name="cost_per_minute"
               placeholder="Cost/Minute"
-            /><input
+            /><input aria-label="Wastage Cost"
               type="number"
               step="0.01"
               name="wastage_cost"
               placeholder="Wastage Cost"
             /><label class="full"
-              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              ><input aria-label="Manual entry" type="checkbox" name="manual_entry" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval if manual</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -735,44 +735,44 @@
               type="hidden"
               name="action"
               value="qc"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Inspected"
               type="number"
               name="inspected_qty"
               placeholder="Inspected"
-            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+            /><input aria-label="Pass" type="number" name="pass_qty" placeholder="Pass" /><input aria-label="Reject"
               type="number"
               name="reject_qty"
               placeholder="Reject"
-            /><input
+            /><input aria-label="Rework"
               type="number"
               name="rework_qty"
               placeholder="Rework"
-            /><select name="defect_type">
+            /><select aria-label="Defect type" name="defect_type">
               <option value="">No Defect</option>
               {% for d in defect_types %}
               <option>{{d}}</option>
               {% endfor %}</select
-            ><select name="result">
+            ><select aria-label="Result" name="result">
               <option>PASS</option>
               <option>HOLD</option>
               <option>REWORK</option>
               <option>REJECT</option></select
-            ><textarea
+            ><textarea aria-label="Defect / Reason"
               name="defect_reason"
               placeholder="Defect / Reason"
             ></textarea
             ><label class="full"
-              >QC Photo<input type="file" name="qc_photo" /></label
+              >QC Photo<input aria-label="Qc photo" type="file" name="qc_photo" /></label
             ><button class="btn full">Record Poly QC</button>
           </form>
         </div>
@@ -781,16 +781,16 @@
           <h2>TODAY'S POLY PACKING</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Bundle</th>
-              <th>Target</th>
-              <th>Actual</th>
-              <th>Used</th>
-              <th>Damage</th>
-              <th>Reject</th>
-              <th>Return</th>
-              <th>Minutes</th>
-              <th>Total Cost</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Target</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Used</th>
+              <th scope="col">Damage</th>
+              <th scope="col">Reject</th>
+              <th scope="col">Return</th>
+              <th scope="col">Minutes</th>
+              <th scope="col">Total Cost</th>
             </tr>
             {% for x in pack|slice:":20" %}
             <tr>

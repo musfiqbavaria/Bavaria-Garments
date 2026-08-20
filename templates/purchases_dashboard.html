@@ -211,7 +211,7 @@
               type="hidden"
               name="action"
               value="open"
-            /><select class="full" name="po_id" required>
+            /><select aria-label="Po id" class="full" name="po_id" required>
               <option value="">Approved PO</option>
               {% for p in eligible_pos %}
               <option value="{{p.id}}">
@@ -228,11 +228,11 @@
               type="hidden"
               name="action"
               value="ack"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}}</option>
               {% endfor %}</select
-            ><input class="full" type="date" name="promised_delivery" /><button
+            ><input aria-label="Promised delivery" class="full" type="date" name="promised_delivery" /><button
               class="btn full"
             >
               Confirm Supplier Acknowledgement
@@ -246,7 +246,7 @@
               type="hidden"
               name="action"
               value="sync_receipt"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}}</option>
               {% endfor %}</select
@@ -264,17 +264,17 @@
               type="hidden"
               name="action"
               value="match"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="invoice_id">
+            ><select aria-label="Invoice id" class="full" name="invoice_id">
               {% for i in invoices %}
               <option value="{{i.id}}">
                 {{i.invoice_no}} · {{i.po.po_no}} · {{i.amount}}
               </option>
               {% endfor %}</select
-            ><select class="full" name="exception_approval_id">
+            ><select aria-label="Exception approval id" class="full" name="exception_approval_id">
               <option value="">Variance Exception Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -289,36 +289,36 @@
               type="hidden"
               name="action"
               value="amend"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Amendment No."
               name="amendment_no"
               placeholder="Amendment No."
               required
-            /><select name="amendment_type">
+            /><select aria-label="Amendment type" name="amendment_type">
               <option>QUANTITY</option>
               <option>PRICE</option>
               <option>DELIVERY_DATE</option>
               <option>TERMS</option>
               <option>CANCEL</option>
               <option>OTHER</option></select
-            ><input name="old_value" placeholder="Old Value" /><input
+            ><input aria-label="Old Value" name="old_value" placeholder="Old Value" /><input aria-label="New Value"
               name="new_value"
               placeholder="New Value"
-            /><textarea
+            /><textarea aria-label="Reason"
               class="full"
               name="reason"
               placeholder="Reason"
               required
             ></textarea
-            ><select class="full" name="approval_id" required>
+            ><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Mandatory Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><input class="full" type="file" name="document" /><button
+            ><input aria-label="Document" class="full" type="file" name="document" /><button
               class="btn full"
             >
               Create Approved Amendment
@@ -332,35 +332,35 @@
               type="hidden"
               name="action"
               value="return"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}}</option>
               {% endfor %}</select
-            ><input name="return_no" placeholder="Return No." required /><input
+            ><input aria-label="Return No." name="return_no" placeholder="Return No." required /><input aria-label="Return Qty"
               type="number"
               step=".001"
               name="quantity"
               placeholder="Return Qty"
-            /><input
+            /><input aria-label="Return Value"
               type="number"
               step=".01"
               name="value"
               placeholder="Return Value"
-            /><input
+            /><input aria-label="Debit Note No."
               name="debit_note_no"
               placeholder="Debit Note No."
-            /><textarea
+            /><textarea aria-label="Return Reason"
               class="full"
               name="reason"
               placeholder="Return Reason"
               required
             ></textarea
-            ><select class="full" name="approval_id" required>
+            ><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Return Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><input class="full" type="file" name="return_document" /><button
+            ><input aria-label="Return document" class="full" type="file" name="return_document" /><button
               class="btn full"
             >
               Approve Purchase Return
@@ -374,7 +374,7 @@
               type="hidden"
               name="action"
               value="close"
-            /><select class="full" name="purchase_id">
+            /><select aria-label="Purchase id" class="full" name="purchase_id">
               {% for p in purchases %}
               <option value="{{p.id}}">{{p.po.po_no}} · {{p.status}}</option>
               {% endfor %}</select
@@ -406,16 +406,16 @@
         <h3>PURCHASE REGISTER</h3>
         <table class="tbl">
           <tr>
-            <th>PO</th>
-            <th>Supplier</th>
-            <th>PO Qty</th>
-            <th>PO Value</th>
-            <th>Received</th>
-            <th>Accepted</th>
-            <th>Rejected</th>
-            <th>Short</th>
-            <th>Promised</th>
-            <th>Status</th>
+            <th scope="col">PO</th>
+            <th scope="col">Supplier</th>
+            <th scope="col">PO Qty</th>
+            <th scope="col">PO Value</th>
+            <th scope="col">Received</th>
+            <th scope="col">Accepted</th>
+            <th scope="col">Rejected</th>
+            <th scope="col">Short</th>
+            <th scope="col">Promised</th>
+            <th scope="col">Status</th>
           </tr>
           {% for p in purchases %}
           <tr>
@@ -441,14 +441,14 @@
         <h3>3-WAY MATCH HISTORY</h3>
         <table class="tbl">
           <tr>
-            <th>PO</th>
-            <th>Invoice</th>
-            <th>PO Value</th>
-            <th>GRN Value</th>
-            <th>Invoice Value</th>
-            <th>Qty Variance</th>
-            <th>Value Variance</th>
-            <th>Status</th>
+            <th scope="col">PO</th>
+            <th scope="col">Invoice</th>
+            <th scope="col">PO Value</th>
+            <th scope="col">GRN Value</th>
+            <th scope="col">Invoice Value</th>
+            <th scope="col">Qty Variance</th>
+            <th scope="col">Value Variance</th>
+            <th scope="col">Status</th>
           </tr>
           {% for m in matches %}
           <tr>

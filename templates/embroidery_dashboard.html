@@ -405,13 +405,13 @@
           <h2>EMBROIDERY PLAN / ORDER</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Style</th>
-              <th>Design</th>
-              <th>Stitches</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Style</th>
+              <th scope="col">Design</th>
+              <th scope="col">Stitches</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":12" %}
             <tr>
@@ -434,11 +434,11 @@
           <h2>LATEST BUNDLE SCANS</h2>
           <table class="tbl">
             <tr>
-              <th>Time</th>
-              <th>Bundle</th>
-              <th>Dir.</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Time</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Dir.</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for s in scans|slice:":12" %}
             <tr>
@@ -493,7 +493,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -501,35 +501,35 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="product" placeholder="Product" required /><input
+            ><input aria-label="Product" name="product" placeholder="Product" required /><input aria-label="Style No."
               name="style_no"
               placeholder="Style No."
-            /><input name="design_no" placeholder="Design No." /><input
+            /><input aria-label="Design No." name="design_no" placeholder="Design No." /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input name="size_range" placeholder="Size Range" /><input
+            /><input aria-label="Size Range" name="size_range" placeholder="Size Range" /><input aria-label="Stitch Count"
               type="number"
               name="stitch_count"
               placeholder="Stitch Count"
-            /><input
+            /><input aria-label="Planned Qty"
               type="number"
               name="planned_qty"
               placeholder="Planned Qty"
               required
-            /><input type="date" name="target_date" /><select
+            /><input aria-label="Target date" type="date" name="target_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><label>Artwork<input type="file" name="artwork" /></label
-            ><label>Program File<input type="file" name="program_file" /></label
+            ><label>Artwork<input aria-label="Artwork" type="file" name="artwork" /></label
+            ><label>Program File<input aria-label="Program file" type="file" name="program_file" /></label
             ><button class="btn full">Create Plan</button>
           </form>
         </div>
@@ -541,38 +541,38 @@
               type="hidden"
               name="action"
               value="bundle_scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Embroidery Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id" required>
+            ><select aria-label="Bundle id" class="full" name="bundle_id" required>
               <option value="">Cutting Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">
                 {{b.bundle_no}} · {{b.barcode}} · {{b.quantity}}
               </option>
               {% endfor %}</select
-            ><select name="direction">
+            ><select aria-label="Direction" name="direction">
               <option value="IN">BUNDLE IN SCAN</option>
               <option value="OUT">BUNDLE OUT SCAN</option></select
-            ><input
+            ><input aria-label="Scan Barcode/QR"
               name="barcode"
               placeholder="Scan Barcode/QR"
               required
-            /><input
+            /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input name="source_department" placeholder="Source" /><input
+            /><input aria-label="Source" name="source_department" placeholder="Source" /><input aria-label="Destination"
               name="destination_department"
               placeholder="Destination"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Operator</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="machine_id">
+            ><select aria-label="Machine id" name="machine_id">
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">{{m.name}}</option>
@@ -588,30 +588,30 @@
               type="hidden"
               name="action"
               value="material"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select name="stock_item_id">
+            ><select aria-label="Stock item id" name="stock_item_id">
               <option value="">Stock Item</option>
               {% for s in stock_items %}
               <option value="{{s.id}}">{{s.name}}</option>
               {% endfor %}</select
-            ><input name="material_type" value="THREAD" /><input
+            ><input aria-label="Material type" name="material_type" value="THREAD" /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input name="lot_no" placeholder="Lot No." /><input
+            /><input aria-label="Lot No." name="lot_no" placeholder="Lot No." /><input aria-label="Issued Qty"
               type="number"
               step="0.001"
               name="issued_qty"
               placeholder="Issued Qty"
               required
-            /><select name="unit">
+            /><select aria-label="Unit" name="unit">
               <option>PCS</option>
               <option>METRE</option>
               <option>CONE</option></select
-            ><input
+            ><input aria-label="Mandatory STOCK OUT SCAN"
               class="full"
               name="stock_out_scan"
               placeholder="Mandatory STOCK OUT SCAN"
@@ -627,70 +627,70 @@
               type="hidden"
               name="action"
               value="production"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{today|date:'Y-m-d'}}"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Operator</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="machine_id">
+            ><select aria-label="Machine id" name="machine_id">
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">{{m.name}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Machine Heads"
               type="number"
               name="machine_heads"
               value="1"
               placeholder="Machine Heads"
-            /><input
+            /><input aria-label="Target"
               type="number"
               name="target_qty"
               placeholder="Target"
-            /><input
+            /><input aria-label="Actual"
               type="number"
               name="actual_qty"
               placeholder="Actual"
-            /><input
+            /><input aria-label="Stitch Count"
               type="number"
               name="stitch_count"
               placeholder="Stitch Count"
-            /><input
+            /><input aria-label="Minutes"
               type="number"
               name="process_minutes"
               placeholder="Minutes"
-            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+            /><input aria-label="NPT" type="number" name="npt_minutes" placeholder="NPT" /><input aria-label="Cost/Minute"
               type="number"
               step="0.0001"
               name="cost_per_minute"
               placeholder="Cost/Minute"
-            /><input
+            /><input aria-label="Thread Cost"
               type="number"
               step="0.01"
               name="thread_cost"
               placeholder="Thread Cost"
-            /><input
+            /><input aria-label="Other Cost"
               type="number"
               step="0.01"
               name="other_cost"
               placeholder="Other Cost"
             /><label class="full"
-              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              ><input aria-label="Manual entry" type="checkbox" name="manual_entry" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval if manual</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -708,38 +708,38 @@
               type="hidden"
               name="action"
               value="qc"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Inspected"
               type="number"
               name="inspected_qty"
               placeholder="Inspected"
-            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+            /><input aria-label="Pass" type="number" name="pass_qty" placeholder="Pass" /><input aria-label="Reject"
               type="number"
               name="reject_qty"
               placeholder="Reject"
-            /><input
+            /><input aria-label="Repair"
               type="number"
               name="repair_qty"
               placeholder="Repair"
-            /><input
+            /><input aria-label="Rework"
               type="number"
               name="rework_qty"
               placeholder="Rework"
-            /><select name="status">
+            /><select aria-label="Status" name="status">
               <option>PASS</option>
               <option>REJECT</option>
               <option>REPAIR</option>
               <option>REWORK</option></select
-            ><textarea
+            ><textarea aria-label="Defect / reason"
               name="defect_reason"
               placeholder="Defect / reason"
             ></textarea
@@ -750,13 +750,13 @@
           <h2>QC / PRODUCTION HISTORY</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Bundle</th>
-              <th>Target</th>
-              <th>Actual</th>
-              <th>Minutes</th>
-              <th>Stitches</th>
-              <th>Total Cost</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Target</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Minutes</th>
+              <th scope="col">Stitches</th>
+              <th scope="col">Total Cost</th>
             </tr>
             {% for x in prod|slice:":20" %}
             <tr>

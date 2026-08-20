@@ -987,9 +987,9 @@ Portal{% endblock %}{% block content %}
           <h2>UPCOMING DOCUMENT EXPIRY</h2>
           <table class="mini-table">
             <tr>
-              <th>Document</th>
-              <th>Days Left</th>
-              <th>Expiry</th>
+              <th scope="col">Document</th>
+              <th scope="col">Days Left</th>
+              <th scope="col">Expiry</th>
             </tr>
             {% for d in expiry_docs %}
             <tr>
@@ -1036,9 +1036,9 @@ Portal{% endblock %}{% block content %}
           <h2>MY APPLICATIONS</h2>
           <table class="mini-table">
             <tr>
-              <th>No.</th>
-              <th>Type</th>
-              <th>Status</th>
+              <th scope="col">No.</th>
+              <th scope="col">Type</th>
+              <th scope="col">Status</th>
             </tr>
             {% for a in applications|slice:":10" %}
             <tr>
@@ -1077,16 +1077,16 @@ Portal{% endblock %}{% block content %}
               name="action"
               value="application"
             /><label
-              >Type<select name="application_type">
+              >Type<select aria-label="Application type" name="application_type">
                 {% for x in application_types %}
                 <option>{{x}}</option>
                 {% endfor %}
               </select></label
-            ><label>Subject<input name="subject" required /></label
+            ><label>Subject<input aria-label="Subject" name="subject" required /></label
             ><label class="full"
-              >Details<textarea name="details"></textarea></label
+              >Details<textarea aria-label="Details" name="details"></textarea></label
             ><label class="full"
-              >Attachment<input type="file" name="attachment" /></label
+              >Attachment<input aria-label="Attachment" type="file" name="attachment" /></label
             ><button class="btnx primary full">Submit Application</button>
           </form>
         </div>
@@ -1099,18 +1099,18 @@ Portal{% endblock %}{% block content %}
               name="action"
               value="upload_document"
             /><label
-              >Type<select name="document_type">
+              >Type<select aria-label="Document type" name="document_type">
                 {% for x in document_types %}
                 <option>{{x}}</option>
                 {% endfor %}
               </select></label
-            ><label>Title<input name="title" required /></label
-            ><label>Reference<input name="reference" /></label
-            ><label>Version<input name="version" value="1.0" /></label
-            ><label>Issue Date<input type="date" name="issue_date" /></label
-            ><label>Expiry Date<input type="date" name="expires_at" /></label
+            ><label>Title<input aria-label="Title" name="title" required /></label
+            ><label>Reference<input aria-label="Reference" name="reference" /></label
+            ><label>Version<input aria-label="Version" name="version" value="1.0" /></label
+            ><label>Issue Date<input aria-label="Issue date" type="date" name="issue_date" /></label
+            ><label>Expiry Date<input aria-label="Expires at" type="date" name="expires_at" /></label
             ><label class="full"
-              >File<input type="file" name="file" required /></label
+              >File<input aria-label="File" type="file" name="file" required /></label
             ><button class="btnx primary full">Upload Document</button>
           </form>
         </div>
@@ -1123,15 +1123,15 @@ Portal{% endblock %}{% block content %}
               name="action"
               value="hr_support"
             /><label
-              >Type<select name="support_type">
+              >Type<select aria-label="Support type" name="support_type">
                 <option>HR_SUPPORT</option>
                 <option>GRIEVANCE</option>
               </select></label
-            ><label>Subject<input name="subject" required /></label
+            ><label>Subject<input aria-label="Subject" name="subject" required /></label
             ><label class="full"
-              >Details<textarea name="details" required></textarea></label
+              >Details<textarea aria-label="Details" name="details" required></textarea></label
             ><label class="full"
-              >Attachment<input type="file" name="attachment" /></label
+              >Attachment<input aria-label="Attachment" type="file" name="attachment" /></label
             ><button class="btnx primary full">Request HR Support</button>
           </form>
         </div>
@@ -1142,9 +1142,9 @@ Portal{% endblock %}{% block content %}
           <h2>MY SCHEDULE</h2>
           <table class="mini-table">
             <tr>
-              <th>Date</th>
-              <th>Shift</th>
-              <th>Location</th>
+              <th scope="col">Date</th>
+              <th scope="col">Shift</th>
+              <th scope="col">Location</th>
             </tr>
             {% for s in schedule_rows %}
             <tr>
@@ -1200,18 +1200,18 @@ Portal{% endblock %}{% block content %}
               name="action"
               value="profile"
             /><label
-              >Phone<input name="phone" value="{{profile.phone}}" /></label
+              >Phone<input aria-label="Phone" name="phone" value="{{profile.phone}}" /></label
             ><label
-              >Email<input
+              >Email<input aria-label="Email"
                 type="email"
                 name="email"
                 value="{{profile.email}}" /></label
             ><label class="full"
-              >Emergency Contact<input
+              >Emergency Contact<input aria-label="Emergency contact"
                 name="emergency_contact"
                 value="{{profile.emergency_contact}}" /></label
             ><label class="full"
-              >Profile Photo<input type="file" name="profile_photo" /></label
+              >Profile Photo<input aria-label="Profile photo" type="file" name="profile_photo" /></label
             ><button class="btnx primary full">Update Profile</button>
           </form>
         </div>
@@ -1222,11 +1222,11 @@ Portal{% endblock %}{% block content %}
         <div style="overflow: auto">
           <table class="mini-table">
             <tr>
-              <th>Type</th>
-              <th>Title / Ref</th>
-              <th>Version</th>
-              <th>Expiry</th>
-              <th>VIEW · PREVIEW · DOWNLOAD · PRINT</th>
+              <th scope="col">Type</th>
+              <th scope="col">Title / Ref</th>
+              <th scope="col">Version</th>
+              <th scope="col">Expiry</th>
+              <th scope="col">VIEW · PREVIEW · DOWNLOAD · PRINT</th>
             </tr>
             {% for d in documents %}
             <tr>

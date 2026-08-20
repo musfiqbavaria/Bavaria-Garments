@@ -330,11 +330,11 @@
           <h2>PRODUCTION DEPARTMENT PERFORMANCE</h2>
           <table class="tbl">
             <tr>
-              <th>Department</th>
-              <th>Actual</th>
-              <th>Target</th>
-              <th>Efficiency</th>
-              <th>Cost</th>
+              <th scope="col">Department</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Target</th>
+              <th scope="col">Efficiency</th>
+              <th scope="col">Cost</th>
             </tr>
             {% for r in summary.production_rows %}
             <tr>
@@ -356,11 +356,11 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Supplier</th>
-                <th>Score</th>
-                <th>Risk</th>
-                <th>Quality</th>
-                <th>On-Time</th>
+                <th scope="col">Supplier</th>
+                <th scope="col">Score</th>
+                <th scope="col">Risk</th>
+                <th scope="col">Quality</th>
+                <th scope="col">On-Time</th>
               </tr>
               {% for s in supplier_perf %}
               <tr>
@@ -434,10 +434,10 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Type</th>
-                <th>Reference</th>
-                <th>By</th>
-                <th>Requested</th>
+                <th scope="col">Type</th>
+                <th scope="col">Reference</th>
+                <th scope="col">By</th>
+                <th scope="col">Requested</th>
               </tr>
               {% for a in approvals %}
               <tr>
@@ -459,10 +459,10 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Action</th>
-                <th>Dept.</th>
-                <th>Priority</th>
-                <th>Due</th>
+                <th scope="col">Action</th>
+                <th scope="col">Dept.</th>
+                <th scope="col">Priority</th>
+                <th scope="col">Due</th>
               </tr>
               {% for a in actions %}
               <tr>
@@ -487,12 +487,12 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Order</th>
-                <th>Buyer</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Value</th>
-                <th>Status</th>
+                <th scope="col">Order</th>
+                <th scope="col">Buyer</th>
+                <th scope="col">Product</th>
+                <th scope="col">Qty</th>
+                <th scope="col">Value</th>
+                <th scope="col">Status</th>
               </tr>
               {% for o in orders %}
               <tr>
@@ -512,11 +512,11 @@
           <div class="scroll">
             <table class="tbl">
               <tr>
-                <th>Shipment</th>
-                <th>Order</th>
-                <th>Carrier</th>
-                <th>ETA</th>
-                <th>Status</th>
+                <th scope="col">Shipment</th>
+                <th scope="col">Order</th>
+                <th scope="col">Carrier</th>
+                <th scope="col">ETA</th>
+                <th scope="col">Status</th>
               </tr>
               {% for s in shipping %}
               <tr>

@@ -396,12 +396,12 @@
           <h2>CUTTING PLAN / ORDER PROGRESS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Product</th>
-              <th>Qty</th>
-              <th>Status</th>
-              <th>Target Date</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Product</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
+              <th scope="col">Target Date</th>
             </tr>
             {% for p in plans|slice:":12" %}
             <tr>
@@ -423,11 +423,11 @@
           <h2>TODAY'S CUTTING PRODUCTION</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Target</th>
-              <th>Actual</th>
-              <th>Minutes</th>
-              <th>Cost</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Target</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Minutes</th>
+              <th scope="col">Cost</th>
             </tr>
             {% for x in prod|slice:":12" %}
             <tr>
@@ -480,7 +480,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -488,22 +488,22 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="product" placeholder="Product" required /><input
+            ><input aria-label="Product" name="product" placeholder="Product" required /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input name="size_range" placeholder="Size Range" /><input
+            /><input aria-label="Size Range" name="size_range" placeholder="Size Range" /><input aria-label="Planned Qty"
               type="number"
               name="planned_qty"
               placeholder="Planned Qty"
               required
-            /><input type="date" name="target_date" /><select
+            /><input aria-label="Target date" type="date" name="target_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -518,29 +518,29 @@
               type="hidden"
               name="action"
               value="fabric"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Cutting Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select name="stock_item_id">
+            ><select aria-label="Stock item id" name="stock_item_id">
               <option value="">Stock Item</option>
               {% for s in stock_items %}
               <option value="{{s.id}}">{{s.name}}</option>
               {% endfor %}</select
-            ><input name="roll_no" placeholder="Roll No." required /><input
+            ><input aria-label="Roll No." name="roll_no" placeholder="Roll No." required /><input aria-label="Lot No."
               name="lot_no"
               placeholder="Lot No."
-            /><input name="shade" placeholder="Shade" /><input
+            /><input aria-label="Shade" name="shade" placeholder="Shade" /><input aria-label="Issued Qty"
               name="issued_qty"
               type="number"
               step="0.001"
               placeholder="Issued Qty"
               required
-            /><select name="unit">
+            /><select aria-label="Unit" name="unit">
               <option>METRE</option>
               <option>YARD</option></select
-            ><input
+            ><input aria-label="Mandatory STOCK OUT SCAN"
               class="full"
               name="stock_out_scan"
               placeholder="Mandatory STOCK OUT SCAN"
@@ -555,50 +555,50 @@
               type="hidden"
               name="action"
               value="production"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{today|date:'Y-m-d'}}"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="machine_id">
+            ><select aria-label="Machine id" name="machine_id">
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">{{m.name}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Target Qty"
               type="number"
               name="target_qty"
               placeholder="Target Qty"
-            /><input
+            /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input
+            /><input aria-label="Process Minutes"
               type="number"
               name="process_minutes"
               placeholder="Process Minutes"
-            /><input
+            /><input aria-label="NPT Minutes"
               type="number"
               name="npt_minutes"
               placeholder="NPT Minutes"
-            /><input
+            /><input aria-label="Cost/Minute"
               type="number"
               step="0.0001"
               name="cost_per_minute"
               placeholder="Cost/Minute"
             /><label class="full"
-              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              ><input aria-label="Manual entry" type="checkbox" name="manual_entry" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval if manual</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -613,24 +613,24 @@
               type="hidden"
               name="action"
               value="bundle"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><input name="bundle_no" placeholder="Bundle No." required /><input
+            ><input aria-label="Bundle No." name="bundle_no" placeholder="Bundle No." required /><input aria-label="Unique Barcode / QR"
               name="barcode"
               placeholder="Unique Barcode / QR"
               required
-            /><input name="size" placeholder="Size" /><input
+            /><input aria-label="Size" name="size" placeholder="Size" /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input
+            /><input aria-label="Quantity"
               type="number"
               name="quantity"
               placeholder="Quantity"
               required
-            /><input
+            /><input aria-label="Cut Panel WIP STOCK IN SCAN"
               class="full"
               name="stock_in_scan"
               placeholder="Cut Panel WIP STOCK IN SCAN"

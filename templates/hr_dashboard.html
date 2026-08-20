@@ -566,10 +566,10 @@
           <h2>FUTURE WORKFORCE DEMAND</h2>
           <table class="tbl">
             <tr>
-              <th>Period</th>
-              <th>Required</th>
-              <th>Current</th>
-              <th>Plan</th>
+              <th scope="col">Period</th>
+              <th scope="col">Required</th>
+              <th scope="col">Current</th>
+              <th scope="col">Plan</th>
             </tr>
             {% for w in workforce_rows|slice:":5" %}
             <tr>
@@ -635,9 +635,9 @@
           <h2>DOCUMENT EXPIRY ALERTS (30 Days)</h2>
           <table class="tbl">
             <tr>
-              <th>Document</th>
-              <th>Expiry</th>
-              <th>Employee</th>
+              <th scope="col">Document</th>
+              <th scope="col">Expiry</th>
+              <th scope="col">Employee</th>
             </tr>
             {% for d in expiring_docs %}
             <tr>
@@ -711,22 +711,22 @@
               type="hidden"
               name="action"
               value="add_employee"
-            /><input
+            /><input aria-label="Employee ID"
               name="employee_id"
               placeholder="Employee ID"
               required
-            /><input name="name" placeholder="Employee Name" required /><select
+            /><input aria-label="Employee Name" name="name" placeholder="Employee Name" required /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="category">
+            ><select aria-label="Category" name="category">
               <option>STAFF</option>
               <option>OPERATOR</option>
               <option>HELPER</option></select
-            ><input
+            ><input aria-label="Role / Designation"
               class="full"
               name="role"
               placeholder="Role / Designation"
@@ -741,22 +741,22 @@
               type="hidden"
               name="action"
               value="recruitment"
-            /><input
+            /><input aria-label="Candidate Name"
               name="candidate_name"
               placeholder="Candidate Name"
               required
-            /><input name="position" placeholder="Position" required /><input
+            /><input aria-label="Position" name="position" placeholder="Position" required /><input aria-label="Email"
               name="email"
               type="email"
               placeholder="Email"
-            /><input name="phone" placeholder="Phone" /><select
+            /><input aria-label="Phone" name="phone" placeholder="Phone" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><input type="date" name="joining_date" /><input
+            ><input aria-label="Joining date" type="date" name="joining_date" /><input aria-label="Cv"
               class="full"
               type="file"
               name="cv"
@@ -767,9 +767,9 @@
           <h2>TRAINING DUE</h2>
           <table class="tbl">
             <tr>
-              <th>Employee</th>
-              <th>Course</th>
-              <th>Due</th>
+              <th scope="col">Employee</th>
+              <th scope="col">Course</th>
+              <th scope="col">Due</th>
             </tr>
             {% for t in training_rows|slice:":8" %}
             <tr>
@@ -791,27 +791,27 @@
               type="hidden"
               name="action"
               value="case"
-            /><select name="case_type">
+            /><select aria-label="Case type" name="case_type">
               <option>COMPLAINT</option>
               <option>GRIEVANCE</option>
               <option>INCIDENT</option>
               <option>DISCIPLINARY</option></select
-            ><select name="severity">
+            ><select aria-label="Severity" name="severity">
               <option>LOW</option>
               <option selected>MEDIUM</option>
               <option>HIGH</option></select
-            ><select class="full" name="employee_id">
+            ><select aria-label="Employee id" class="full" name="employee_id">
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Subject"
               class="full"
               name="subject"
               placeholder="Subject"
               required
-            /><textarea name="details" placeholder="Details"></textarea
-            ><input class="full" type="file" name="attachment" /><button
+            /><textarea aria-label="Details" name="details" placeholder="Details"></textarea
+            ><input aria-label="Attachment" class="full" type="file" name="attachment" /><button
               class="btn full"
             >
               Open Case
