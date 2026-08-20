@@ -6,7 +6,7 @@ from django.contrib.auth.models import User, Group
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.conf import settings
 from django.db.models import Q, Sum
 from django.core.cache import cache
@@ -175,7 +175,12 @@ def login_view(request):
         error='Invalid username or password.'
     return render(request,'login.html',{'error':error})
 
-def logout_view(request): logout(request); return redirect('login')
+@require_POST
+def logout_view(request):
+    # POST only. As a GET link any prefetcher, crawler or preloading
+    # browser could end a user's session. See SITE_AUDIT_FINDINGS.md C36.
+    logout(request)
+    return redirect('login')
 
 def home(request):
     """Render the approved public storefront with live operational data."""
@@ -204,6 +209,10 @@ def home(request):
         'products': products,
         'countries': OrganizationNode.objects.filter(node_type='Country', active=True).count() or 50,
         'customer_satisfaction': 98, 'annual_revenue': str(revenue or '250000'),
+        # The homepage used to hardcode a euro sign and the label "Revenue
+        # recorded in EUR" whatever BASE_CURRENCY was set to. The code is
+        # supplied so the figure is always labelled with the real one.
+        'base_currency': getattr(settings,'BASE_CURRENCY','EUR'),
         'active_orders': MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED']).count(),
         'contact': {'phone': '+353 89 978 8187', 'email': 'urmos@rozalia.ie', 'location': 'Limerick, Ireland'},
         'storefronts': storefronts,
@@ -2433,7 +2442,12 @@ def staff_self_service(request):
     from datetime import date
     employee=_staff_employee_for_user(request.user)
     if not employee:
-        return HttpResponse('No employee record is linked to this login. Ask HR/IT to connect the user account to an Employee ID.',status=403)
+        # Not an authorisation failure: the user is entitled to this page,
+        # their account simply is not linked to an Employee record yet. It
+        # returned a bare-text 403, which read as "you may not" and gave
+        # the 21 roles that reach Self-Service from the navbar an unstyled
+        # dead end. See SITE_AUDIT_FINDINGS.md B12.
+        return render(request,'staff_self_service_unlinked.html',status=409)
 
     profile=StaffSelfServiceProfile.objects.filter(employee=employee).select_related('employee__department').first()
     if not profile:

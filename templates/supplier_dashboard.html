@@ -154,10 +154,7 @@
       >
     </div>
     <div class="m">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="k">
+            <div class="k">
         <div class="card">Suppliers<strong>{{payload.suppliers}}</strong></div>
         <div class="card">Approved<strong>{{payload.approved}}</strong></div>
         <div class="card">Pending<strong>{{payload.pending}}</strong></div>
@@ -539,7 +536,7 @@
             <button class="btn" name="slot" value="13:00">13:00</button>
             <button class="btn" name="slot" value="20:00">20:00</button>
             <a class="btn" href="{% url 'supplier_report_csv' %}">CSV</a>
-            <button type="button" class="btn" onclick="window.print()">
+            <button type="button" class="btn" data-action="print">
               Print
             </button>
           </form>

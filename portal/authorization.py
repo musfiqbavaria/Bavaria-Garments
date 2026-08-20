@@ -17,7 +17,8 @@ admin keeps its own authentication and static/media are untouched.
 
 import logging
 
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
 
 from . import roles
 
@@ -190,7 +191,11 @@ def _deny(request, reason):
     if _wants_json(request):
         return JsonResponse({'ok': False, 'error': 'You are not authorised to use this endpoint.'},
                             status=403)
-    return HttpResponseForbidden('You are not authorised to view this page.')
+    # A styled page, not bare text. Every role that clicked a navbar link it
+    # lacked used to land on one line of unstyled text with no layout, no
+    # branding and no way back into the application.
+    # See SITE_AUDIT_FINDINGS.md B12, B13.
+    return render(request, '403.html', status=403)
 
 
 class AuthorizationMiddleware:

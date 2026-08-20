@@ -407,15 +407,12 @@
       <a class="btn" href="#employee">Add Employee</a
       ><a class="btn" href="{% url 'universal_file_center' %}">Company Forms</a
       ><a class="btn" href="#audit">Authorized Manual Entry</a
-      ><button class="btn" onclick="window.print()">Print</button
+      ><button class="btn" data-action="print">Print</button
       ><a class="btn" href="#analytics">Report</a
       ><a class="btn" href="#employee">View All</a>
     </div>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="metrics">
+            <div class="metrics">
         <div class="metric">
           <span>Total Registered Employees</span><b>{{total_employees}}</b>
         </div>

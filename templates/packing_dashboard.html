@@ -271,10 +271,7 @@
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="kpis">
+            <div class="kpis">
         <div class="kpi"><span>Plans</span><b>{{payload.plans}}</b></div>
         <div class="kpi"><span>Target</span><b>{{payload.target}}</b></div>
         <div class="kpi"><span>Actual</span><b>{{payload.actual}}</b></div>
@@ -443,7 +440,7 @@
           </form>
           <br /><a class="btn" href="{% url 'packing_report_csv' %}"
             >Download CSV</a
-          ><button class="btn" onclick="window.print()">Print</button>
+          ><button class="btn" data-action="print">Print</button>
         </div>
       </div>
 

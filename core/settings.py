@@ -49,7 +49,7 @@ CSRF_TRUSTED_ORIGINS=_csv('DJANGO_CSRF_TRUSTED_ORIGINS','CSRF_TRUSTED_ORIGINS')
 INSTALLED_APPS=['django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles','portal']
 MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','portal.middleware.TenancyMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
 ROOT_URLCONF='core.urls'
-TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal']}}]
+TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal','portal.navigation.navigation','django.template.context_processors.i18n']}}]
 WSGI_APPLICATION='core.wsgi.application'
 ASGI_APPLICATION='core.asgi.application'
 # --- database ---------------------------------------------------------------

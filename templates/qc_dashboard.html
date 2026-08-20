@@ -290,10 +290,7 @@
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-
+      
       <div class="kpis">
         <div class="kpi"><span>QC Plans</span><b>{{payload.plans}}</b></div>
         <div class="kpi">
@@ -479,7 +476,7 @@
             ><button class="btn" name="slot" value="20:00">20:00</button>
           </form>
           <br /><a class="btn" href="{% url 'qc_report_csv' %}">Download CSV</a
-          ><button class="btn" onclick="window.print()">Print</button>
+          ><button class="btn" data-action="print">Print</button>
         </div>
       </div>
 

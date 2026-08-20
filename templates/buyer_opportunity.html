@@ -11,12 +11,9 @@
     <a class="btn" href="{% url 'buyer_opportunity_export_csv' %}"
       >Download CSV</a
     >
-    <button class="btn" onclick="window.print()">Preview / Print</button>
+    <button class="btn" data-action="print">Preview / Print</button>
   </div>
 </div>
-{% for message in messages %}
-<div class="card"><b>{{ message }}</b></div>
-{% endfor %}
 <div class="kpis">
   <div class="kpi">
     <b>{{ active_count }}</b><span>Active Opportunities</span>

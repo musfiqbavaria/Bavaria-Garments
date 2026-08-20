@@ -148,9 +148,6 @@
       >
     </div>
     <div class="m">
-      {% for message in messages %}
-      <div class="c">{{message}}</div>
-      {% endfor %}
       <div class="k">
         <div class="c">Plans<strong>{{payload.plans}}</strong></div>
         <div class="c">Target<strong>{{payload.target}}</strong></div>
@@ -383,7 +380,7 @@
           <a class="btn" href="{% url 'finishing_report_csv' %}"
             >Download CSV</a
           >
-          <button type="button" class="btn" onclick="window.print()">
+          <button type="button" class="btn" data-action="print">
             Print
           </button>
         </form>

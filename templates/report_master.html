@@ -272,23 +272,20 @@
       </div>
       <div class="actions">
         <a class="btn" href="{% url 'report_master_csv' %}">DOWNLOAD CSV</a>
-        <button class="btn" onclick="window.print()">PRINT</button>
+        <button class="btn" data-action="print">PRINT</button>
         <a class="btn" href="{% url 'universal_file_center' %}">FILE CENTER</a>
         <a class="btn red" href="#alerts">RED ALERTS {{summary.red_alerts}}</a>
       </div>
     </header>
 
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-
+      
       <div class="toolbar">
         <span class="btn">VIEW</span><span class="btn">PREVIEW</span
         ><span class="btn">EDIT — permission controlled</span
         ><span class="btn">REMOVE — permission controlled</span
         ><a class="btn" href="{% url 'report_master_csv' %}">DOWNLOAD</a
-        ><button class="btn" onclick="window.print()">PRINT</button>
+        ><button class="btn" data-action="print">PRINT</button>
       </div>
 
       <div class="kpis">

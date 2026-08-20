@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block title %}That page does not exist{% endblock %}
+{% block content %}
+<section class="wrap">
+  <div class="page-head">
+    <div>
+      <small>404 · Not found</small>
+      <h1>That page does not exist</h1>
+      <p>The link may be out of date, or the module may not be built yet. Every available module is listed under All Modules.</p>
+    </div>
+  </div>
+  <p>
+    <a class="btn" href="{% url 'dashboard' %}">Back to the dashboard</a>
+    <a class="btn alt" href="{% url 'global_dashboard' %}">All modules</a>
+  </p>
+</section>
+{% endblock %}

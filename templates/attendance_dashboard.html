@@ -602,7 +602,7 @@
             type="date"
             name="date"
             value="{{work_date|date:'Y-m-d'}}"
-            onchange="this.form.submit()"
+            data-action="submit-on-change"
           />
         </form>
         <span class="tool">🔔 {{alerts|length}}</span
@@ -624,9 +624,6 @@
     </div>
 
     <div class="content">
-      {% for message in messages %}
-      <div class="card green">{{message}}</div>
-      {% endfor %}
       <div class="kpis">
         <div class="kpi">
           <span>Total Employees</span><b>{{total_employees}}</b>
@@ -820,7 +817,8 @@
           <div class="camera-grid">
             {% for c in cameras %}
             <div class="cam">
-              {% if c.thumbnail %}<img src="{% url 'universal_file_action' 'attendance_cctv_thumbnail' c.id 'preview' %}" />{% else %}
+              {% if c.thumbnail %}<img src="{% url 'universal_file_action' 'attendance_cctv_thumbnail' c.id 'preview' %}"
+              alt="CCTV still captured at the {{ c.gate|default:'gate' }} for this attendance record" />{% else %}
               <div class="fallback">CCTV {{c.name}}</div>
               {% endif %}<span>{{c.location}} <b>● LIVE</b></span>
             </div>
@@ -942,7 +940,7 @@
       <div class="quick" id="reports" style="margin-top: 7px">
         <a class="btn" href="#gatepass">Add Gate Pass</a
         ><a class="btn green" href="#leave">Apply Leave</a
-        ><button class="btn purple" onclick="window.print()">
+        ><button class="btn purple" data-action="print">
           Attendance Report</button
         ><a
           class="btn orange"

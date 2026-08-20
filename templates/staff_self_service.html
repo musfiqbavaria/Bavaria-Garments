@@ -593,10 +593,6 @@ Portal{% endblock %}{% block content %}
 
     <div class="ss-content">
       <div class="crumb">⌂ Home &nbsp;›&nbsp; Dashboard</div>
-      {% for message in messages %}
-      <div class="alertbox">{{message}}</div>
-      {% endfor %}
-
       <div class="stat-grid">
         <div class="stat">
           <div class="ico">▣</div>
@@ -743,6 +739,7 @@ Portal{% endblock %}{% block content %}
             {% if profile.profile_photo %}<img
               class="avatar"
               src="{% url 'universal_file_action' 'staff_profile_photo' profile.id 'preview' %}"
+              alt="Profile photograph of {{ profile.employee.name }}"
             />{% else %}
             <div class="avatar">{{employee.name|slice:":1"}}</div>
             {% endif %}
@@ -759,7 +756,8 @@ Portal{% endblock %}{% block content %}
               ><br />{% if id_doc %}{{id_doc.issue_date|default:"—"}}{% else %}—{% endif %}
             </div>
             <div>
-              <img class="qr" src="/barcode/{{id_barcode_code}}.png" />
+              <img class="qr" src="{% url 'barcode_png' id_barcode_code %}"
+              alt="ID card barcode {{ id_barcode_code }}" />
               <div class="muted center">Active</div>
             </div>
           </div>

@@ -226,15 +226,12 @@
       <div class="tools">
         <a class="btn" href="{% url 'report_master' %}">REPORT MASTER</a
         ><a class="btn" href="{% url 'ceo_report_csv' %}">DOWNLOAD CSV</a
-        ><button class="btn" onclick="window.print()">PRINT</button
+        ><button class="btn" data-action="print">PRINT</button
         ><a class="btn red" href="#alerts">RED ALERT {{summary.red_alerts}}</a>
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-
+      
       <div class="kpis">
         <div class="kpi">
           <span>Orders / Order Value</span

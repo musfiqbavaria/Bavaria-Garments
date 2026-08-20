@@ -11,12 +11,7 @@
     </div>
     <div class="pill">LIVE CONTROL</div>
   </div>
-  {% if messages %}{% for message in messages %}
-  <div class="notice {% if message.tags == 'error' %}danger{% endif %}">
-    <b>{{ message }}</b>
-  </div>
-  {% endfor %}{% endif %}
-  <div class="stats">
+    <div class="stats">
     <article>
       <small>Total Physical Qty</small><strong>{{ total_qty }}</strong>
     </article>
@@ -32,7 +27,7 @@
   </div>
   <div class="toolbar">
     <a class="btn" href="?">View</a
-    ><button onclick="window.print()">Preview / Print</button
+    ><button data-action="print">Preview / Print</button
     ><a class="btn" href="/stock-material-master/export.csv">Download CSV</a
     ><a class="btn" href="/admin/portal/materialmaster/">Edit Master</a
     ><a class="btn" href="/admin/portal/materiallot/">Remove / Admin</a>

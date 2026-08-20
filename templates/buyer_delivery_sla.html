@@ -9,12 +9,9 @@
   </div>
   <div>
     <a class="btn" href="{% url 'buyer_delivery_export_csv' %}">Download CSV</a>
-    <button class="btn" onclick="window.print()">Preview / Print</button>
+    <button class="btn" data-action="print">Preview / Print</button>
   </div>
 </div>
-{% for message in messages %}
-<div class="card"><b>{{message}}</b></div>
-{% endfor %}
 <div class="kpis">
   <div class="kpi"><b>{{in_transit_count}}</b><span>In Transit</span></div>
   <div class="kpi">
