@@ -764,3 +764,106 @@ schedule is not wired up (A8).
 
 *No file was modified in producing this register. Every citation is a file and line in the
 current working tree at commit `c7f741e`.*
+
+
+---
+
+# Remediation status
+
+Branch `fix/site-audit`, six commits on top of `c7f741e`. The test suite went
+from **124 to 190 tests**; every fix below has a gate that fails if it regresses.
+
+| # | Finding | Status | Where |
+|---|---|---|---|
+| A1 | Report Master's 27 dead `/page/` links | **Fixed** | `portal/module_routes.py`, `report_master.html` |
+| A2 | 9 department dashboards unreachable | **Fixed** | `portal/navigation.py` |
+| A3 | 74 of 95 modules on a stub badged ACTIVE | **Partial** | 15 more now route to their real dashboard; the stub says "NOT BUILT YET" and drops its 6 dead buttons. Building the remaining modules is a product decision. |
+| A4 | Status messages not displayed | **Fixed** (finding corrected) | `base.html`; 26 local loops consolidated |
+| A5 | Production CSP kills all inline JS | **Fixed** | 41 handlers + 4 scripts → `static/js/app.js` |
+| A6 | 6 role-gated pages render unstyled | **Fixed** | 15 classes added to `app.css` and 4 page sheets |
+| A7 | 7 public portals are screenshots | **Out of scope** | Building real franchise/investor/factory/corporate/try-on/returns/wishlist portals is a feature programme, not a defect fix. Unchanged and still served as images. |
+| A8 | 16 scheduled reports never ran | **Fixed** | `portal/reporting.py`, beat at 08:05/13:05/20:05. Verified 16/16 rows written. |
+| A9 | Control-strip cache leaked across tenants | **Fixed** | `context_processors.py`, keyed per scope |
+| A10 | No password change for any user | **Fixed** | `/account/password/` |
+| A11 | "Staff Cost" unlabelled, cross-currency | **Fixed** | `OrganizationNode.currency` + conversion, reports its own shortfall |
+| B12 | Navbar offers links that 403 | **Fixed** | generated from `ROUTE_POLICY` |
+| B13 | No custom error pages | **Fixed** | 400/403/404 extend the layout, 500 standalone |
+| B14 | Navbar vanishes below 900px | **Fixed** | disclosure drawer |
+| B15 | Finance cannot maintain exchange rates | **Fixed** | `ExchangeRateAdmin` |
+| B16 | Admin unusable across 179 models | **Fixed** | `ProjectAdmin`; also closed the scoping bypass |
+| B17 | 11 models with no UI at all | **Fixed** | all 179 registered, enumerated not listed |
+| B18 | Multi-language declared, not implemented | **Partial** | machinery + shared chrome done; the 49 templates' body copy still needs a translator. Recorded in `locale/README.md`. |
+| B19 | Landing page hardcodes Bangladesh | **Fixed** | resolves from the user's scope |
+| B20 | Currency symbols hardcoded | **Fixed** | `homepage.js`, `sewing_master.html` |
+| B21 | Test coverage | **Fixed** (finding corrected) | 124 → 190 tests |
+| B22 | `app.js` is a `console.log` | **Fixed** | rewritten |
+| B23 | Recruitment decisions navigate away | **Fixed** | validated `next` |
+| B24 | Two upload standards | **Fixed** | reads the configured limit |
+| B25 | 13 slice limits, no pagination | **Open** | See below. |
+| B26 | 9 duplicate registry slugs, 1 dead rule | **Fixed** | `module_routes.py` |
+| B27 | 6 header chips are decoration | **Fixed** | removed; the features are navbar links |
+| B28 | Barcode mode silently rewritten | **Fixed** | 404s |
+| B29 | `innerHTML` from model data | **Fixed** | `textContent` throughout |
+| B30 | Hardcoded contact details | **Fixed** | configuration |
+| — | 987 controls with no accessible name | **Fixed** | 1,003 `aria-label`s |
+| — | 641 `<th>` with no scope | **Fixed** | semantic `scope="col"`/`"row"` |
+| — | No `lang`, skip link, favicon, focus ring | **Fixed** | `base.html`, `app.css` |
+| — | 4 images with no `alt` | **Fixed** | |
+| — | No `@media print` on 31 printable pages | **Fixed** | `app.css` |
+| C31 | Registry ids and "REBUILT" in headings | **Fixed** | 4 headings |
+| C32 | Search/Filter/Apply inconsistent | **Open** | See below. |
+| C33 | 9 of 12 navbar links literal | **Fixed** | generated |
+| C34 | Two dashboards, no explanation | **Fixed** | `dashboard.html` |
+| C35 | `/admin/` linked to everyone | **Fixed** | gated on `is_staff` |
+| C36 | Logout by GET | **Fixed** | POST-only |
+| C37 | 13 shells duplicated, 0 partials | **Open** | See below. |
+| C38 | CSS inside `<body>` | **Partial** | `extra_css`/`extra_js` blocks exist; 22 inline `<style>` blocks not yet moved |
+| C39 | `portal_visual` reads as dead code | **Won't fix** | It is the live renderer for seven routes. Dropped as a false positive. |
+| C40 | Route naming drift, API 302 not 401 | **Fixed** | 401 for JSON clients |
+| C41 | Dead reference images | **Fixed** | 8.3 MB removed |
+
+## Still open, and why
+
+**B25 — pagination.** 47 `|slice:` truncations at 13 different limits across 14
+templates, no `Paginator` anywhere, and no page states a total next to a
+truncated table. Doing this properly means changing what every dashboard view
+returns and adding controls to each template, and the filter forms it interacts
+with are themselves inconsistent (C32). It wants one pass over the dashboards
+rather than a mechanical edit, and it changes what users see on every page — so
+it is a scoped piece of work to authorise, not a fix to slip in.
+
+**C32 — filter control naming.** Search/Filter/Apply used interchangeably, two of
+them on one page, and 16 of the department dashboards have no filter form at all.
+That last part is the real finding, and it is the same work as B25: the tables
+truncate at 12–14 rows with no filter and no pagination, so a plan outside the
+slice cannot be reached at all.
+
+**C37 — no partials.** 13 templates duplicate the whole HTML shell and there is
+not one `{% include %}`. Splitting them is safe but touches every large template,
+and each one is 600–1,300 lines. Worth doing before the next feature lands in
+them; not worth bundling into an audit-remediation branch where it would bury
+every other diff.
+
+**A7 and the rest of A3 — product features.** Seven customer-facing portals and
+around 60 unbuilt modules. The audit's job was to stop them *looking* finished,
+which is done: the stub says it is a stub and the module directory labels what is
+planned.
+
+## What was corrected in the audit itself
+
+- **A4** overstated the problem. 26 dashboards did render messages, via a bare
+  `{% for message in messages %}` that the grep for `{% if messages %}` missed.
+  30 templates rendered them, not 4. The real defect was that they rendered as a
+  generic `.card` with no severity, so a failed save looked like a successful one.
+- **B21** was wrong. `RouteSmokeTests` already requested every non-parameterised
+  route and all 95 registry pages. Its real gap: it asserted only `status < 500`,
+  so a 404 passed, and it ran solely as a superuser.
+- The accessibility count "0 label-for across 1,404 controls" implied nothing was
+  labelled. 238 were validly labelled implicitly; 987 genuinely were not.
+- **A8** said 6 report models had no command. It was 7 — `QCAutoReport` too.
+- Two claims were dropped before publication: an "encoding corruption" that was
+  the console mangling a valid `•`, and `portal_visual` as dead code.
+- The `'Bangladesh'` default in `finance_overseas_preview` is **not** a defect and
+  was left in place with a comment. It prices the Bangladesh overseas export
+  incentive, which is country-specific by law. The existing suite caught my
+  change there.
