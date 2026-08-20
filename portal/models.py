@@ -31,10 +31,35 @@ class OrganizationNode(TimeStamped):
     #: anchors must resolve in the timezone the workforce actually works in.
     timezone=models.CharField(max_length=64,blank=True,
         help_text="IANA name, e.g. Asia/Dhaka. Blank inherits from the parent site.")
+    #: Local operating currency for this site. Blank means inherit from the
+    #: parent, and ultimately settings.BASE_CURRENCY.
+    #:
+    #: Employee.daily_cost, and every other per-site amount that carries no
+    #: currency of its own, is denominated in this. Without it a total across
+    #: sites added BDT to EUR and displayed the result unlabelled - see
+    #: SITE_AUDIT_FINDINGS.md A11 and TECHNICAL_ASSESSMENT.md 5.6. Amounts are
+    #: converted through portal/currency.py before any figure that spans sites
+    #: is totalled, and a missing rate is reported, never treated as 1.0.
+    currency=models.CharField(max_length=3,blank=True,
+        help_text="ISO 4217 code, e.g. BDT or EUR. Blank inherits from the parent site.")
     active=models.BooleanField(default=True)
 
     class Meta:
         indexes=[models.Index(fields=['path'],name='idx_org_node_path')]
+
+    def effective_currency(self):
+        """This site's currency, inherited from the nearest ancestor that sets one.
+
+        Falls back to settings.BASE_CURRENCY so a caller always gets a code and
+        never has to guess. Mirrors how the timezone is resolved.
+        """
+        from django.conf import settings
+        node, seen = self, 0
+        while node is not None and seen < 32:              # depth guard
+            if node.currency:
+                return node.currency.upper()
+            node, seen = node.parent, seen + 1
+        return getattr(settings, 'BASE_CURRENCY', 'EUR')
 
     def compute_path(self):
         return f'{self.parent.path}{self.pk}/' if self.parent_id and self.parent.path else f'/{self.pk}/'

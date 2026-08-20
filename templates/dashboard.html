@@ -19,10 +19,11 @@
   <div class="grid">
     {% for p in pages %}<a
       class="card"
-      href="{% if p.slug == 'forms-master' %}/forms-master/{% elif p.slug == 'report-master' %}/report-master/{% elif p.slug == 'bundle-barcode' %}/bundle-barcode/{% elif p.slug == 'stock-material-master' %}/stock-material-master/{% else %}/p/{{ p.slug }}/{% endif %}"
+      href="{{ p.target_url }}"
       ><span>#{{ p.page_id }}</span>
       <h3>{{ p.title }}</h3>
-      <small>{{ p.group|upper }}</small></a
+      <small>{{ p.group|upper }}</small
+      >{% if not p.is_built %}<em class="unbuilt">Not built yet</em>{% endif %}</a
     >{% endfor %}
   </div>
 </section>

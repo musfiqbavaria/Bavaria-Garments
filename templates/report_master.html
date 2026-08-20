@@ -255,7 +255,7 @@
     <a href="#communications">◯ Communication History</a>
     <a href="#history">↺ Report History</a>
     <h4>EXECUTIVE</h4>
-    <a href="/page/ceo-dashboard/">CEO Report Center</a>
+    <a href="{% url 'ceo_dashboard' %}">CEO Report Center</a>
     <a href="{% url 'communication_center' %}">Chat 24/7</a>
     <a href="{% url 'communication_center' %}?channel=WHATSAPP">WhatsApp</a>
     <a href="{% url 'communication_center' %}?channel=EMAIL">Email</a>
@@ -334,8 +334,8 @@
             >
             <small>{{r.title}}</small>
             {% for a in r.actions|slice:":4" %}<span class="badge">{{a}}</span
-            >{% endfor %} <br /><br /><a href="/page/{{r.slug}}/"
-              >OPEN / DRILL DOWN</a
+            >{% endfor %} <br /><br /><a href="{{r.url}}"
+              >{% if r.built %}OPEN / DRILL DOWN{% else %}NOT BUILT YET{% endif %}</a
             >
           </div>
           {% endfor %}

@@ -18,6 +18,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from . import roles as roles_mod
 from .currency import RateUnavailable, base_currency as currency_base, convert, convert_or_none
+from .module_routes import module_route_name, module_url, has_module_page
 from .roles import can_decide_approval, has_any_role, user_roles
 from .services import apply_stock_scan, record_variance, calculate_attendance_day, attendance_schedule
 
@@ -525,37 +526,31 @@ def global_dashboard(request):
     templates/dashboard.html was rendered by nothing. Every one of the 95
     registered modules was then reachable only by typing its /p/<slug>/ URL.
     """
-    pages=DashboardPage.objects.filter(enabled=True).order_by('page_id')
+    pages=[]
+    for p in DashboardPage.objects.filter(enabled=True).order_by('page_id'):
+        # Resolved from portal/module_routes.py so the card links to the real
+        # module where one exists instead of the placeholder. 74 of 95 cards
+        # used to land on the stub; see A3.
+        p.target_url=module_url(p.slug) or reverse('page',args=[p.slug])
+        p.is_built=has_module_page(p.slug)
+        pages.append(p)
     return render(request,'dashboard.html',{'pages':pages,'orders':MasterOrder.objects.order_by('-updated_at')[:8]})
 
 @login_required
 def page_view(request,slug):
-    if slug=='sewing-dashboard': return redirect('sewing_master')
-    if slug=='stock-material-master': return redirect('stock_material_master')
-    if slug=='asset-machine-master': return redirect('asset_machine_master')
-    if slug=='buyer-opportunity': return redirect('buyer_opportunity')
-    if slug=='communication-center-master': return redirect('communication_center')
-    if slug=='profit-feasibility-gate': return redirect('profit_feasibility_gate')
-    if slug=='free-capacity-opportunity': return redirect('free_capacity_opportunity')
-    if slug=='universal-file-center': return redirect('universal_file_center')
-    if slug=='buyer-delivery-sla': return redirect('buyer_delivery_sla')
-    if slug=='profit-before-spend': return redirect('profit_before_spend')
-    if slug=='staff-self-service-portal': return redirect('staff_self_service')
-    if slug=='hr-dashboard': return redirect('hr_dashboard')
-    if slug=='attendance-dashboard': return redirect('attendance_dashboard')
-    if slug=='cutting-dashboard': return redirect('cutting_dashboard')
-    if slug=='embroidery-dashboard': return redirect('embroidery_dashboard')
-    if slug=='label-dashboard': return redirect('label_dashboard')
-    if slug=='qc-dashboard': return redirect('qc_dashboard')
-    if slug=='hand-iron-dashboard': return redirect('hand_iron_dashboard')
-    if slug=='poly-dashboard': return redirect('poly_dashboard')
+    # One declarative table, not a hand-maintained if-chain: see
+    # portal/module_routes.py for why. A slug with a real page is sent there;
+    # anything else falls through to the placeholder, which says it is one.
+    target=module_route_name(slug)
+    if target:
+        return redirect(target)
     # A superseded legacy page is disabled rather than deleted, so an existing
     # link keeps working: send it to the module that replaced it instead of 404.
     replacement=DashboardPage.objects.filter(slug=slug,enabled=False).exclude(superseded_by='').first()
     if replacement:
         return redirect('page',slug=replacement.superseded_by)
     page=get_object_or_404(DashboardPage,slug=slug,enabled=True)
-    ctx={'page':page,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
+    ctx={'page':page,'is_placeholder':True,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
     return render(request,'page.html',ctx)
 
 @login_required
@@ -683,11 +678,17 @@ def report_master(request):
     for group,slug,title in _report_master_department_catalog():
         page=pages.get(slug)
         reg=registry_by_slug.get(slug,{})
+        target=module_url(slug)
         catalog.append({
             'group':group,'slug':slug,'title':page.title if page else title,
             'page_id':page.page_id if page else reg.get('id',''),
             'enabled':bool(page) or bool(reg),
-            'actions':reg.get('actions',[])[:8]
+            'actions':reg.get('actions',[])[:8],
+            # Resolved here so the template cannot build a path by hand.
+            # 27 links on this page were '/page/<slug>/', which is not a
+            # route - the placeholder is '/p/'. See A1.
+            'url':target or reverse('page',args=[slug]),
+            'built':bool(target),
         })
 
     context={
