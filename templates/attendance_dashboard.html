@@ -596,13 +596,13 @@
         <span class="tool">🇧🇩 Bangladesh</span
         ><span class="tool">🇬🇧 English</span><span class="tool">BDT (৳)</span>
         <form method="get">
-          <input
+          <input aria-label="Date"
             class="tool"
             style="color: #fff"
             type="date"
             name="date"
             value="{{work_date|date:'Y-m-d'}}"
-            onchange="this.form.submit()"
+            data-action="submit-on-change"
           />
         </form>
         <span class="tool">🔔 {{alerts|length}}</span
@@ -624,9 +624,6 @@
     </div>
 
     <div class="content">
-      {% for message in messages %}
-      <div class="card green">{{message}}</div>
-      {% endfor %}
       <div class="kpis">
         <div class="kpi">
           <span>Total Employees</span><b>{{total_employees}}</b>
@@ -724,13 +721,13 @@
           <h2>ATTENDANCE BY DEPARTMENT (Today)</h2>
           <table class="tbl">
             <tr>
-              <th>Department</th>
-              <th>Scheduled</th>
-              <th>Present</th>
-              <th>Absent</th>
-              <th>Late</th>
-              <th>EL</th>
-              <th>Attendance %</th>
+              <th scope="col">Department</th>
+              <th scope="col">Scheduled</th>
+              <th scope="col">Present</th>
+              <th scope="col">Absent</th>
+              <th scope="col">Late</th>
+              <th scope="col">EL</th>
+              <th scope="col">Attendance %</th>
             </tr>
             {% for d in dept_rows %}
             <tr>
@@ -761,13 +758,13 @@
           <h2>SHIFT / CATEGORY WISE SUMMARY</h2>
           <table class="tbl">
             <tr>
-              <th>Category</th>
-              <th>Scheduled</th>
-              <th>Present</th>
-              <th>Absent</th>
-              <th>Late</th>
-              <th>EL</th>
-              <th>%</th>
+              <th scope="col">Category</th>
+              <th scope="col">Scheduled</th>
+              <th scope="col">Present</th>
+              <th scope="col">Absent</th>
+              <th scope="col">Late</th>
+              <th scope="col">EL</th>
+              <th scope="col">%</th>
             </tr>
             {% for s in category_rows %}
             <tr>
@@ -820,7 +817,8 @@
           <div class="camera-grid">
             {% for c in cameras %}
             <div class="cam">
-              {% if c.thumbnail %}<img src="{% url 'universal_file_action' 'attendance_cctv_thumbnail' c.id 'preview' %}" />{% else %}
+              {% if c.thumbnail %}<img src="{% url 'universal_file_action' 'attendance_cctv_thumbnail' c.id 'preview' %}"
+              alt="CCTV still captured at the {{ c.gate|default:'gate' }} for this attendance record" />{% else %}
               <div class="fallback">CCTV {{c.name}}</div>
               {% endif %}<span>{{c.location}} <b>● LIVE</b></span>
             </div>
@@ -942,7 +940,7 @@
       <div class="quick" id="reports" style="margin-top: 7px">
         <a class="btn" href="#gatepass">Add Gate Pass</a
         ><a class="btn green" href="#leave">Apply Leave</a
-        ><button class="btn purple" onclick="window.print()">
+        ><button class="btn purple" data-action="print">
           Attendance Report</button
         ><a
           class="btn orange"
@@ -959,29 +957,29 @@
               type="hidden"
               name="action"
               value="event"
-            /><select class="full" name="employee_id" required>
+            /><select aria-label="Employee id" class="full" name="employee_id" required>
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
               {% endfor %}</select
-            ><select name="event">
+            ><select aria-label="Event" name="event">
               <option>CHECK_IN</option>
               <option>BREAK_IN</option>
               <option>BREAK_OUT</option>
               <option>CHECK_OUT</option></select
-            ><input type="datetime-local" name="occurred_at" /><input
+            ><input aria-label="Occurred at" type="datetime-local" name="occurred_at" /><input aria-label="Device reference"
               class="full"
               name="device_ref"
               placeholder="Device reference"
             /><label class="full"
-              ><input type="checkbox" name="manual" /> Authorized Manual
+              ><input aria-label="Manual" type="checkbox" name="manual" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval (required for manual)</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><textarea name="reason" placeholder="Reason"></textarea
+            ><textarea aria-label="Reason" name="reason" placeholder="Reason"></textarea
             ><button class="btn full">Record Event</button>
           </form>
           <form method="post" style="margin-top: 6px">
@@ -1002,19 +1000,19 @@
               type="hidden"
               name="action"
               value="gate_pass"
-            /><select class="full" name="employee_id" required>
+            /><select aria-label="Employee id" class="full" name="employee_id" required>
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
               {% endfor %}</select
-            ><select name="pass_type">
+            ><select aria-label="Pass type" name="pass_type">
               <option value="PAID">Office Gate Pass (Paid)</option>
               <option value="UNPAID">Gate Pass (Unpaid)</option></select
-            ><input name="reason" placeholder="Reason" required /><input
+            ><input aria-label="Reason" name="reason" placeholder="Reason" required /><input aria-label="Out at"
               type="datetime-local"
               name="out_at"
               required
-            /><input type="datetime-local" name="in_at" /><select
+            /><input aria-label="In at" type="datetime-local" name="in_at" /><select aria-label="Approval id"
               class="full"
               name="approval_id"
             >
@@ -1033,20 +1031,20 @@
               type="hidden"
               name="action"
               value="overtime"
-            /><select class="full" name="employee_id" required>
+            /><select aria-label="Employee id" class="full" name="employee_id" required>
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
               {% endfor %}</select
-            ><input type="datetime-local" name="start_at" required /><input
+            ><input aria-label="Start at" type="datetime-local" name="start_at" required /><input aria-label="End at"
               type="datetime-local"
               name="end_at"
               required
-            /><input
+            /><input aria-label="OT reason"
               class="full"
               name="reason"
               placeholder="OT reason"
-            /><select class="full" name="approval_id" required>
+            /><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Approved authorization</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -1062,38 +1060,38 @@
               type="hidden"
               name="action"
               value="npt"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="department_id">
+            ><select aria-label="Department id" name="department_id">
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="category">
+            ><select aria-label="Category" name="category">
               <option>MACHINE_BREAKDOWN</option>
               <option>POWER_OUTAGE</option>
               <option>MATERIAL_SHORTAGE</option>
               <option>QUALITY_HOLD</option>
               <option>WAITING</option>
               <option>OTHER</option></select
-            ><input
+            ><input aria-label="Minutes"
               type="number"
               name="minutes"
               placeholder="Minutes"
               required
-            /><input
+            /><input aria-label="Cost BDT"
               type="number"
               step="0.01"
               name="cost"
               placeholder="Cost BDT"
-            /><input
+            /><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{work_date|date:'Y-m-d'}}"
-            /><textarea name="reason" placeholder="Reason" required></textarea
+            /><textarea aria-label="Reason" name="reason" placeholder="Reason" required></textarea
             ><button class="btn full">Add NPT</button>
           </form>
         </div>
@@ -1107,24 +1105,24 @@
               type="hidden"
               name="action"
               value="leave"
-            /><select class="full" name="employee_id" required>
+            /><select aria-label="Employee id" class="full" name="employee_id" required>
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}} · {{e.name}}</option>
               {% endfor %}</select
-            ><input name="leave_type" value="Annual Leave" /><input
+            ><input aria-label="Leave type" name="leave_type" value="Annual Leave" /><input aria-label="Start date"
               type="date"
               name="start_date"
               required
-            /><input type="date" name="end_date" required /><select
+            /><input aria-label="End date" type="date" name="end_date" required /><select aria-label="Approval id"
               name="approval_id"
             >
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
-            ><textarea name="reason" placeholder="Reason"></textarea
-            ><input class="full" type="file" name="attachment" /><button
+            ><textarea aria-label="Reason" name="reason" placeholder="Reason"></textarea
+            ><input aria-label="Attachment" class="full" type="file" name="attachment" /><button
               class="btn green full"
             >
               Record Leave
@@ -1149,9 +1147,9 @@
           <h3>Gate Pass / OT / NPT History</h3>
           <table class="tbl">
             <tr>
-              <th>Type</th>
-              <th>Employee</th>
-              <th>H/M</th>
+              <th scope="col">Type</th>
+              <th scope="col">Employee</th>
+              <th scope="col">H/M</th>
             </tr>
             {% for g in gate_passes|slice:":4" %}
             <tr>

@@ -1749,3 +1749,1159 @@ class PublicRecruitmentHardeningTests(TestCase):
         self.assertEqual(offenders, [],
                          'ApprovalRequest.status assigned outside '
                          '_apply_approval_decision:\n' + '\n'.join(offenders))
+
+
+# ---------------------------------------------------------------------------
+# Site audit - regression gates
+#
+# Every test here fails on a defect listed in SITE_AUDIT_FINDINGS.md. The suite
+# already had RouteSmokeTests, which requests every non-parameterised route and
+# every registered page - but it asserts only `status < 500`, so a 404 passed,
+# and it runs solely as a superuser, so no role-gated refusal was ever
+# exercised. That is exactly why 27 dead links and six unstyled pages shipped.
+# ---------------------------------------------------------------------------
+
+def _all_templates():
+    from pathlib import Path
+    from django.conf import settings
+    files = []
+    for d in settings.TEMPLATES[0]['DIRS']:
+        files.extend(sorted(Path(d).rglob('*.html')))
+    return files
+
+
+class LinkIntegrityTests(TestCase):
+    """Every link a template emits must resolve.
+
+    report_master.html linked 27 times to /page/<slug>/ while the placeholder
+    route is /p/. Because they were literal href strings rather than {% url %}
+    tags, nothing detected it: the template compiled, the route smoke test
+    passed (the page itself is fine), and only a human clicking a link would
+    find out. See SITE_AUDIT_FINDINGS.md A1.
+    """
+
+    IGNORE_PREFIXES = ('http://', 'https://', 'mailto:', 'tel:', '#', '{{', '{%',
+                       'javascript:', 'data:')
+
+    def _literal_hrefs(self):
+        """(template, href) for every literal internal href in the tree."""
+        import re
+        found = []
+        pattern = re.compile(r'(?:href|action)="(/[^"]*)"')
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in pattern.finditer(text):
+                href = match.group(1)
+                if href.startswith(self.IGNORE_PREFIXES):
+                    continue
+                line = text[:match.start()].count('\n') + 1
+                found.append((f'{path.name}:{line}', href))
+        return found
+
+    def test_every_literal_internal_link_resolves(self):
+        from django.urls import Resolver404, resolve
+        broken = []
+        for where, href in self._literal_hrefs():
+            path = href.split('?', 1)[0].split('#', 1)[0]
+            if '{{' in path or '{%' in path:
+                # A template expression; covered by the rendering tests instead.
+                continue
+            try:
+                resolve(path)
+            except Resolver404:
+                broken.append(f'{where}: {href} matches no route')
+        self.assertEqual(
+            broken, [],
+            'templates link to paths that no route serves:\n' + '\n'.join(broken))
+
+    def test_no_template_builds_a_placeholder_path_by_hand(self):
+        """The /p/<slug>/ prefix must come from {% url %} or the view.
+
+        Hand-building it is what produced the /page/ typo. Catch the shape, not
+        just the one instance.
+        """
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'(?:href|action)="(/p(?:age)?/\{\{[^"]*)"', text):
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}: {match.group(1)}')
+        self.assertEqual(
+            offenders, [],
+            'placeholder paths built by string interpolation - use the url the '
+            'view resolves from portal/module_routes.py:\n' + '\n'.join(offenders))
+
+
+class ModuleRouteTests(TestCase):
+    """portal/module_routes.py must stay in step with the registry and the URLs.
+
+    The mapping used to live in three hand-maintained places that had drifted:
+    a 19-line if-chain in page_view that stopped at poly-dashboard, an inline
+    {% if %} in dashboard.html, and a hardcoded prefix in report_master.html.
+    See SITE_AUDIT_FINDINGS.md A2, A3, B26.
+    """
+
+    def _registry_slugs(self):
+        import json
+        from pathlib import Path
+        from django.conf import settings
+        data = json.loads(
+            (settings.BASE_DIR / 'data/page_registry.json').read_text(encoding='utf-8'))
+        return {entry['slug'] for entry in data}
+
+    def test_every_mapped_slug_is_a_registry_slug(self):
+        from portal.module_routes import MODULE_ROUTES
+        unknown = sorted(set(MODULE_ROUTES) - self._registry_slugs())
+        self.assertEqual(
+            unknown, [],
+            'MODULE_ROUTES maps slugs that are not in data/page_registry.json, so '
+            'the rule can never fire (this is how the dead sewing-dashboard rule '
+            f'survived): {unknown}')
+
+    def test_every_mapped_route_reverses(self):
+        from django.urls import NoReverseMatch, reverse
+        from portal.module_routes import MODULE_ROUTES
+        broken = []
+        for slug, name in sorted(MODULE_ROUTES.items()):
+            try:
+                reverse(name)
+            except NoReverseMatch:
+                broken.append(f'{slug} -> {name}')
+        self.assertEqual(broken, [], 'MODULE_ROUTES names routes that do not exist:\n'
+                                     + '\n'.join(broken))
+
+    def test_a_module_with_a_real_page_is_not_sent_to_the_placeholder(self):
+        """A slug with a dedicated dashboard must redirect, not render page.html.
+
+        Eleven modules with complete dashboards - iron, final QC, finishing,
+        packing, shipping, supplier, procurement, purchases, sourcing, account
+        master and CEO - used to land on the stub.
+        """
+        from django.core.management import call_command
+        call_command('seed_project1', verbosity=0)
+        user = User.objects.filter(is_superuser=True).first()
+        user.set_password('link-test-pw')
+        user.save()
+        client = Client()
+        self.assertTrue(client.login(username=user.username, password='link-test-pw'))
+
+        for slug in ['ceo-dashboard', 'account-master', 'iron-dashboard',
+                     'final-qc-dashboard', 'finishing-dashboard', 'packing-dashboard',
+                     'shipping-dashboard', 'supplier-dashboard', 'procurement-dashboard',
+                     'purchases-dashboard', 'sourcing-dashboard', 'sewing']:
+            with self.subTest(slug=slug):
+                response = client.get(f'/p/{slug}/')
+                self.assertEqual(
+                    response.status_code, 302,
+                    f'/p/{slug}/ should redirect to its real dashboard, not render '
+                    'the placeholder')
+
+
+class NavigationTests(TestCase):
+    """The navbar must never offer a link the request would then refuse.
+
+    base.html hardcoded thirteen links and showed all of them to everyone. Five
+    were role-gated: a Helper, Operator or Staff member saw ACCOUNT MASTER,
+    REPORT MASTER, CEO REPORT, Stock & Material and SEWING MASTER and was
+    refused by all five, landing on a bare-text 403 with no layout and no way
+    back. See SITE_AUDIT_FINDINGS.md B12.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command('seed_project1', verbosity=0)
+
+    def test_every_nav_entry_is_a_classified_route(self):
+        from django.urls import NoReverseMatch, reverse
+        from portal.authorization import ROUTE_POLICY
+        from portal.navigation import NAV
+        problems = []
+        for url_name, label, _group in NAV:
+            if url_name not in ROUTE_POLICY:
+                problems.append(f'{url_name} ({label}) is not in ROUTE_POLICY')
+                continue
+            try:
+                reverse(url_name)
+            except NoReverseMatch:
+                problems.append(f'{url_name} ({label}) does not reverse')
+        self.assertEqual(problems, [], 'navigation is out of step with the routes:\n'
+                                       + '\n'.join(problems))
+
+    def test_no_role_is_shown_a_link_it_cannot_open(self):
+        """The decisive test: for all 20 roles, follow every link the navbar
+        renders and assert none of them is refused."""
+        from portal.roles import ALL_ROLES
+        failures = []
+        for index, role in enumerate(sorted(ALL_ROLES)):
+            user = _make_user(f'navuser{index}', role=role)
+            client = _client_for(user)
+            response = client.get('/dashboard/', follow=True)
+            self.assertEqual(response.status_code, 200, f'{role} cannot open /dashboard/')
+            links = {item['url'] for item in response.context['nav_top']}
+            for group in response.context['nav_groups']:
+                links.update(item['url'] for item in group['items'])
+            for url in sorted(links):
+                status = client.get(url).status_code
+                if status in (403, 404) or status >= 500:
+                    failures.append(f'{role}: navbar offers {url} -> HTTP {status}')
+        self.assertEqual(
+            failures, [],
+            'the navbar offered links that were then refused:\n' + '\n'.join(failures))
+
+    def test_a_limited_role_sees_fewer_links_than_an_executive(self):
+        """Guards against the filter being wired up but inert."""
+        helper = _client_for(_make_user('navhelper', role='Helper'))
+        ceo = _client_for(_make_user('navceo', role='CEO'))
+
+        def link_count(client):
+            ctx = client.get('/dashboard/', follow=True).context
+            n = len(ctx['nav_top'])
+            for group in ctx['nav_groups']:
+                n += len(group['items'])
+            return n
+
+        helper_links, ceo_links = link_count(helper), link_count(ceo)
+        self.assertLess(
+            helper_links, ceo_links,
+            f'Helper sees {helper_links} links and CEO sees {ceo_links}: the '
+            'role filter is not discriminating')
+
+    def test_every_navigable_route_is_reachable_from_the_navbar(self):
+        """Nine complete department dashboards had no inbound link anywhere.
+
+        Final QC, finishing, iron, packing, procurement, purchases, shipping,
+        sourcing and supplier could only be reached by typing the URL, so the
+        staff who work in those departments had no path to their own page.
+        See SITE_AUDIT_FINDINGS.md A2.
+        """
+        from portal.navigation import NAV
+        navigable = {name for name, _l, _g in NAV}
+        must_be_linked = [
+            'final_qc_dashboard', 'finishing_dashboard', 'iron_dashboard',
+            'packing_dashboard', 'procurement_dashboard', 'purchases_dashboard',
+            'shipping_dashboard', 'sourcing_dashboard', 'supplier_dashboard',
+        ]
+        missing = [n for n in must_be_linked if n not in navigable]
+        self.assertEqual(missing, [], f'department dashboards with no nav entry: {missing}')
+
+
+class ContentSecurityPolicyTests(TestCase):
+    """No template may rely on an inline event handler or inline script.
+
+    nginx sets `script-src 'self'` with no 'unsafe-inline', so 41 inline onclick
+    attributes across 34 templates - every Print button, every modal open and
+    close, the sewing production dialog, the public Apply Now button and the
+    command-centre auto-refresh - were dead in production while working under
+    runserver, where there is no CSP. See SITE_AUDIT_FINDINGS.md A5.
+    """
+
+    def test_no_template_uses_an_inline_event_handler(self):
+        import re
+        pattern = re.compile(r'\son(?:click|change|submit|input|load|focus|blur|'
+                             r'keydown|keyup|mouseover|mouseout)\s*=')
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in pattern.finditer(text):
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}: {text[match.start():match.start()+50].strip()}')
+        self.assertEqual(
+            offenders, [],
+            "inline event handlers are blocked by the production CSP "
+            "(script-src 'self'). Use data-action and static/js/app.js:\n"
+            + '\n'.join(offenders))
+
+    def test_no_template_contains_an_inline_script_block(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'<script(?![^>]*\bsrc=)[^>]*>\s*\S', text):
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}')
+        self.assertEqual(
+            offenders, [],
+            'inline <script> blocks are blocked by the production CSP. Move the '
+            'code into static/js/ and load it with src:\n' + '\n'.join(offenders))
+
+    def test_the_csp_has_not_been_loosened_to_paper_over_this(self):
+        """If someone adds 'unsafe-inline' to script-src, say so loudly."""
+        from pathlib import Path
+        from django.conf import settings
+        conf = (settings.BASE_DIR / 'nginx/default.conf').read_text(encoding='utf-8')
+        script_src = ''
+        for part in conf.split(';'):
+            if 'script-src' in part:
+                script_src = part
+        self.assertIn('script-src', script_src, 'no script-src in the CSP')
+        self.assertNotIn(
+            'unsafe-inline', script_src,
+            "script-src has been given 'unsafe-inline'. That re-permits inline "
+            'handlers instead of fixing them, and re-opens the injection path on '
+            'the public homepage.')
+
+
+class StylesheetIntegrityTests(TestCase):
+    """Every class a page uses must be defined somewhere that page loads.
+
+    Six role-gated pages - both profit gates, both buyer pages, the free-capacity
+    page and the Communication Center - used page-head, kpis, kpi, table-wrap,
+    primary, form-grid and grid-2, none of which existed in any stylesheet or
+    inline <style>. They rendered as unstyled stacked text: no KPI cards, no page
+    header, no table wrapper. See SITE_AUDIT_FINDINGS.md A6.
+    """
+
+    def _defined_classes(self, css_text):
+        import re
+        return set(re.findall(r'\.([A-Za-z][\w-]*)', css_text))
+
+    def test_no_template_uses_an_undefined_class(self):
+        import re
+        from pathlib import Path
+        from django.conf import settings
+        static_root = settings.BASE_DIR / 'static'
+        app_css = self._defined_classes(
+            (static_root / 'css/app.css').read_text(encoding='utf-8'))
+
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            available = set()
+            # Stylesheets this page loads by name.
+            for sheet in re.findall(r"static '(css/[^']+)'", text):
+                target = static_root / sheet
+                if target.is_file():
+                    available |= self._defined_classes(
+                        target.read_text(encoding='utf-8'))
+            # app.css comes with the base layout.
+            if '{% extends' in text:
+                available |= app_css
+            # Anything the page styles itself.
+            for block in re.findall(r'<style[^>]*>(.*?)</style>', text, re.S):
+                available |= self._defined_classes(block)
+
+            used = set()
+            for match in re.finditer(r'class="([^"{}]*)"', text):
+                used |= set(match.group(1).split())
+            for missing in sorted(used - available):
+                offenders.append(f'{path.name}: .{missing}')
+
+        self.assertEqual(
+            offenders, [],
+            f'{len(offenders)} class(es) are used by a page that defines them '
+            'nowhere it loads, so that markup renders unstyled:\n'
+            + '\n'.join(offenders))
+
+
+class MessageDisplayTests(TestCase):
+    """A view that reports something must be able to show it.
+
+    151 messages.* calls are made across 33 views and base.html had no block to
+    render them, so 139 of them produced nothing at all - an operator saving a
+    production entry, recording QC or issuing material got no confirmation and,
+    on the failure paths, no error either. See SITE_AUDIT_FINDINGS.md A4.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command('seed_project1', verbosity=0)
+
+    def test_the_base_layout_renders_messages(self):
+        from pathlib import Path
+        from django.conf import settings
+        base = (settings.BASE_DIR / 'templates/base.html').read_text(encoding='utf-8')
+        self.assertIn('{% if messages %}', base,
+                      'base.html does not render the messages framework, so every '
+                      'messages.success/error call on a page that extends it is '
+                      'invisible')
+        self.assertIn('{% for message in messages %}', base)
+
+    def test_a_message_renders_with_its_severity(self):
+        """The layout must show the text AND distinguish an error from a success.
+
+        Before this, the 26 dashboards that did render messages did so as a bare
+        <div class="card">, so a failed save looked exactly like a successful one.
+        """
+        from django.template.loader import render_to_string
+
+        class FakeMessage:
+            def __init__(self, tags, text):
+                self.tags = tags
+                self.level_tag = tags
+                self._text = text
+
+            def __str__(self):
+                return self._text
+
+        html = render_to_string('403.html', {
+            'messages': [
+                FakeMessage('success', 'Production entry saved for bundle 12345.'),
+                FakeMessage('error', 'Quantity exceeds the bundle size.'),
+            ],
+        })
+        self.assertIn('Production entry saved for bundle 12345.', html,
+                      'the layout does not render message text')
+        self.assertIn('Quantity exceeds the bundle size.', html)
+        self.assertIn('message-success', html,
+                      'a success is not distinguishable from an error')
+        self.assertIn('message-error', html)
+
+    def test_every_template_that_renders_messages_is_consistent(self):
+        """A page must not render messages twice, once itself and once via base."""
+        import re
+        offenders = []
+        for path in _all_templates():
+            if path.name == 'base.html':
+                continue
+            text = path.read_text(encoding='utf-8')
+            if '{% extends' in text and 'in messages' in text:
+                offenders.append(path.name)
+        self.assertEqual(
+            offenders, [],
+            'these pages extend base.html and also render messages themselves, so '
+            f'every message appears twice: {offenders}')
+
+
+class AccessibilityBaselineTests(TestCase):
+    """Counted baselines that must not regress.
+
+    The audit found 0 label-for bindings across 1,404 form controls, 0 th scope
+    across 641 headers, and no lang attribute on the layout used by 36 pages.
+    These tests hold the ground that has been recovered.
+    """
+
+    def test_the_base_layout_declares_a_language(self):
+        from django.conf import settings
+        base = (settings.BASE_DIR / 'templates/base.html').read_text(encoding='utf-8')
+        self.assertRegex(base, r'<html[^>]*\slang=',
+                         'base.html has no lang attribute, so every page that '
+                         'extends it declares no language to a screen reader')
+
+    def test_the_base_layout_offers_a_skip_link(self):
+        from django.conf import settings
+        base = (settings.BASE_DIR / 'templates/base.html').read_text(encoding='utf-8')
+        self.assertIn('skip-link', base)
+        self.assertIn('id="main"', base)
+
+    def test_every_image_has_an_alt_attribute(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'<img\b[^>]*>', text):
+                if not re.search(r'\salt=', match.group(0)):
+                    line = text[:match.start()].count('\n') + 1
+                    offenders.append(f'{path.name}:{line}')
+        self.assertEqual(offenders, [], 'images with no alt attribute:\n'
+                                        + '\n'.join(offenders))
+
+    def test_focus_styling_exists_in_the_global_stylesheet(self):
+        from django.conf import settings
+        css = (settings.BASE_DIR / 'static/css/app.css').read_text(encoding='utf-8')
+        self.assertIn(':focus-visible', css,
+                      'app.css defines no focus styling, so a keyboard user has '
+                      'no visible cursor on the 36 pages it serves')
+
+    def test_no_stylesheet_removes_the_focus_ring(self):
+        import re
+        from django.conf import settings
+        offenders = []
+        for sheet in sorted((settings.BASE_DIR / 'static/css').glob('*.css')):
+            text = sheet.read_text(encoding='utf-8')
+            for match in re.finditer(r'outline\s*:\s*(none|0)\b', text):
+                offenders.append(f'{sheet.name}: {match.group(0)}')
+        self.assertEqual(offenders, [],
+                         'a stylesheet removes the focus outline:\n' + '\n'.join(offenders))
+
+
+class RolePageRenderTests(TestCase):
+    """Render pages as a real role, not as a superuser.
+
+    RouteSmokeTests logs in as the seeded superuser, which passes every
+    authorisation check, so no role-gated path was ever exercised and a refusal
+    page was never seen.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command('seed_project1', verbosity=0)
+
+    def test_a_refused_page_is_a_styled_page_not_bare_text(self):
+        """Every role hitting a link it lacks used to land on a bare-text 403."""
+        client = _client_for(_make_user('refuseduser', role='Helper'))
+        response = client.get('/ceo-dashboard/')
+        self.assertEqual(response.status_code, 403)
+        body = response.content.decode()
+        self.assertIn('<html', body.lower(),
+                      'the 403 is bare text with no layout, no branding and no way '
+                      'back to the application')
+        self.assertIn('href', body,
+                      'the 403 page offers no link back')
+
+    def test_each_role_can_render_its_own_landing_page(self):
+        from portal.roles import ALL_ROLES
+        failures = []
+        for index, role in enumerate(sorted(ALL_ROLES)):
+            client = _client_for(_make_user(f'landing{index}', role=role))
+            response = client.get('/dashboard/', follow=True)
+            if response.status_code != 200:
+                failures.append(f'{role}: HTTP {response.status_code}')
+        self.assertEqual(failures, [], 'roles that cannot open the landing page:\n'
+                                       + '\n'.join(failures))
+
+    def test_the_placeholder_does_not_claim_to_be_active(self):
+        """It badged every unbuilt module with a green ACTIVE pill and six
+        buttons that issued no request. See SITE_AUDIT_FINDINGS.md A3."""
+        user = User.objects.filter(is_superuser=True).first()
+        user.set_password('placeholder-pw')
+        user.save()
+        client = Client()
+        self.assertTrue(client.login(username=user.username, password='placeholder-pw'))
+        from portal.models import DashboardPage
+        from portal.module_routes import MODULE_ROUTES
+        unbuilt = (DashboardPage.objects.filter(enabled=True)
+                   .exclude(slug__in=MODULE_ROUTES).first())
+        self.assertIsNotNone(unbuilt, 'no unbuilt module to check')
+        body = client.get(f'/p/{unbuilt.slug}/').content.decode()
+        self.assertNotIn('>ACTIVE<', body,
+                         'an unbuilt module still presents itself as ACTIVE')
+        self.assertIn('NOT BUILT YET', body)
+
+
+class AdminConfigurationTests(TestCase):
+    """For most of the 179 models the admin is the only editing UI there is.
+
+    It was 33 bare register() calls with zero list_display, zero search_fields,
+    zero list_filter and zero date_hierarchy across every model, and eleven
+    models - the whole Iron module among them - were not registered at all, so
+    their data could not be reached anywhere.
+    See SITE_AUDIT_FINDINGS.md B15, B16, B17.
+    """
+
+    def _models(self):
+        from django.apps import apps
+        return list(apps.get_app_config('portal').get_models())
+
+    def test_every_model_is_reachable_in_the_admin(self):
+        from django.contrib import admin
+        unregistered = sorted(m.__name__ for m in self._models()
+                              if m not in admin.site._registry)
+        self.assertEqual(
+            unregistered, [],
+            'these models have no admin and no dedicated page, so their data '
+            f'cannot be created or corrected anywhere: {unregistered}')
+
+    def test_the_iron_module_is_registered(self):
+        """Every other department was; Iron was the one that was not."""
+        from django.contrib import admin
+        from portal import models as m
+        for model in [m.IronPlan, m.IronBundleScan, m.IronProductionEntry,
+                      m.IronQC, m.IronVariance, m.IronAutoReport]:
+            with self.subTest(model=model.__name__):
+                self.assertIn(model, admin.site._registry)
+
+    def test_the_standards_that_drive_every_efficiency_figure_are_editable(self):
+        """FactoryProcessStandard carries sam, smv and cost_per_minute, and
+        SewingBundleAssignment carries the per-operator per-machine figures. Both
+        were read by views and editable nowhere."""
+        from django.contrib import admin
+        from portal.models import FactoryProcessStandard, SewingBundleAssignment
+        self.assertIn(FactoryProcessStandard, admin.site._registry)
+        self.assertIn(SewingBundleAssignment, admin.site._registry)
+
+    def test_exchange_rates_can_be_maintained_by_finance(self):
+        """.env.example states rates are "maintained by Finance in admin", and
+        with no API URL configured that is the only way in. The model was not
+        registered, so there was none. See SITE_AUDIT_FINDINGS.md B15."""
+        from django.contrib import admin
+        from portal.models import ExchangeRate
+        self.assertIn(ExchangeRate, admin.site._registry)
+        options = admin.site._registry[ExchangeRate]
+        self.assertTrue(options.list_display)
+        self.assertIn('rate', options.list_display)
+
+    def test_every_changelist_is_usable(self):
+        from django.contrib import admin
+        problems = []
+        for model in self._models():
+            options = admin.site._registry[model]
+            if not options.list_display or list(options.list_display) == ['__str__']:
+                problems.append(f'{model.__name__}: no list_display')
+            if not options.search_fields:
+                problems.append(f'{model.__name__}: no search_fields')
+        self.assertEqual(
+            problems, [],
+            'a changelist with no columns is a list of "object (1)", and one with '
+            'no search box is unusable once the table has thousands of rows:\n'
+            + '\n'.join(problems))
+
+    def test_no_model_renders_as_object_repr(self):
+        """161 of 179 models had no __str__, so they appeared as
+        "ModelName object (1)" in every changelist and every FK dropdown."""
+        problems = []
+        for model in self._models():
+            instance = model()
+            instance.pk = 7
+            try:
+                label = str(instance)
+            except Exception as exc:                       # noqa: BLE001
+                # A model-specific __str__ that dereferences an unset FK. Real
+                # rows have it set; not a labelling defect.
+                if 'RelatedObjectDoesNotExist' in type(exc).__name__:
+                    continue
+                problems.append(f'{model.__name__}: {type(exc).__name__}')
+                continue
+            if 'object (' in label:
+                problems.append(f'{model.__name__}: {label}')
+        self.assertEqual(problems, [], 'models with no readable label:\n'
+                                       + '\n'.join(problems))
+
+    def test_the_audit_trail_stays_read_only(self):
+        """Registering every model must not have opened the audit tables."""
+        from django.contrib import admin
+        from portal.models import (ApprovalDecisionLog, AuditLog,
+                                   BarcodeScanEvent, FileAccessLog)
+        request = None
+        for model in [AuditLog, FileAccessLog, ApprovalDecisionLog, BarcodeScanEvent]:
+            with self.subTest(model=model.__name__):
+                options = admin.site._registry[model]
+                self.assertFalse(options.has_add_permission(request))
+                self.assertFalse(options.has_change_permission(request))
+                self.assertFalse(options.has_delete_permission(request))
+
+    def test_the_admin_is_branded(self):
+        from django.contrib import admin
+        self.assertIn('Emerald Rozalia', admin.site.site_header)
+        self.assertNotIn('Django', admin.site.site_header)
+
+    def test_no_wrong_plural_reaches_the_admin(self):
+        """Django pluralises by appending "s", which gives "BuyerOpportunitys".
+
+        Checked against the correction table rather than a suffix rule: "cutting
+        lays" and "attendance holidays" are correct English and a naive
+        endswith('ys') test flags them.
+        """
+        from portal.admin import _PLURALS
+        offenders = []
+        for model in self._models():
+            expected = _PLURALS.get(model.__name__)
+            if not expected:
+                continue
+            actual = str(model._meta.verbose_name_plural)
+            if actual != expected:
+                offenders.append(f'{model.__name__}: "{actual}" (want "{expected}")')
+        self.assertEqual(offenders, [], 'wrong plurals shown in the admin:\n'
+                                        + '\n'.join(offenders))
+
+
+class AdminTenancyTests(TestCase):
+    """The admin must not be a way around organisation scoping.
+
+    ModelAdmin.get_queryset uses _default_manager, and every scoped model pins
+    default_manager_name='all_objects' - deliberately, so related descriptors and
+    cascade deletes see every row. The consequence was that the admin was
+    entirely unscoped: any is_staff user saw every organisation's data, though
+    the same user is scoped everywhere else. See SITE_AUDIT_FINDINGS.md B16.
+    """
+
+    def setUp(self):
+        from portal.models import Alert, OrganizationNode, UserProfile
+        self.global_node = OrganizationNode.objects.create(
+            name='Global', node_type='Global')
+        self.bd = OrganizationNode.objects.create(
+            name='Bangladesh', node_type='Country', parent=self.global_node)
+        self.ie = OrganizationNode.objects.create(
+            name='Ireland', node_type='Country', parent=self.global_node)
+        Alert.all_objects.create(title='Dhaka line stopped', department='Sewing',
+                                 level='RED', scope=self.bd)
+        Alert.all_objects.create(title='Limerick order late', department='Sales',
+                                 level='RED', scope=self.ie)
+
+        self.bd_user = _make_user('bdadmin')
+        self.bd_user.is_staff = True
+        self.bd_user.save()
+        UserProfile.objects.update_or_create(
+            user=self.bd_user, defaults={'role': 'Unit Manager', 'scope': self.bd})
+
+    def test_a_scoped_admin_user_sees_only_their_own_site(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+        from portal.models import Alert
+        from portal.tenancy import scope_context
+
+        options = admin.site._registry[Alert]
+        request = RequestFactory().get('/admin/portal/alert/')
+        request.user = self.bd_user
+
+        with scope_context(self.bd):
+            titles = sorted(str(a) for a in options.get_queryset(request))
+        self.assertEqual(
+            titles, ['Dhaka line stopped'],
+            'the admin changelist showed another organisation\'s records to a '
+            f'scoped is_staff user: {titles}')
+
+    def test_a_superuser_still_sees_everything(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+        from portal.models import Alert
+        from portal.tenancy import scope_context
+
+        root = _make_user('rootadmin', superuser=True)
+        options = admin.site._registry[Alert]
+        request = RequestFactory().get('/admin/portal/alert/')
+        request.user = root
+        with scope_context(None):
+            self.assertEqual(options.get_queryset(request).count(), 2,
+                             'the break-glass account must not be scoped')
+
+
+class AutoReportScheduleTests(TestCase):
+    """The 16 department report tables must actually be written.
+
+    Nothing wrote them: ten management commands existed but were referenced by no
+    task and no beat entry, seven departments had no command at all, and the
+    deploy/*.cron.example files invoked a venv path that does not exist on a
+    Docker host. Those dashboard panels were permanently empty while a healthy
+    beat container made it look scheduled. See SITE_AUDIT_FINDINGS.md A8.
+    """
+
+    def test_the_registry_covers_every_auto_report_model(self):
+        from django.apps import apps
+        from portal.reporting import REPORTS
+        declared = {name for name, _payload in REPORTS}
+        actual = {m.__name__ for m in apps.get_app_config('portal').get_models()
+                  if m.__name__.endswith('AutoReport')}
+        missing = sorted(actual - declared)
+        self.assertEqual(
+            missing, [],
+            'these report tables are read by a dashboard but nothing generates '
+            f'them: {missing}')
+
+    def test_every_registry_entry_resolves(self):
+        from django.apps import apps
+        from portal import views
+        from portal.reporting import REPORTS
+        problems = []
+        for model_name, payload_name in REPORTS:
+            try:
+                apps.get_model('portal', model_name)
+            except LookupError:
+                problems.append(f'{model_name}: no such model')
+            if not hasattr(views, payload_name):
+                problems.append(f'{payload_name}: no such payload function')
+        self.assertEqual(problems, [], 'the report registry is out of step:\n'
+                                       + '\n'.join(problems))
+
+    def test_every_slot_is_scheduled_in_beat(self):
+        from django.conf import settings
+        from portal.reporting import SLOTS
+        scheduled = {
+            tuple(entry.get('args', ()))[0]
+            for entry in settings.CELERY_BEAT_SCHEDULE.values()
+            if entry['task'] == 'portal.tasks.generate_department_reports'
+            and entry.get('args')
+        }
+        self.assertEqual(
+            set(SLOTS), scheduled,
+            'a report slot exists that Celery beat never fires: '
+            f'{sorted(set(SLOTS) - scheduled)}')
+
+    def test_generating_a_slot_writes_every_department(self):
+        from django.core.management import call_command
+        from django.apps import apps
+        from portal.reporting import REPORTS, generate_all
+        call_command('seed_project1', verbosity=0)
+
+        written, failed = generate_all('08:00')
+        self.assertEqual(failed, [], f'report generation failed for: {failed}')
+        self.assertEqual(len(written), len(REPORTS))
+
+        # And the rows are really there.
+        for model_name, _payload in REPORTS:
+            with self.subTest(model=model_name):
+                model = apps.get_model('portal', model_name)
+                self.assertTrue(
+                    model.objects.filter(slot='08:00').exists(),
+                    f'{model_name} has no row after generation')
+
+    def test_regenerating_the_same_slot_does_not_duplicate(self):
+        from django.core.management import call_command
+        from portal.models import PackingAutoReport
+        from portal.reporting import generate_all
+        call_command('seed_project1', verbosity=0)
+        generate_all('13:00')
+        generate_all('13:00')
+        self.assertEqual(PackingAutoReport.objects.filter(slot='13:00').count(), 1,
+                         'a catch-up run duplicated the row instead of updating it')
+
+    def test_no_stale_cron_examples_remain(self):
+        """Following them alongside the beat service would run every report twice."""
+        from django.conf import settings
+        stale = sorted(p.name for p in (settings.BASE_DIR / 'deploy').glob('*.cron.example'))
+        self.assertEqual(
+            stale, [],
+            'these cron examples invoke a venv path that does not exist on a '
+            f'Docker host and duplicate the beat schedule: {stale}')
+
+
+class PasswordChangeTests(TestCase):
+    """Every user must be able to rotate their own password.
+
+    There were zero password routes. The only path was /admin/password_change/,
+    which requires is_staff - and roles.py documents that is_staff must not
+    confer business access. An Operator or Helper could not change their own
+    password and there was no reset flow. See SITE_AUDIT_FINDINGS.md A10.
+    """
+
+    def test_a_helper_can_open_the_password_page(self):
+        client = _client_for(_make_user('pwhelper', role='Helper'))
+        response = client.get('/account/password/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Change your password')
+
+    def test_a_helper_can_change_their_own_password(self):
+        user = _make_user('pwchanger', role='Helper')
+        client = _client_for(user)
+        response = client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        })
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('Kh4ki-Bundle-Ledger-77'))
+
+    def test_changing_the_password_does_not_sign_the_user_out(self):
+        """Without update_session_auth_hash the session dies on success."""
+        user = _make_user('pwstay', role='Operator')
+        client = _client_for(user)
+        client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        }, follow=True)
+        self.assertEqual(client.get('/dashboard/', follow=True).status_code, 200)
+        self.assertTrue(client.session.get('_auth_user_id'),
+                        'the user was signed out by changing their own password')
+
+    def test_a_weak_password_is_refused_with_the_reason_on_the_page(self):
+        client = _client_for(_make_user('pwweak', role='Staff'))
+        response = client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'password',
+            'new_password2': 'password',
+        })
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('field-error', body,
+                      'the reason is not shown beside the field that caused it')
+
+    def test_the_wrong_current_password_is_refused(self):
+        user = _make_user('pwwrong', role='Staff')
+        client = _client_for(user)
+        client.post('/account/password/', {
+            'old_password': 'not-the-current-password',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        })
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('pw-for-tests-1234'),
+                        'the password changed without the current one')
+
+
+class ParameterValidationTests(TestCase):
+    """A bad path parameter must be refused, not silently reinterpreted."""
+
+    def test_an_unknown_barcode_instruction_mode_is_a_404(self):
+        """It silently rewrote any unknown mode to 'generation' and returned 200,
+        so an operator following a mistyped or stale workstation link was shown
+        the generation sheet instead of the scanning one - on a page whose whole
+        purpose is to be the printed procedure at a workstation.
+        See SITE_AUDIT_FINDINGS.md B28."""
+        client = _client_for(_make_user('barcodeop', role='Operator'))
+        self.assertEqual(client.get('/barcode-instructions/scan/').status_code, 200)
+        self.assertEqual(client.get('/barcode-instructions/generation/').status_code, 200)
+        self.assertEqual(
+            client.get('/barcode-instructions/scanning/').status_code, 404,
+            'an unknown mode still returns 200 with the wrong instructions')
+
+    def test_the_landing_page_does_not_hardcode_a_country(self):
+        """It filtered the organisation tree by name__icontains='Bangladesh' and
+        fell back to EVERY node when there was no such country, so a deployment
+        for another country showed the whole estate unfiltered.
+        See SITE_AUDIT_FINDINGS.md B19."""
+        from django.conf import settings
+        source = (settings.BASE_DIR / 'portal/views.py').read_text(encoding='utf-8')
+        start = source.index('def dashboard(request)')
+        end = source.index('\ndef ', start + 10)
+        # Comments explaining the old behaviour are not the old behaviour.
+        code = '\n'.join(line for line in source[start:end].splitlines()
+                         if not line.lstrip().startswith('#'))
+        self.assertNotIn(
+            "name__icontains='Bangladesh'", code,
+            'the landing page still hardcodes a country')
+        self.assertNotIn(
+            'OrganizationNode.objects.all()', code,
+            'the landing page still falls back to every node in the estate')
+
+
+class LocalisationTests(TestCase):
+    """USE_I18N was True and nothing else was in place.
+
+    No LocaleMiddleware, no LANGUAGES, no LOCALE_PATHS, no locale directory and
+    not one {% trans %} in 49 templates - so the setting was inert and every
+    string was hardcoded English, in a system the organisation requires to serve
+    multiple languages. See SITE_AUDIT_FINDINGS.md B18.
+    """
+
+    def test_the_translation_machinery_is_wired_up(self):
+        from django.conf import settings
+        self.assertTrue(settings.USE_I18N)
+        self.assertIn('django.middleware.locale.LocaleMiddleware', settings.MIDDLEWARE)
+        self.assertTrue(getattr(settings, 'LANGUAGES', None),
+                        'no LANGUAGES, so there is nothing to switch between')
+        self.assertTrue(getattr(settings, 'LOCALE_PATHS', None),
+                        'no LOCALE_PATHS, so a catalogue would never be found')
+
+    def test_locale_middleware_runs_before_anything_renders(self):
+        """After SessionMiddleware, and before the tenancy and audit middleware
+        that touch the database, or the active language is not yet set."""
+        from django.conf import settings
+        order = settings.MIDDLEWARE
+        self.assertLess(
+            order.index('django.contrib.sessions.middleware.SessionMiddleware'),
+            order.index('django.middleware.locale.LocaleMiddleware'),
+            'LocaleMiddleware cannot read a language from the session if it runs '
+            'before SessionMiddleware')
+
+    def test_the_language_can_actually_be_switched(self):
+        """End to end through Django's set_language view, not just settings."""
+        user = _make_user('lang1', role='CEO')
+        client = _client_for(user)
+        response = client.post('/i18n/setlang/', {'language': 'bn', 'next': '/dashboard/'})
+        self.assertIn(response.status_code, (302, 200))
+        from django.conf import settings
+        self.assertEqual(client.session.get(settings.LANGUAGE_COOKIE_NAME)
+                         or client.cookies.get(settings.LANGUAGE_COOKIE_NAME).value,
+                         'bn')
+
+    def test_the_layout_declares_the_active_language(self):
+        client = _client_for(_make_user('lang2', role='CEO'))
+        body = client.get('/dashboard/', follow=True).content.decode()
+        self.assertRegex(body, r'<html[^>]*\slang="[a-z]{2}',
+                         'the page declares no language to a screen reader')
+
+    def test_the_shared_chrome_is_marked_for_translation(self):
+        from django.conf import settings
+        base = (settings.BASE_DIR / 'templates/base.html').read_text(encoding='utf-8')
+        self.assertIn('{% load static i18n %}', base)
+        for phrase in ['Skip to content', 'Log out', 'Alerts', 'Staff Cost']:
+            with self.subTest(phrase=phrase):
+                self.assertIn(f'{{% trans "{phrase}" %}}', base,
+                              f'"{phrase}" in the shared chrome is not translatable')
+
+    def test_numbers_are_grouped(self):
+        """A five-figure piece count read as 12500, and a raw Decimal as
+        1234.5000."""
+        from django.conf import settings
+        self.assertTrue(getattr(settings, 'USE_THOUSAND_SEPARATOR', False))
+        self.assertIn('django.contrib.humanize', settings.INSTALLED_APPS,
+                      'humanize is not installed, so |intcomma is unavailable to '
+                      'the templates')
+
+    def test_the_locale_directory_states_what_is_outstanding(self):
+        """The body copy of the 49 templates is still English. That has to be
+        recorded, not left for someone to discover."""
+        from django.conf import settings
+        readme = settings.BASE_DIR / 'locale' / 'README.md'
+        self.assertTrue(readme.is_file(), 'locale/ has no README')
+        text = readme.read_text(encoding='utf-8')
+        self.assertIn('hardcoded English', text)
+
+
+class ApiContractTests(TestCase):
+    """A JSON endpoint must answer like one.
+
+    authorization.py deferred an unauthenticated request to @login_required,
+    which redirects - so every /api/ endpoint answered a fetch client with a 302
+    to an HTML login page instead of a 401. And _wants_json keyed off the /api/
+    path prefix, so finance_overseas_preview, which returns JSON from
+    /api/finance/... but was reachable under its own name, could hand back an
+    HTML body with a JSON status. See SITE_AUDIT_FINDINGS.md C40.
+    """
+
+    def test_an_unauthenticated_api_request_gets_401_not_a_redirect(self):
+        response = Client().get('/api/summary/')
+        self.assertEqual(
+            response.status_code, 401,
+            'a fetch client got a redirect to an HTML login page instead of 401')
+        self.assertEqual(response['Content-Type'].split(';')[0], 'application/json')
+        self.assertFalse(response.json()['ok'])
+
+    def test_an_unauthenticated_page_request_still_redirects_to_login(self):
+        """A person must get a sign-in prompt, not a 401."""
+        response = Client().get('/ceo-dashboard/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login/', response['Location'])
+
+    def test_a_refused_api_request_is_json_not_html(self):
+        from portal import roles
+        client = _client_for(_make_user('apihelper', role=roles.HELPER))
+        response = client.get('/api/ceo-dashboard/')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response['Content-Type'].split(';')[0], 'application/json')
+
+    def test_an_accept_json_header_is_honoured_off_the_api_prefix(self):
+        response = Client().get('/ceo-dashboard/', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 401)
+
+
+class DeadWeightTests(TestCase):
+    """Files that nothing references should not be shipped or stored."""
+
+    def test_no_unreferenced_reference_screenshots_remain_in_static(self):
+        from django.conf import settings
+        stale = settings.BASE_DIR / 'static' / 'reference'
+        self.assertFalse(
+            stale.exists(),
+            'static/reference/ held three PNGs referenced by no template, view '
+            'or stylesheet, and excluded from the Docker image - so they were '
+            'stored but unusable')
+
+    def test_every_static_image_is_referenced_somewhere(self):
+        import re
+        from django.conf import settings
+        static_root = settings.BASE_DIR / 'static'
+        haystack = []
+        for path in list((settings.BASE_DIR / 'templates').rglob('*.html')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in list((static_root / 'css').glob('*.css')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in list((static_root / 'js').glob('*.js')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in (settings.BASE_DIR / 'portal').glob('*.py'):
+            haystack.append(path.read_text(encoding='utf-8'))
+        blob = '\n'.join(haystack)
+
+        orphans = []
+        for image in sorted((static_root / 'img').rglob('*.png')):
+            if image.name not in blob:
+                orphans.append(str(image.relative_to(static_root)))
+        self.assertEqual(
+            orphans, [],
+            'these images are shipped in the Docker image and referenced by '
+            f'nothing: {orphans}')
+
+
+class FormAccessibilityTests(TestCase):
+    """Counted baselines for form controls and data tables.
+
+    Of 1,407 form controls, 238 were implicitly associated by sitting inside a
+    <label>, 4 had an explicit label-for and 22 carried aria-label. The other 987
+    had nothing but a placeholder, which is not an accessible name: it is not
+    announced as a label by every screen reader, it disappears the moment the
+    field has content, and it fails contrast. And all 641 <th> elements had no
+    scope, so a screen reader on a production table cannot tell which header
+    belongs to the cell it is reading.
+
+    A correction to the register: the original finding said "0 label-for across
+    1,404 controls", which read as nothing being labelled. 238 were validly
+    labelled implicitly. The genuinely unnamed count was 987.
+    """
+
+    CONTROL = r'<(input|select|textarea)\b[^>]*?/?>'
+    SKIP_TYPES = r'type="(hidden|submit|button|reset)"'
+
+    def _named_positions(self, text):
+        import re
+        positions = set()
+        for block in re.finditer(r'<label\b[^>]*>.*?</label>', text, re.S):
+            for control in re.finditer(r'<(input|select|textarea)\b', block.group(0)):
+                positions.add(block.start() + control.start())
+        return positions, set(re.findall(r'<label\b[^>]*\bfor="([^"]+)"', text))
+
+    def test_every_form_control_has_an_accessible_name(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            positions, labelled_ids = self._named_positions(text)
+            for match in re.finditer(self.CONTROL, text):
+                tag = match.group(0)
+                if match.start() in positions or re.search(self.SKIP_TYPES, tag):
+                    continue
+                control_id = re.search(r'\bid="([^"]+)"', tag)
+                if control_id and control_id.group(1) in labelled_ids:
+                    continue
+                if 'aria-label' in tag or 'aria-labelledby' in tag:
+                    continue
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}: {tag[:70]}')
+        self.assertEqual(
+            len(offenders), 0,
+            f'{len(offenders)} form control(s) have no accessible name. A '
+            'placeholder is not one - it is not announced as a label, it '
+            'disappears once the field has content, and it fails contrast:\n'
+            + '\n'.join(offenders[:25]))
+
+    def test_a_placeholder_is_never_the_only_name(self):
+        """The specific shape that produced 987 unnamed controls."""
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            positions, labelled_ids = self._named_positions(text)
+            for match in re.finditer(self.CONTROL, text):
+                tag = match.group(0)
+                if 'placeholder=' not in tag or match.start() in positions:
+                    continue
+                control_id = re.search(r'\bid="([^"]+)"', tag)
+                if control_id and control_id.group(1) in labelled_ids:
+                    continue
+                if 'aria-label' not in tag and 'aria-labelledby' not in tag:
+                    line = text[:match.start()].count('\n') + 1
+                    offenders.append(f'{path.name}:{line}')
+        self.assertEqual(offenders, [],
+                         'controls named only by a placeholder:\n' + '\n'.join(offenders[:25]))
+
+    def test_every_table_header_declares_its_scope(self):
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            # (?!ead) so <thead> is not counted as a <th>.
+            for match in re.finditer(r'<th\b(?!ead)(?![^>]*\bscope=)', text):
+                line = text[:match.start()].count('\n') + 1
+                offenders.append(f'{path.name}:{line}')
+        self.assertEqual(
+            len(offenders), 0,
+            f'{len(offenders)} table header(s) have no scope, so a screen reader '
+            'cannot associate them with their cells:\n' + '\n'.join(offenders[:25]))
+
+    def test_no_thead_was_corrupted_by_the_scope_pass(self):
+        """A regex adding scope to <th> can match inside <thead>. It did once."""
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            with self.subTest(template=path.name):
+                self.assertNotIn('scope="col"ead', text)
+                self.assertNotIn('scope="row"ead', text)
+
+    def test_the_named_controls_are_still_valid_markup(self):
+        """Inserting an attribute must not have broken a self-closing tag."""
+        import re
+        offenders = []
+        for path in _all_templates():
+            text = path.read_text(encoding='utf-8')
+            for match in re.finditer(r'<input\b[^>]*>', text):
+                tag = match.group(0)
+                if tag.count('aria-label=') > 1:
+                    line = text[:match.start()].count('\n') + 1
+                    offenders.append(f'{path.name}:{line}: duplicate aria-label')
+            # An unterminated tag would swallow the rest of the line.
+            if re.search(r'<input\b[^>]*<', text):
+                offenders.append(f'{path.name}: an <input> tag is not closed')
+        self.assertEqual(offenders, [], '\n'.join(offenders))

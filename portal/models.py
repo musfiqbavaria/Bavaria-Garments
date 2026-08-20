@@ -11,7 +11,42 @@ class TimeStamped(models.Model):
     # created_at is indexed on the base class because almost every dashboard
     # orders or filters by it, and 170-odd concrete models inherit from here.
     created_at=models.DateTimeField(auto_now_add=True,db_index=True); updated_at=models.DateTimeField(auto_now=True)
+
     class Meta: abstract=True
+
+    #: Field names tried in order when building a label for this record. The
+    #: first one that exists on the model and has a value wins.
+    LABEL_FIELDS = (
+        'barcode', 'code', 'asset_code', 'employee_id', 'master_order_id', 'sku',
+        'reference', 'application_reference', 'enquiry_no', 'opportunity_no',
+        'po_number', 'invoice_no', 'carton_no', 'style_no', 'operation_name',
+        'name', 'title', 'slug',
+    )
+
+    def __str__(self):
+        """A readable label for every record, everywhere.
+
+        158 of the 180 models had no ``__str__``, so they rendered as
+        "ModelName object (1)" in every admin changelist and in every ForeignKey
+        dropdown a user has to choose from - 36 of them are FK targets. Defining
+        it on the shared base fixes all of them at once and keeps working for
+        models added later. See SITE_AUDIT_FINDINGS.md B16.
+
+        A subclass that wants something specific simply defines its own.
+        """
+        present = {f.name for f in self._meta.concrete_fields}
+        for field in self.LABEL_FIELDS:
+            if field not in present:
+                continue
+            value = getattr(self, field, None)
+            if value not in (None, ''):
+                return str(value)
+        # Still better than "object (1)": says what it is and which one.
+        return f'{self._meta.verbose_name} #{self.pk}' if self.pk else f'new {self._meta.verbose_name}'
+
+    def label(self):
+        """Alias so templates can be explicit rather than relying on str()."""
+        return str(self)
 
 class OrganizationNode(TimeStamped):
     """A node in the organisation tree: country, company, factory, unit, store.
@@ -31,10 +66,35 @@ class OrganizationNode(TimeStamped):
     #: anchors must resolve in the timezone the workforce actually works in.
     timezone=models.CharField(max_length=64,blank=True,
         help_text="IANA name, e.g. Asia/Dhaka. Blank inherits from the parent site.")
+    #: Local operating currency for this site. Blank means inherit from the
+    #: parent, and ultimately settings.BASE_CURRENCY.
+    #:
+    #: Employee.daily_cost, and every other per-site amount that carries no
+    #: currency of its own, is denominated in this. Without it a total across
+    #: sites added BDT to EUR and displayed the result unlabelled - see
+    #: SITE_AUDIT_FINDINGS.md A11 and TECHNICAL_ASSESSMENT.md 5.6. Amounts are
+    #: converted through portal/currency.py before any figure that spans sites
+    #: is totalled, and a missing rate is reported, never treated as 1.0.
+    currency=models.CharField(max_length=3,blank=True,
+        help_text="ISO 4217 code, e.g. BDT or EUR. Blank inherits from the parent site.")
     active=models.BooleanField(default=True)
 
     class Meta:
         indexes=[models.Index(fields=['path'],name='idx_org_node_path')]
+
+    def effective_currency(self):
+        """This site's currency, inherited from the nearest ancestor that sets one.
+
+        Falls back to settings.BASE_CURRENCY so a caller always gets a code and
+        never has to guess. Mirrors how the timezone is resolved.
+        """
+        from django.conf import settings
+        node, seen = self, 0
+        while node is not None and seen < 32:              # depth guard
+            if node.currency:
+                return node.currency.upper()
+            node, seen = node.parent, seen + 1
+        return getattr(settings, 'BASE_CURRENCY', 'EUR')
 
     def compute_path(self):
         return f'{self.parent.path}{self.pk}/' if self.parent_id and self.parent.path else f'/{self.pk}/'
@@ -374,6 +434,12 @@ class ReportSnapshot(TimeStamped):
 
 class AuditLog(models.Model):
     user=models.ForeignKey(User,null=True,blank=True,on_delete=models.SET_NULL); method=models.CharField(max_length=10); path=models.CharField(max_length=500); status_code=models.PositiveIntegerField(default=200); ip=models.GenericIPAddressField(null=True,blank=True); created_at=models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        # These three are the only models outside TimeStamped, so they do
+        # not inherit its generic label and were the last ones rendering as
+        # "object (1)" in the admin.
+        return f'{self.method} {self.path} [{self.status_code}] by {self.user or "anonymous"}'
+
 
 class ApprovalRequest(TimeStamped):
     #: Organisation site this record belongs to. Null means unassigned and,
@@ -398,6 +464,9 @@ class ApprovalRequest(TimeStamped):
 
 class ApprovalDecisionLog(models.Model):
     """Append-only record of every decision taken on an ApprovalRequest.
+    def __str__(self):
+        return f'{self.decision} on approval #{self.approval_id}'
+
 
     ApprovalRequest keeps only the latest decision, so before this model a
     request could be flipped between APPROVED and REJECTED with no trace of who
@@ -1040,6 +1109,9 @@ class FileAccessLog(models.Model):
     granted=models.BooleanField(default=True,db_index=True)
     denial_reason=models.CharField(max_length=255,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return f'{self.action} {self.resource_type}#{self.resource_id}'
+
 
     class Meta:
         ordering=['-created_at']

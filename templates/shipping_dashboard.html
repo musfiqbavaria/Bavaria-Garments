@@ -259,10 +259,7 @@
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="kpis">
+            <div class="kpis">
         <div class="kpi">
           <span>Shipment Plans</span><b>{{payload.plans}}</b>
         </div>
@@ -375,13 +372,13 @@
           <h2>SHIPMENT PLANS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Buyer</th>
-              <th>Mode</th>
-              <th>Carrier</th>
-              <th>Tracking</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Buyer</th>
+              <th scope="col">Mode</th>
+              <th scope="col">Carrier</th>
+              <th scope="col">Tracking</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":14" %}
             <tr>
@@ -404,10 +401,10 @@
           <h2>15-DAY SLA STATUS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Deadline</th>
-              <th>Days Remaining</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Deadline</th>
+              <th scope="col">Days Remaining</th>
+              <th scope="col">Status</th>
             </tr>
             {% for r in sla_rows|slice:":14" %}
             <tr>
@@ -449,7 +446,7 @@
           </form>
           <br /><a class="btn" href="{% url 'shipping_report_csv' %}"
             >Download CSV</a
-          ><button class="btn" onclick="window.print()">Print</button>
+          ><button class="btn" data-action="print">Print</button>
         </div>
       </div>
 
@@ -461,81 +458,81 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input
+            /><input aria-label="Shipment Plan No."
               name="plan_no"
               placeholder="Shipment Plan No."
               required
-            /><select name="order_id" required>
+            /><select aria-label="Order id" name="order_id" required>
               <option value="">Master Order</option>
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="buyer" placeholder="Buyer" /><input
+            ><input aria-label="Buyer" name="buyer" placeholder="Buyer" /><input aria-label="Consignee"
               name="consignee"
               placeholder="Consignee"
-            /><textarea
+            /><textarea aria-label="Buyer Delivery Address"
               class="full"
               name="delivery_address"
               placeholder="Buyer Delivery Address"
             ></textarea
-            ><input name="country" placeholder="Country" /><input
+            ><input aria-label="Country" name="country" placeholder="Country" /><input aria-label="Incoterm"
               name="incoterm"
               placeholder="Incoterm"
-            /><select name="shipment_mode">
+            /><select aria-label="Shipment mode" name="shipment_mode">
               {% for m in shipment_modes %}
               <option>{{m}}</option>
               {% endfor %}</select
-            ><input name="forwarder" placeholder="Forwarder" /><input
+            ><input aria-label="Forwarder" name="forwarder" placeholder="Forwarder" /><input aria-label="Carrier"
               name="carrier"
               placeholder="Carrier"
-            /><input name="booking_no" placeholder="Booking No." /><input
+            /><input aria-label="Booking No." name="booking_no" placeholder="Booking No." /><input aria-label="AWB / BL / CMR / Tracking No."
               class="full"
               name="awb_bl_cmr_tracking_no"
               placeholder="AWB / BL / CMR / Tracking No."
-            /><input name="container_no" placeholder="Container No." /><input
+            /><input aria-label="Container No." name="container_no" placeholder="Container No." /><input aria-label="Seal No."
               name="seal_no"
               placeholder="Seal No."
-            /><input name="vehicle_no" placeholder="Vehicle No." /><input
+            /><input aria-label="Vehicle No." name="vehicle_no" placeholder="Vehicle No." /><input aria-label="Driver"
               name="driver_name"
               placeholder="Driver"
-            /><input name="driver_phone" placeholder="Driver Phone" /><input
+            /><input aria-label="Driver Phone" name="driver_phone" placeholder="Driver Phone" /><input aria-label="Cartons"
               type="number"
               name="planned_cartons"
               placeholder="Cartons"
-            /><input
+            /><input aria-label="Pieces"
               type="number"
               name="planned_pieces"
               placeholder="Pieces"
-            /><input
+            /><input aria-label="Gross kg"
               type="number"
               step="0.001"
               name="gross_weight_kg"
               placeholder="Gross kg"
-            /><input
+            /><input aria-label="Net kg"
               type="number"
               step="0.001"
               name="net_weight_kg"
               placeholder="Net kg"
-            /><input
+            /><input aria-label="CBM"
               type="number"
               step="0.000001"
               name="total_cbm"
               placeholder="CBM"
-            /><input type="datetime-local" name="etd" /><input
+            /><input aria-label="Etd" type="datetime-local" name="etd" /><input aria-label="Eta"
               type="datetime-local"
               name="eta"
-            /><select name="department_id">
+            /><select aria-label="Department id" name="department_id">
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Shipping Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
             ><label class="full"
-              >Shipping Instruction<input
+              >Shipping Instruction<input aria-label="Shipping instruction"
                 type="file"
                 name="shipping_instruction" /></label
             ><button class="btn full">Create Shipment Plan</button>
@@ -549,33 +546,33 @@
               type="hidden"
               name="action"
               value="scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Shipping Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="carton_id" required>
+            ><select aria-label="Carton id" class="full" name="carton_id" required>
               <option value="">Packing Carton</option>
               {% for c in cartons %}
               <option value="{{c.id}}">
                 {{c.carton_no}} · {{c.barcode}} · {{c.packed_qty}}
               </option>
               {% endfor %}</select
-            ><select name="scan_type">
+            ><select aria-label="Scan type" name="scan_type">
               <option>SHIPPING_IN</option>
               <option>CARTON_VERIFY</option>
               <option>LOADING</option>
               <option>GATE_OUT</option>
               <option>DELIVERY</option></select
-            ><input
+            ><input aria-label="Scan Carton Barcode/QR"
               name="barcode"
               placeholder="Scan Carton Barcode/QR"
               required
-            /><input
+            /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input
+            /><input aria-label="Actual Seal No. for Gate Out"
               class="full"
               name="actual_seal_no"
               placeholder="Actual Seal No. for Gate Out"
@@ -590,22 +587,22 @@
               type="hidden"
               name="action"
               value="document"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Shipping Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select name="document_type">
+            ><select aria-label="Document type" name="document_type">
               {% for d in doc_types %}
               <option>{{d}}</option>
               {% endfor %}</select
-            ><input name="document_no" placeholder="Document No." /><input
+            ><input aria-label="Document No." name="document_no" placeholder="Document No." /><input aria-label="File"
               class="full"
               type="file"
               name="file"
               required
             /><label class="full"
-              ><input type="checkbox" name="verified" /> Verified</label
+              ><input aria-label="Verified" type="checkbox" name="verified" /> Verified</label
             ><button class="btn full">Upload Document</button>
           </form>
         </div>
@@ -617,12 +614,12 @@
               type="hidden"
               name="action"
               value="status"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Shipping Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="status">
+            ><select aria-label="Status" class="full" name="status">
               {% for s in statuses %}
               <option>{{s}}</option>
               {% endfor %}</select
@@ -639,17 +636,17 @@
               type="hidden"
               name="action"
               value="cost"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Shipping Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            >{% for n in cost_fields %}<input
+            >{% for n in cost_fields %}<input aria-label="{{n|title}}"
               type="number"
               step="0.01"
               name="{{n}}"
               placeholder="{{n|title}}"
-            />{% endfor %}<select class="full" name="approval_id">
+            />{% endfor %}<select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Cost Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -665,33 +662,33 @@
               type="hidden"
               name="action"
               value="pod"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Shipping Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Receiver Name"
               name="receiver_name"
               placeholder="Receiver Name"
               required
-            /><input type="datetime-local" name="delivered_at" /><input
+            /><input aria-label="Delivered at" type="datetime-local" name="delivered_at" /><input aria-label="Courier Confirmation"
               class="full"
               name="courier_confirmation"
               placeholder="Courier Confirmation"
-            /><input
+            /><input aria-label="GPS / Delivery Location"
               class="full"
               name="gps_location"
               placeholder="GPS / Delivery Location"
             /><label class="full"
-              >Proof of Delivery<input
+              >Proof of Delivery<input aria-label="Proof of delivery"
                 type="file"
                 name="proof_of_delivery" /></label
             ><label class="full"
-              >Buyer Signature<input
+              >Buyer Signature<input aria-label="Buyer signature"
                 type="file"
                 name="buyer_signature" /></label
             ><label class="full"
-              >Delivery Photo<input type="file" name="delivery_photo" /></label
+              >Delivery Photo<input aria-label="Delivery photo" type="file" name="delivery_photo" /></label
             ><button class="btn full">Confirm Delivery / POD</button>
           </form>
         </div>
@@ -700,12 +697,12 @@
           <h2>LATEST SHIPPING SCANS</h2>
           <table class="tbl">
             <tr>
-              <th>Time</th>
-              <th>Plan</th>
-              <th>Carton</th>
-              <th>Type</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Time</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Carton</th>
+              <th scope="col">Type</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for s in scans|slice:":20" %}
             <tr>

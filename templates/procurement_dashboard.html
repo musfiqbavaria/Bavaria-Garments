@@ -155,10 +155,7 @@
       >
     </div>
     <div class="m">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="k">
+            <div class="k">
         <div class="card">Requests<strong>{{payload.requests}}</strong></div>
         <div class="card">
           Shortage<strong class="orange">{{payload.shortage_requests}}</strong>
@@ -217,29 +214,29 @@
               type="hidden"
               name="action"
               value="request"
-            /><input
+            /><input aria-label="Request No."
               name="request_no"
               placeholder="Request No."
               required
-            /><select name="order_id">
+            /><select aria-label="Order id" name="order_id">
               <option value="">Master Order</option>
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><select name="material_id">
+            ><select aria-label="Material id" name="material_id">
               <option value="">Material</option>
               {% for m in materials %}
               <option value="{{m.id}}">{{m.material_code}} · {{m.name}}</option>
               {% endfor %}</select
-            ><input name="description" placeholder="Description" /><input
+            ><input aria-label="Description" name="description" placeholder="Description" /><input aria-label="Required Qty"
               type="number"
               step=".001"
               name="required_qty"
               placeholder="Required Qty"
-            /><input name="uom" placeholder="UOM" /><input
+            /><input aria-label="UOM" name="uom" placeholder="UOM" /><input aria-label="Required date"
               type="date"
               name="required_date"
-            /><input
+            /><input aria-label="Approved Budget Value"
               type="number"
               step=".01"
               name="budget_value"
@@ -255,53 +252,53 @@
               type="hidden"
               name="action"
               value="comparison"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Procurement Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">
                 {{r.request_no}} · Shortage {{r.shortage_qty}}
               </option>
               {% endfor %}</select
-            ><select name="supplier_id" required>
+            ><select aria-label="Supplier id" name="supplier_id" required>
               <option value="">Approved Supplier</option>
               {% for s in suppliers %}
               <option value="{{s.id}}">
                 {{s.supplier_id}} · {{s.company_name}}
               </option>
               {% endfor %}</select
-            ><select name="rfq_id">
+            ><select aria-label="Rfq id" name="rfq_id">
               <option value="">RFQ</option>
               {% for r in rfqs %}
               <option value="{{r.id}}">{{r.rfq_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Unit Price"
               type="number"
               step=".0001"
               name="unit_price"
               placeholder="Unit Price"
-            /><input
+            /><input aria-label="Freight"
               type="number"
               step=".01"
               name="freight_cost"
               placeholder="Freight"
-            /><input
+            /><input aria-label="Tax/Duty"
               type="number"
               step=".01"
               name="tax_duty_cost"
               placeholder="Tax/Duty"
-            /><input
+            /><input aria-label="Other Cost"
               type="number"
               step=".01"
               name="other_cost"
               placeholder="Other Cost"
-            /><input
+            /><input aria-label="Lead Days"
               type="number"
               name="lead_time_days"
               placeholder="Lead Days"
-            /><input
+            /><input aria-label="Payment Terms"
               name="payment_terms"
               placeholder="Payment Terms"
-            /><textarea
+            /><textarea aria-label="Comparison Notes"
               class="full"
               name="reason"
               placeholder="Comparison Notes"
@@ -317,7 +314,7 @@
               type="hidden"
               name="action"
               value="select"
-            /><select class="full" name="comparison_id" required>
+            /><select aria-label="Comparison id" class="full" name="comparison_id" required>
               <option value="">Comparison</option>
               {% for c in comparisons %}
               <option value="{{c.id}}">
@@ -325,7 +322,7 @@
                 {{c.landed_unit_cost}} · Score {{c.total_score}}
               </option>
               {% endfor %}</select
-            ><select class="full" name="approval_id" required>
+            ><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">Selection Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -341,20 +338,20 @@
               type="hidden"
               name="action"
               value="commit"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">
                 {{r.request_no}} · Budget {{r.budget_value}}
               </option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Committed Value (blank = landed cost × qty)"
               class="full"
               type="number"
               step=".01"
               name="committed_value"
               placeholder="Committed Value (blank = landed cost × qty)"
-            /><select class="full" name="approval_id" required>
+            /><select aria-label="Approval id" class="full" name="approval_id" required>
               <option value="">MANDATORY Profit-Before-Spend Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -370,15 +367,15 @@
               type="hidden"
               name="action"
               value="create_po"
-            /><select class="full" name="request_id" required>
+            /><select aria-label="Request id" class="full" name="request_id" required>
               <option value="">Approved Request</option>
               {% for r in requests %}
               <option value="{{r.id}}">{{r.request_no}} · {{r.status}}</option>
               {% endfor %}</select
-            ><input name="po_no" placeholder="PO No." required /><input
+            ><input aria-label="PO No." name="po_no" placeholder="PO No." required /><input aria-label="Expected delivery"
               type="date"
               name="expected_delivery"
-            /><input class="full" type="file" name="po_file" /><button
+            /><input aria-label="Po file" class="full" type="file" name="po_file" /><button
               class="btn full"
             >
               Create PO
@@ -393,7 +390,7 @@
               type="hidden"
               name="action"
               value="delivery_status"
-            /><select class="full" name="po_id" required>
+            /><select aria-label="Po id" class="full" name="po_id" required>
               <option value="">Purchase Order</option>
               {% for p in pos %}
               <option value="{{p.id}}">
@@ -419,7 +416,7 @@
             <button class="btn" name="slot" value="13:00">13:00</button>
             <button class="btn" name="slot" value="20:00">20:00</button>
             <a class="btn" href="{% url 'procurement_report_csv' %}">CSV</a>
-            <button type="button" class="btn" onclick="window.print()">
+            <button type="button" class="btn" data-action="print">
               Print
             </button>
           </form>
@@ -440,18 +437,18 @@
         <h3>REQUEST / COMMITMENT STATUS</h3>
         <table class="tbl">
           <tr>
-            <th>Request</th>
-            <th>Order</th>
-            <th>Material</th>
-            <th>Required</th>
-            <th>Stock</th>
-            <th>Reserved</th>
-            <th>Shortage</th>
-            <th>Budget</th>
-            <th>Status</th>
-            <th>Supplier</th>
-            <th>Committed</th>
-            <th>PO</th>
+            <th scope="col">Request</th>
+            <th scope="col">Order</th>
+            <th scope="col">Material</th>
+            <th scope="col">Required</th>
+            <th scope="col">Stock</th>
+            <th scope="col">Reserved</th>
+            <th scope="col">Shortage</th>
+            <th scope="col">Budget</th>
+            <th scope="col">Status</th>
+            <th scope="col">Supplier</th>
+            <th scope="col">Committed</th>
+            <th scope="col">PO</th>
           </tr>
           {% for r in requests %}
           <tr>

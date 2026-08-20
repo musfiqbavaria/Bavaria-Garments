@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block title %}You do not have access to this page{% endblock %}
+{% block content %}
+<section class="wrap">
+  <div class="page-head">
+    <div>
+      <small>403 · Not authorised</small>
+      <h1>You do not have access to this page</h1>
+      <p>Your role does not include this module. If you need it, ask your manager or IT to add the role to your account.</p>
+    </div>
+  </div>
+  <p>
+    <a class="btn" href="{% url 'dashboard' %}">Back to the dashboard</a>
+    <a class="btn alt" href="{% url 'global_dashboard' %}">All modules</a>
+  </p>
+</section>
+{% endblock %}

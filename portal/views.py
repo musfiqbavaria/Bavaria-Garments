@@ -6,7 +6,7 @@ from django.contrib.auth.models import User, Group
 from django.http import FileResponse, HttpResponse, JsonResponse, Http404
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.conf import settings
 from django.db.models import Q, Sum
 from django.core.cache import cache
@@ -18,6 +18,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from . import roles as roles_mod
 from .currency import RateUnavailable, base_currency as currency_base, convert, convert_or_none
+from .module_routes import module_route_name, module_url, has_module_page
 from .roles import can_decide_approval, has_any_role, user_roles
 from .services import apply_stock_scan, record_variance, calculate_attendance_day, attendance_schedule
 
@@ -174,7 +175,12 @@ def login_view(request):
         error='Invalid username or password.'
     return render(request,'login.html',{'error':error})
 
-def logout_view(request): logout(request); return redirect('login')
+@require_POST
+def logout_view(request):
+    # POST only. As a GET link any prefetcher, crawler or preloading
+    # browser could end a user's session. See SITE_AUDIT_FINDINGS.md C36.
+    logout(request)
+    return redirect('login')
 
 def home(request):
     """Render the approved public storefront with live operational data."""
@@ -203,6 +209,10 @@ def home(request):
         'products': products,
         'countries': OrganizationNode.objects.filter(node_type='Country', active=True).count() or 50,
         'customer_satisfaction': 98, 'annual_revenue': str(revenue or '250000'),
+        # The homepage used to hardcode a euro sign and the label "Revenue
+        # recorded in EUR" whatever BASE_CURRENCY was set to. The code is
+        # supplied so the figure is always labelled with the real one.
+        'base_currency': getattr(settings,'BASE_CURRENCY','EUR'),
         'active_orders': MasterOrder.objects.exclude(status__in=['DELIVERED','COMPLETED']).count(),
         'contact': {'phone': '+353 89 978 8187', 'email': 'urmos@rozalia.ie', 'location': 'Limerick, Ireland'},
         'storefronts': storefronts,
@@ -272,12 +282,21 @@ def wishlist_portal(request): return portal_visual(request,'wishlist')
 
 def _validate_recruitment_upload(file,field_name):
     if not file: return
-    if file.size > 10*1024*1024: raise ValueError(f'{field_name} must be 10 MB or smaller.')
+    # Was a bare 10 MB literal while nginx allows 50 M and
+    # DATA_UPLOAD_MAX_MEMORY_SIZE is 50 MB, so the three limits disagreed and the
+    # configured setting never reached the validator.
+    # See SITE_AUDIT_FINDINGS.md B24.
+    limit=getattr(settings,'MAX_UPLOAD_BYTES',None) or getattr(settings,'DATA_UPLOAD_MAX_MEMORY_SIZE',10*1024*1024)
+    if file.size > limit:
+        raise ValueError(f'{field_name} must be {limit // (1024*1024)} MB or smaller.')
     ext=os.path.splitext(file.name)[1].lower()
     if ext not in {'.pdf','.doc','.docx','.jpg','.jpeg','.png'}: raise ValueError(f'{field_name} must be PDF, DOC, DOCX, JPG or PNG.')
 
 @require_http_methods(['GET','POST'])
 def careers(request):
+    # The footer hardcoded a phone number and an email address. Both are
+    # configuration, not markup - a second country or a change of recruiter
+    # meant editing a template. See SITE_AUDIT_FINDINGS.md B30.
     """Public vacancy list and application form; no employee login required."""
     from django.contrib import messages
     vacancies=HRVacancy.objects.filter(status='PUBLISHED').filter(Q(closing_date__isnull=True)|Q(closing_date__gte=timezone.localdate())).select_related('department').order_by('closing_date','title')
@@ -291,7 +310,7 @@ def careers(request):
         if _submission_count(request,'careers') >= limit:
             logger.warning('careers submission throttled: ip=%s', _file_access_ip(request))
             messages.error(request,'Too many applications have been submitted from this connection. Please try again later.')
-            return render(request,'careers.html',{'vacancies':vacancies,'created':None},status=429)
+            return render(request,'careers.html',{**_careers_contact(),'vacancies':vacancies,'created':None},status=429)
         _record_submission(request,'careers',window)
         try:
             with transaction.atomic():
@@ -319,7 +338,7 @@ def careers(request):
         except EXPECTED_POST_ERRORS as exc:
             created=None
             _handle_post_error(request,exc)
-    return render(request,'careers.html',{'vacancies':vacancies,'created':created})
+    return render(request,'careers.html',{**_careers_contact(),'vacancies':vacancies,'created':created})
 
 @require_http_methods(['GET','POST'])
 def recruitment_tracking(request):
@@ -332,6 +351,14 @@ def recruitment_tracking(request):
 
 @login_required
 def hr_recruitment_applications(request):
+    # The seven recruitment actions on this page post to hr_dashboard, which holds
+    # the decision logic. That handler ended with an unconditional
+    # redirect('hr_dashboard'), so every decision threw the user off the
+    # application list onto the HR dashboard - ten applications meant ten round
+    # trips and re-finding your place each time. The forms now carry
+    # next=hr_recruitment_applications and the handler honours it, against a
+    # fixed allowlist so it cannot become an open redirect. The decision logic
+    # itself is untouched. See SITE_AUDIT_FINDINGS.md B23.
     applications=HRRecruitment.objects.select_related('vacancy','department','approval','hiring_approval','employee','portal_user').order_by('-submitted_at')
     return render(request,'hr_recruitment_applications.html',{'applications':applications,'vacancies':HRVacancy.objects.select_related('department').order_by('-created_at'),'departments':Department.objects.order_by('name')})
 
@@ -453,15 +480,28 @@ def sewing_master_report_csv(request):
 
 @login_required
 def dashboard(request):
-    """Bangladesh country operations command centre.
+    """Country operations command centre.
 
     This is deliberately the authenticated landing page.  It consolidates live
     records instead of displaying the old static page registry, while the full
     module directory remains available at /global-dashboard/.
+
+    The country shown comes from the signed-in user's own organisation scope -
+    see _command_centre_country.  It used to be hardcoded to Bangladesh, and
+    fell back to every node in the estate when no such country existed.
     """
     today=timezone.localdate()
-    country=(OrganizationNode.objects.filter(node_type='Country',name__icontains='Bangladesh').first())
-    tree=country.descendants() if country else OrganizationNode.objects.all()
+    # The landing page every login redirects to used to hardcode
+    # name__icontains='Bangladesh', and fell back to EVERY organisation node when
+    # no such node existed - so a deployment for another country showed the whole
+    # estate unfiltered. The country now comes from the signed-in user's own
+    # scope, with a configurable default for a user who has none.
+    # See SITE_AUDIT_FINDINGS.md B19.
+    country=_command_centre_country(request)
+    # No Country node at all means an estate that has not been set up yet. Show
+    # nothing rather than every node unfiltered, which is what the old
+    # name__icontains lookup degraded to.
+    tree=country.descendants() if country else OrganizationNode.objects.none()
     factories=tree.filter(node_type='Factory',active=True)
     units=tree.filter(node_type='Production Unit',active=True)
 
@@ -525,37 +565,31 @@ def global_dashboard(request):
     templates/dashboard.html was rendered by nothing. Every one of the 95
     registered modules was then reachable only by typing its /p/<slug>/ URL.
     """
-    pages=DashboardPage.objects.filter(enabled=True).order_by('page_id')
+    pages=[]
+    for p in DashboardPage.objects.filter(enabled=True).order_by('page_id'):
+        # Resolved from portal/module_routes.py so the card links to the real
+        # module where one exists instead of the placeholder. 74 of 95 cards
+        # used to land on the stub; see A3.
+        p.target_url=module_url(p.slug) or reverse('page',args=[p.slug])
+        p.is_built=has_module_page(p.slug)
+        pages.append(p)
     return render(request,'dashboard.html',{'pages':pages,'orders':MasterOrder.objects.order_by('-updated_at')[:8]})
 
 @login_required
 def page_view(request,slug):
-    if slug=='sewing-dashboard': return redirect('sewing_master')
-    if slug=='stock-material-master': return redirect('stock_material_master')
-    if slug=='asset-machine-master': return redirect('asset_machine_master')
-    if slug=='buyer-opportunity': return redirect('buyer_opportunity')
-    if slug=='communication-center-master': return redirect('communication_center')
-    if slug=='profit-feasibility-gate': return redirect('profit_feasibility_gate')
-    if slug=='free-capacity-opportunity': return redirect('free_capacity_opportunity')
-    if slug=='universal-file-center': return redirect('universal_file_center')
-    if slug=='buyer-delivery-sla': return redirect('buyer_delivery_sla')
-    if slug=='profit-before-spend': return redirect('profit_before_spend')
-    if slug=='staff-self-service-portal': return redirect('staff_self_service')
-    if slug=='hr-dashboard': return redirect('hr_dashboard')
-    if slug=='attendance-dashboard': return redirect('attendance_dashboard')
-    if slug=='cutting-dashboard': return redirect('cutting_dashboard')
-    if slug=='embroidery-dashboard': return redirect('embroidery_dashboard')
-    if slug=='label-dashboard': return redirect('label_dashboard')
-    if slug=='qc-dashboard': return redirect('qc_dashboard')
-    if slug=='hand-iron-dashboard': return redirect('hand_iron_dashboard')
-    if slug=='poly-dashboard': return redirect('poly_dashboard')
+    # One declarative table, not a hand-maintained if-chain: see
+    # portal/module_routes.py for why. A slug with a real page is sent there;
+    # anything else falls through to the placeholder, which says it is one.
+    target=module_route_name(slug)
+    if target:
+        return redirect(target)
     # A superseded legacy page is disabled rather than deleted, so an existing
     # link keeps working: send it to the module that replaced it instead of 404.
     replacement=DashboardPage.objects.filter(slug=slug,enabled=False).exclude(superseded_by='').first()
     if replacement:
         return redirect('page',slug=replacement.superseded_by)
     page=get_object_or_404(DashboardPage,slug=slug,enabled=True)
-    ctx={'page':page,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
+    ctx={'page':page,'is_placeholder':True,'orders':MasterOrder.objects.order_by('-updated_at')[:10],'alerts':Alert.objects.filter(actioned=False).order_by('-created_at')[:10],'actions':ActionItem.objects.filter(status__in=ActionItem.OPEN_STATUSES).order_by('due_at')[:10]}
     return render(request,'page.html',ctx)
 
 @login_required
@@ -683,11 +717,17 @@ def report_master(request):
     for group,slug,title in _report_master_department_catalog():
         page=pages.get(slug)
         reg=registry_by_slug.get(slug,{})
+        target=module_url(slug)
         catalog.append({
             'group':group,'slug':slug,'title':page.title if page else title,
             'page_id':page.page_id if page else reg.get('id',''),
             'enabled':bool(page) or bool(reg),
-            'actions':reg.get('actions',[])[:8]
+            'actions':reg.get('actions',[])[:8],
+            # Resolved here so the template cannot build a path by hand.
+            # 27 links on this page were '/page/<slug>/', which is not a
+            # route - the placeholder is '/p/'. See A1.
+            'url':target or reverse('page',args=[slug]),
+            'built':bool(target),
         })
 
     context={
@@ -763,7 +803,16 @@ def barcode_instruction_center(request,mode='generation'):
     scan=['barcode_scan_instruction_operator.png','barcode_scan_instruction.png']
     trace=['barcode_master_1.png','barcode_master_2.png','barcode_master_3.png']
     groups={'generation':generation,'scan':scan,'traceability':trace}
-    mode=mode if mode in groups else 'generation'
+    # Was: silently rewritten to 'generation' and returned 200, so an operator
+    # following a mistyped or stale workstation link
+    # (/barcode-instructions/scanning/ rather than /scan/) was shown the
+    # GENERATION sheet instead of the SCANNING one, with no sign the URL was
+    # wrong - on a page whose whole purpose is to be the printed operating
+    # procedure at a workstation. Every other parameterised route 404s on bad
+    # input. See SITE_AUDIT_FINDINGS.md B28.
+    if mode not in groups:
+        raise Http404(f'Unknown barcode instruction mode {mode!r}. '
+                      f'Valid modes: {", ".join(sorted(groups))}.')
     return render(request,'barcode_instruction_center.html',{'mode':mode,'images':groups[mode],'groups':groups})
 
 def _scan_expected(assignment,step):
@@ -843,6 +892,12 @@ def finance_overseas_preview(request):
         return JsonResponse({'ok':False,'error':'amount must be a decimal number.'},status=400)
     if amount < 0:
         return JsonResponse({'ok':False,'error':'amount cannot be negative.'},status=400)
+    # 'Bangladesh' is correct here and is NOT a UI default: this endpoint prices
+    # the Bangladesh overseas export-incentive scheme, which is country-specific
+    # by law and is the only country the rate applies to. The hardcoded country
+    # that WAS a defect - the landing page filtering the whole organisation tree
+    # by name__icontains='Bangladesh' - is fixed in dashboard() instead.
+    # See SITE_AUDIT_FINDINGS.md B19.
     country=request.GET.get('country','Bangladesh')
     try:
         rate=Decimal(os.getenv('BANGLADESH_OVERSEAS_INCENTIVE_RATE','2.5')) if country.lower()=='bangladesh' else Decimal('0')
@@ -2432,7 +2487,12 @@ def staff_self_service(request):
     from datetime import date
     employee=_staff_employee_for_user(request.user)
     if not employee:
-        return HttpResponse('No employee record is linked to this login. Ask HR/IT to connect the user account to an Employee ID.',status=403)
+        # Not an authorisation failure: the user is entitled to this page,
+        # their account simply is not linked to an Employee record yet. It
+        # returned a bare-text 403, which read as "you may not" and gave
+        # the 21 roles that reach Self-Service from the navbar an unstyled
+        # dead end. See SITE_AUDIT_FINDINGS.md B12.
+        return render(request,'staff_self_service_unlinked.html',status=409)
 
     profile=StaffSelfServiceProfile.objects.filter(employee=employee).select_related('employee__department').first()
     if not profile:
@@ -2695,6 +2755,16 @@ def hr_dashboard(request):
                     messages.success(request,'HR case opened.')
         except Exception as exc:
             _handle_post_error(request, exc)
+        # Return the user to the page they submitted from. The seven recruitment
+        # actions live on hr_recruitment_applications.html but post here, so an
+        # unconditional redirect threw the user off the application list onto the
+        # HR dashboard after every decision - ten applications meant ten round
+        # trips and re-finding your place each time.
+        # Only a known url name is honoured, so this cannot become an open
+        # redirect. See SITE_AUDIT_FINDINGS.md B23.
+        back=request.POST.get('next','')
+        if back in {'hr_recruitment_applications','hr_dashboard'}:
+            return redirect(back)
         return redirect('hr_dashboard')
 
     employees=Employee.objects.select_related('department')
@@ -6366,3 +6436,94 @@ def api_ceo_dashboard(request):
 @login_required
 def account_master(request):
     return render(request,'account_master.html')
+
+
+# ---------------------------------------------------------------------------
+# Self-service password change
+#
+# There was no password route in the project at all - the only way to change a
+# password was /admin/password_change/, which requires is_staff. roles.py
+# documents that is_staff must not be treated as a business privilege, so an
+# Operator, Helper or Staff member had no way to rotate their own credentials and
+# no reset path for a forgotten one. See SITE_AUDIT_FINDINGS.md A10.
+#
+# Django's own view is used rather than a hand-rolled form so that the configured
+# AUTH_PASSWORD_VALIDATORS, the session-hash update that keeps the user signed in,
+# and the CSRF handling all come for free.
+# ---------------------------------------------------------------------------
+
+@login_required
+def password_change(request):
+    from django.contrib import messages
+    from django.contrib.auth.forms import PasswordChangeForm
+    from django.contrib.auth import update_session_auth_hash
+
+    if request.method == 'POST':
+        form = PasswordChangeForm(user=request.user, data=request.POST)
+        if form.is_valid():
+            form.save()
+            # Without this, changing the password invalidates the session hash
+            # and signs the user out immediately after succeeding.
+            update_session_auth_hash(request, form.user)
+            messages.success(request, 'Your password has been changed.')
+            return redirect('password_change_done')
+        messages.error(request, 'Your password was not changed. See the notes below.')
+    else:
+        form = PasswordChangeForm(user=request.user)
+    return render(request, 'password_change.html', {'form': form})
+
+
+@login_required
+def password_change_done(request):
+    return render(request, 'password_change_done.html')
+
+
+def _command_centre_country(request):
+    """The Country node the command centre should open on.
+
+    Resolution order:
+      1. an explicit ?country= choice, if it names a Country node
+      2. the Country ancestor of the signed-in user's own organisation scope
+      3. settings.DEFAULT_COUNTRY, if it names one
+      4. the first active Country node
+
+    Returns None if the estate has no Country node at all, which the caller
+    handles by showing nothing rather than everything.
+    """
+    from django.conf import settings
+
+    from .tenancy import resolve_user_scope
+
+    requested = (request.GET.get('country') or '').strip()
+    if requested:
+        node = OrganizationNode.objects.filter(
+            node_type='Country', name__iexact=requested, active=True).first()
+        if node:
+            return node
+
+    scope = resolve_user_scope(getattr(request, 'user', None))
+    if scope is not None:
+        node, guard = scope, 0
+        while node is not None and guard < 32:
+            if node.node_type == 'Country':
+                return node
+            node, guard = node.parent, guard + 1
+
+    default = (getattr(settings, 'DEFAULT_COUNTRY', '') or '').strip()
+    if default:
+        node = OrganizationNode.objects.filter(
+            node_type='Country', name__iexact=default, active=True).first()
+        if node:
+            return node
+
+    return OrganizationNode.objects.filter(
+        node_type='Country', active=True).order_by('name').first()
+
+
+def _careers_contact():
+    """Public contact details for the careers page, from configuration."""
+    from django.conf import settings
+    return {
+        'careers_contact_phone': getattr(settings, 'CAREERS_CONTACT_PHONE', ''),
+        'careers_contact_email': getattr(settings, 'CAREERS_CONTACT_EMAIL', ''),
+    }

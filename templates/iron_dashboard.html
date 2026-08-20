@@ -283,10 +283,7 @@
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-
+      
       <div class="kpis">
         <div class="kpi"><span>Active Plans</span><b>{{payload.plans}}</b></div>
         <div class="kpi">
@@ -416,13 +413,13 @@
           <h2>INDUSTRIAL IRON PLAN / ORDER</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Fabric</th>
-              <th>Temp °C</th>
-              <th>Steam Bar</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Fabric</th>
+              <th scope="col">Temp °C</th>
+              <th scope="col">Steam Bar</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":14" %}
             <tr>
@@ -445,9 +442,9 @@
           <h2>MACHINE / MAINTENANCE STATUS</h2>
           <table class="tbl">
             <tr>
-              <th>Machine</th>
-              <th>Status</th>
-              <th>Condition</th>
+              <th scope="col">Machine</th>
+              <th scope="col">Status</th>
+              <th scope="col">Condition</th>
             </tr>
             {% for m in machines|slice:":15" %}
             <tr>
@@ -484,7 +481,7 @@
           </form>
           <br /><a class="btn" href="{% url 'iron_report_csv' %}"
             >Download CSV</a
-          ><button class="btn" onclick="window.print()">Print</button>
+          ><button class="btn" data-action="print">Print</button>
         </div>
       </div>
 
@@ -496,7 +493,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -504,51 +501,51 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="product" placeholder="Product" /><input
+            ><input aria-label="Product" name="product" placeholder="Product" /><input aria-label="Style No."
               name="style_no"
               placeholder="Style No."
-            /><input name="colour" placeholder="Colour" /><input
+            /><input aria-label="Colour" name="colour" placeholder="Colour" /><input aria-label="Size Range"
               name="size_range"
               placeholder="Size Range"
-            /><input name="fabric_type" placeholder="Fabric Type" /><input
+            /><input aria-label="Fabric Type" name="fabric_type" placeholder="Fabric Type" /><input aria-label="Min °C"
               type="number"
               step="0.01"
               name="min_temperature_c"
               placeholder="Min °C"
-            /><input
+            /><input aria-label="Max °C"
               type="number"
               step="0.01"
               name="max_temperature_c"
               placeholder="Max °C"
-            /><input
+            /><input aria-label="Min Steam Bar"
               type="number"
               step="0.01"
               name="min_steam_pressure_bar"
               placeholder="Min Steam Bar"
-            /><input
+            /><input aria-label="Max Steam Bar"
               type="number"
               step="0.01"
               name="max_steam_pressure_bar"
               placeholder="Max Steam Bar"
-            /><input
+            /><input aria-label="Planned Qty"
               type="number"
               name="planned_qty"
               placeholder="Planned Qty"
               required
-            /><input type="date" name="target_date" /><select
+            /><input aria-label="Target date" type="date" name="target_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
             ><label class="full"
-              >Industrial Iron Instruction<input
+              >Industrial Iron Instruction<input aria-label="Instruction file"
                 type="file"
                 name="instruction_file" /></label
             ><button class="btn full">Create Plan</button>
@@ -562,37 +559,37 @@
               type="hidden"
               name="action"
               value="bundle_scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Iron Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">
                 {{b.bundle_no}} · {{b.barcode}} · {{b.quantity}}
               </option>
               {% endfor %}</select
-            ><select name="direction">
+            ><select aria-label="Direction" name="direction">
               <option value="IN">BUNDLE IN SCAN</option>
               <option value="OUT">BUNDLE OUT SCAN</option></select
-            ><input name="barcode" placeholder="Scan Barcode / QR" /><input
+            ><input aria-label="Scan Barcode / QR" name="barcode" placeholder="Scan Barcode / QR" /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
-            /><input
+            /><input aria-label="Source Department"
               name="source_department"
               placeholder="Source Department"
-            /><input
+            /><input aria-label="Destination Department"
               name="destination_department"
               placeholder="Destination Department"
-            /><select name="operator_id">
+            /><select aria-label="Operator id" name="operator_id">
               <option value="">Operator</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="machine_id">
+            ><select aria-label="Machine id" name="machine_id">
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">
@@ -610,110 +607,110 @@
               type="hidden"
               name="action"
               value="production"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{today|date:'Y-m-d'}}"
-            /><select name="operator_id">
+            /><select aria-label="Operator id" name="operator_id">
               <option value="">Operator</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="helper_id">
+            ><select aria-label="Helper id" name="helper_id">
               <option value="">Helper</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><select name="machine_id" required>
+            ><select aria-label="Machine id" name="machine_id" required>
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">
                 {{m.asset_code}} · {{m.name}} · {{m.status}}
               </option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Target"
               type="number"
               name="target_qty"
               placeholder="Target"
-            /><input
+            /><input aria-label="Actual"
               type="number"
               name="actual_qty"
               placeholder="Actual"
-            /><input type="datetime-local" name="start_at" /><input
+            /><input aria-label="Start at" type="datetime-local" name="start_at" /><input aria-label="End at"
               type="datetime-local"
               name="end_at"
-            /><input
+            /><input aria-label="Process Minutes"
               type="number"
               name="process_minutes"
               placeholder="Process Minutes"
-            /><input type="number" name="npt_minutes" placeholder="NPT" /><input
+            /><input aria-label="NPT" type="number" name="npt_minutes" placeholder="NPT" /><input aria-label="Downtime"
               type="number"
               name="downtime_minutes"
               placeholder="Downtime"
-            /><input
+            /><input aria-label="Actual °C"
               type="number"
               step="0.01"
               name="actual_temperature_c"
               placeholder="Actual °C"
-            /><input
+            /><input aria-label="Steam Pressure Bar"
               type="number"
               step="0.01"
               name="steam_pressure_bar"
               placeholder="Steam Pressure Bar"
-            /><input
+            /><input aria-label="Electricity kWh"
               type="number"
               step="0.001"
               name="electricity_kwh"
               placeholder="Electricity kWh"
-            /><input
+            /><input aria-label="Steam kg"
               type="number"
               step="0.001"
               name="steam_kg"
               placeholder="Steam kg"
-            /><input
+            /><input aria-label="Cost/Minute"
               type="number"
               step="0.0001"
               name="cost_per_minute"
               placeholder="Cost/Minute"
-            /><input
+            /><input aria-label="Labour Cost"
               type="number"
               step="0.01"
               name="labour_cost"
               placeholder="Labour Cost"
-            /><input
+            /><input aria-label="Helper Cost"
               type="number"
               step="0.01"
               name="helper_cost"
               placeholder="Helper Cost"
-            /><input
+            /><input aria-label="Machine Cost"
               type="number"
               step="0.01"
               name="machine_cost"
               placeholder="Machine Cost"
-            /><input
+            /><input aria-label="Utility Cost"
               type="number"
               step="0.01"
               name="utility_cost"
               placeholder="Utility Cost"
-            /><input
+            /><input aria-label="Downtime Cost"
               type="number"
               step="0.01"
               name="downtime_cost"
               placeholder="Downtime Cost"
             /><label class="full"
-              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              ><input aria-label="Manual entry" type="checkbox" name="manual_entry" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Approval if manual</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -729,49 +726,49 @@
               type="hidden"
               name="action"
               value="qc"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Inspected"
               type="number"
               name="inspected_qty"
               placeholder="Inspected"
-            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+            /><input aria-label="Pass" type="number" name="pass_qty" placeholder="Pass" /><input aria-label="Reject"
               type="number"
               name="reject_qty"
               placeholder="Reject"
-            /><input
+            /><input aria-label="Re-Iron"
               type="number"
               name="reiron_qty"
               placeholder="Re-Iron"
-            /><input
+            /><input aria-label="Rework"
               type="number"
               name="rework_qty"
               placeholder="Rework"
-            /><select name="defect_type">
+            /><select aria-label="Defect type" name="defect_type">
               <option value="">No Defect</option>
               {% for d in defect_types %}
               <option>{{d}}</option>
               {% endfor %}</select
-            ><select name="result">
+            ><select aria-label="Result" name="result">
               <option>PASS</option>
               <option>HOLD</option>
               <option>REIRON</option>
               <option>REWORK</option>
               <option>REJECT</option></select
-            ><textarea
+            ><textarea aria-label="Defect / Reason"
               name="defect_reason"
               placeholder="Defect / Reason"
             ></textarea
             ><label class="full"
-              >QC Photo<input type="file" name="qc_photo" /></label
+              >QC Photo<input aria-label="Qc photo" type="file" name="qc_photo" /></label
             ><button class="btn full">Record QC</button>
           </form>
         </div>
@@ -785,24 +782,24 @@
               type="hidden"
               name="action"
               value="downtime"
-            /><select class="full" name="machine_id" required>
+            /><select aria-label="Machine id" class="full" name="machine_id" required>
               <option value="">Machine</option>
               {% for m in machines %}
               <option value="{{m.id}}">{{m.asset_code}} · {{m.name}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Reference (auto if blank)"
               name="reference"
               placeholder="Reference (auto if blank)"
-            /><select name="reason">
+            /><select aria-label="Reason" name="reason">
               {% for r in downtime_reasons %}
               <option>{{r}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Production Impact Qty"
               type="number"
               step="0.001"
               name="production_impact_qty"
               placeholder="Production Impact Qty"
-            /><textarea name="description" placeholder="Description"></textarea
+            /><textarea aria-label="Description" name="description" placeholder="Description"></textarea
             ><button class="btn full">Open Downtime & Hold Machine</button>
           </form>
         </div>
@@ -810,17 +807,17 @@
           <h2>TODAY'S INDUSTRIAL IRON PRODUCTION</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Bundle</th>
-              <th>Machine</th>
-              <th>Target</th>
-              <th>Actual</th>
-              <th>Temp</th>
-              <th>Steam</th>
-              <th>Minutes</th>
-              <th>NPT</th>
-              <th>Downtime</th>
-              <th>Total Cost</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Machine</th>
+              <th scope="col">Target</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Temp</th>
+              <th scope="col">Steam</th>
+              <th scope="col">Minutes</th>
+              <th scope="col">NPT</th>
+              <th scope="col">Downtime</th>
+              <th scope="col">Total Cost</th>
             </tr>
             {% for x in prod|slice:":20" %}
             <tr>

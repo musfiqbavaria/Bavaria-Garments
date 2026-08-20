@@ -11,12 +11,9 @@
     <a class="btn" href="{% url 'profit_before_spend_export_csv' %}"
       >Download CSV</a
     >
-    <button class="btn" onclick="window.print()">Preview / Print</button>
+    <button class="btn" data-action="print">Preview / Print</button>
   </div>
 </div>
-{% for message in messages %}
-<div class="card"><b>{{message}}</b></div>
-{% endfor %}
 <div class="kpis">
   <div class="kpi"><b>{{pending_count}}</b><span>Pending</span></div>
   <div class="kpi"><b>{{allow_count}}</b><span>Allow</span></div>
@@ -102,7 +99,7 @@
 <div class="card">
   <h2>Spend Control Register</h2>
   <form method="get">
-    <input
+    <input aria-label="Search order / opportunity / vendor / reference"
       name="q"
       value="{{request.GET.q}}"
       placeholder="Search order / opportunity / vendor / reference"
@@ -112,18 +109,18 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Reference</th>
-        <th>Order / Opportunity</th>
-        <th>Category</th>
-        <th>Requested</th>
-        <th>Revenue</th>
-        <th>Base + Prior</th>
-        <th>Projected Cost</th>
-        <th>Projected Profit</th>
-        <th>Margin</th>
-        <th>System</th>
-        <th>Final</th>
-        <th>Can Spend</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Order / Opportunity</th>
+        <th scope="col">Category</th>
+        <th scope="col">Requested</th>
+        <th scope="col">Revenue</th>
+        <th scope="col">Base + Prior</th>
+        <th scope="col">Projected Cost</th>
+        <th scope="col">Projected Profit</th>
+        <th scope="col">Margin</th>
+        <th scope="col">System</th>
+        <th scope="col">Final</th>
+        <th scope="col">Can Spend</th>
       </tr>
       {% for x in rows %}
       <tr>

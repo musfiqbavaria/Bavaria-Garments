@@ -2,7 +2,10 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Bangladesh Country Operations Command Level</title>
 <link rel="stylesheet" href="{% static 'css/country_command.css' %}"></head>
-<body><main class="command-shell">
+<body data-refresh-url="{% url 'api_country_command_center' %}"
+      data-refresh-seconds="30">
+  <p data-refresh-status hidden class="hint"></p>
+  <main class="command-shell">
   <header class="hero">
     <img src="{% static 'img/logo.png' %}" alt="Emerald Rozalia Limited" class="logo">
     <div><p>EMERALD ROZALIA LIMITED – BANGLADESH OPERATION</p><h1>BANGLADESH COUNTRY OPERATIONS COMMAND LEVEL</h1><h2>COUNTRY CONTROL <i>●</i> ALL FACTORIES <i>●</i> ALL PRODUCTION UNITS <i>●</i> REAL-TIME DECISION</h2></div>
@@ -12,14 +15,14 @@
   <form class="filters" method="get"><b>⏷</b><label>Country <select name="country"><option>Bangladesh</option></select></label><label>Company <select name="company"><option>All Companies</option></select></label><label>Factory <select name="factory"><option value="">All Factories</option>{% for x in factories %}<option value="{{ x.pk }}">{{ x.name }}</option>{% endfor %}</select></label><label>Production Unit <select name="unit"><option value="">All Units</option>{% for x in units %}<option value="{{ x.pk }}">{{ x.name }}</option>{% endfor %}</select></label><label>Period <select name="period"><option>Today</option><option>Yesterday</option><option>This Week</option><option>This Month</option><option>This Year</option></select></label><button>Apply</button></form>
 
   <section class="kpis">
-   <article><span>▥</span><small>Total Factories</small><strong data-kpi="factories">{{ kpis.factories }}</strong></article>
-   <article><span>🏭</span><small>Production Units</small><strong data-kpi="units">{{ kpis.units }}</strong></article>
-   <article><span>▣</span><small>Active Orders</small><strong data-kpi="orders">{{ kpis.orders }}</strong></article>
-   <article><span>♟</span><small>Total Employees</small><strong data-kpi="employees">{{ kpis.employees }}</strong></article>
+   <article><span>▥</span><small>Total Factories</small><strong data-live="factories">{{ kpis.factories }}</strong></article>
+   <article><span>🏭</span><small>Production Units</small><strong data-live="units">{{ kpis.units }}</strong></article>
+   <article><span>▣</span><small>Active Orders</small><strong data-live="orders">{{ kpis.orders }}</strong></article>
+   <article><span>♟</span><small>Total Employees</small><strong data-live="employees">{{ kpis.employees }}</strong></article>
    <article><span>▥</span><small>Today's Output</small><strong>{{ kpis.output|floatformat:0 }}</strong></article>
    <article><span>◴</span><small>Efficiency %</small><strong>{{ kpis.efficiency }}%</strong></article>
    <article><span>৳</span><small>Total Cost</small><strong>{{ kpis.cost|floatformat:2 }}</strong></article>
-   <article class="risk"><span>⚠</span><small>Orders at Risk</small><strong data-kpi="risk">{{ kpis.risk }}</strong></article>
+   <article class="risk"><span>⚠</span><small>Orders at Risk</small><strong data-live="risk">{{ kpis.risk }}</strong></article>
   </section>
 
   <section class="command-grid">
@@ -36,8 +39,8 @@
 
   <nav class="flow"><span>🇧🇩 BANGLADESH</span><b>→</b><span>COMPANY</span><b>→</b><span>FACTORY</span><b>→</b><span>PRODUCTION UNIT</span><b>→</b><span>DEPARTMENT</span><b>→</b><span>EMPLOYEE / MACHINE</span></nav>
   <div class="principles">🛡 MAKER–CHECKER–APPROVER <i>●</i> REAL-TIME DATA <i>●</i> FULL TRACEABILITY <i>●</i> NO SILENT EDIT / DELETE <i>●</i> ROLE-BASED ACCESS</div>
-  <nav class="quick"><a href="{% url 'communication_center' %}">🔔 Alerts <b data-kpi="alerts">{{ alerts|length }}</b></a><a href="{% url 'communication_center' %}">☑ Action Required</a><a href="{% url 'communication_center' %}">💬 Chat 24/7</a><a href="https://wa.me/353899788187">◉ WhatsApp</a><a href="mailto:urmos@rozalia.ie">✉ Email</a><a href="{% url 'forms_master' %}">＋ Add</a><a href="{% url 'report_master' %}">↓ Download</a><button onclick="window.print()">▣ Print</button></nav>
-  <div class="redbar">⚠ COUNTRY RED ALERT: <span>Financial Variance • Capacity Risk • Stock Mismatch • Production Delay • Quality Hold • Shipment Risk</span> <b data-kpi="red_alerts">{{ red_alerts }}</b></div>
+  <nav class="quick"><a href="{% url 'communication_center' %}">🔔 Alerts <b data-live="alerts">{{ alerts|length }}</b></a><a href="{% url 'communication_center' %}">☑ Action Required</a><a href="{% url 'communication_center' %}">💬 Chat 24/7</a><a href="https://wa.me/353899788187">◉ WhatsApp</a><a href="mailto:urmos@rozalia.ie">✉ Email</a><a href="{% url 'forms_master' %}">＋ Add</a><a href="{% url 'report_master' %}">↓ Download</a><button data-action="print">▣ Print</button></nav>
+  <div class="redbar">⚠ COUNTRY RED ALERT: <span>Financial Variance • Capacity Risk • Stock Mismatch • Production Delay • Quality Hold • Shipment Risk</span> <b data-live="red_alerts">{{ red_alerts }}</b></div>
   <div class="reportbar">▤ REPORT MASTER: <span>Unique Report Ref No. • Barcode / QR • Source Record • Version • Approval • Audit History</span></div>
   <footer><p>WhatsApp: 089 978 8187　•　Email: urmos@rozalia.ie　•　Website: emeraldrozalia.ie</p><strong>FULL COUNTRY CONTROL <i>•</i> FULL TRANSPARENCY <i>•</i> FULL TRACEABILITY</strong></footer>
-</main><script>setInterval(async()=>{try{const r=await fetch('{% url "api_country_command_center" %}');if(!r.ok)return;const d=await r.json();for(const [k,v] of Object.entries(d)){document.querySelectorAll('[data-kpi="'+k+'"]').forEach(e=>e.textContent=v)}}catch(e){}},30000)</script></body></html>
+</main><script src="{% static 'js/app.js' %}"></script></body></html>

@@ -271,10 +271,7 @@
       </div>
     </header>
     <div class="content">
-      {% for message in messages %}
-      <div class="card">{{message}}</div>
-      {% endfor %}
-      <div class="kpis">
+            <div class="kpis">
         <div class="kpi"><span>Plans</span><b>{{payload.plans}}</b></div>
         <div class="kpi"><span>Target</span><b>{{payload.target}}</b></div>
         <div class="kpi"><span>Actual</span><b>{{payload.actual}}</b></div>
@@ -369,13 +366,13 @@
           <h2>PACKING PLANS</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Order</th>
-              <th>Buyer</th>
-              <th>Style</th>
-              <th>Ratio</th>
-              <th>Qty</th>
-              <th>Status</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Order</th>
+              <th scope="col">Buyer</th>
+              <th scope="col">Style</th>
+              <th scope="col">Ratio</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
             </tr>
             {% for p in plans|slice:":14" %}
             <tr>
@@ -398,12 +395,12 @@
           <h2>CARTON SUMMARY</h2>
           <table class="tbl">
             <tr>
-              <th>Carton</th>
-              <th>Barcode</th>
-              <th>Qty</th>
-              <th>Gross</th>
-              <th>CBM</th>
-              <th>Sealed</th>
+              <th scope="col">Carton</th>
+              <th scope="col">Barcode</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Gross</th>
+              <th scope="col">CBM</th>
+              <th scope="col">Sealed</th>
             </tr>
             {% for c in cartons|slice:":14" %}
             <tr>
@@ -443,7 +440,7 @@
           </form>
           <br /><a class="btn" href="{% url 'packing_report_csv' %}"
             >Download CSV</a
-          ><button class="btn" onclick="window.print()">Print</button>
+          ><button class="btn" data-action="print">Print</button>
         </div>
       </div>
 
@@ -455,7 +452,7 @@
               type="hidden"
               name="action"
               value="plan"
-            /><input name="plan_no" placeholder="Plan No." required /><select
+            /><input aria-label="Plan No." name="plan_no" placeholder="Plan No." required /><select aria-label="Order id"
               name="order_id"
               required
             >
@@ -463,37 +460,37 @@
               {% for o in orders %}
               <option value="{{o.id}}">{{o.master_order_id}}</option>
               {% endfor %}</select
-            ><input name="buyer" placeholder="Buyer" /><input
+            ><input aria-label="Buyer" name="buyer" placeholder="Buyer" /><input aria-label="Style"
               name="style_no"
               placeholder="Style"
-            /><input name="product" placeholder="Product" /><input
+            /><input aria-label="Product" name="product" placeholder="Product" /><input aria-label="Colour"
               name="colour"
               placeholder="Colour"
-            /><input name="size_range" placeholder="Size Range" /><input
+            /><input aria-label="Size Range" name="size_range" placeholder="Size Range" /><input aria-label="Packing Ratio"
               name="packing_ratio"
               placeholder="Packing Ratio"
-            /><input
+            /><input aria-label="Buyer Carton Marking"
               class="full"
               name="carton_marking"
               placeholder="Buyer Carton Marking"
-            /><input
+            /><input aria-label="Planned Qty"
               type="number"
               name="planned_qty"
               placeholder="Planned Qty"
-            /><input type="date" name="target_date" /><select
+            /><input aria-label="Target date" type="date" name="target_date" /><select aria-label="Department id"
               name="department_id"
             >
               <option value="">Department</option>
               {% for d in departments %}
               <option value="{{d.id}}">{{d.name}}</option>
               {% endfor %}</select
-            ><select name="approval_id">
+            ><select aria-label="Approval id" name="approval_id">
               <option value="">Approval</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
               {% endfor %}</select
             ><label class="full"
-              >Packing Specification<input
+              >Packing Specification<input aria-label="Packing spec file"
                 type="file"
                 name="packing_spec_file" /></label
             ><button class="btn full">Create Plan</button>
@@ -507,20 +504,20 @@
               type="hidden"
               name="action"
               value="scan"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}} · {{b.barcode}}</option>
               {% endfor %}</select
-            ><select name="direction">
+            ><select aria-label="Direction" name="direction">
               <option value="IN">PACKING IN SCAN</option>
               <option value="OUT">PACKING OUT SCAN</option></select
-            ><input name="barcode" placeholder="Barcode/QR" /><input
+            ><input aria-label="Barcode/QR" name="barcode" placeholder="Barcode/QR" /><input aria-label="Actual Qty"
               type="number"
               name="actual_qty"
               placeholder="Actual Qty"
@@ -535,54 +532,54 @@
               type="hidden"
               name="action"
               value="carton"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><input name="carton_no" placeholder="Carton No." required /><input
+            ><input aria-label="Carton No." name="carton_no" placeholder="Carton No." required /><input aria-label="Unique Carton Barcode/QR"
               name="barcode"
               placeholder="Unique Carton Barcode/QR"
               required
-            /><input
+            /><input aria-label="Size/Colour Matrix JSON or text"
               class="full"
               name="size_colour_matrix"
               placeholder="Size/Colour Matrix JSON or text"
-            /><input
+            /><input aria-label="Packed Qty"
               type="number"
               name="packed_qty"
               placeholder="Packed Qty"
-            /><input
+            /><input aria-label="Gross kg"
               type="number"
               step="0.001"
               name="gross_weight_kg"
               placeholder="Gross kg"
-            /><input
+            /><input aria-label="Net kg"
               type="number"
               step="0.001"
               name="net_weight_kg"
               placeholder="Net kg"
-            /><input
+            /><input aria-label="Length cm"
               type="number"
               step="0.01"
               name="length_cm"
               placeholder="Length cm"
-            /><input
+            /><input aria-label="Width cm"
               type="number"
               step="0.01"
               name="width_cm"
               placeholder="Width cm"
-            /><input
+            /><input aria-label="Height cm"
               type="number"
               step="0.01"
               name="height_cm"
               placeholder="Height cm"
-            /><input
+            /><input aria-label="Carton Marking"
               class="full"
               name="carton_marking"
               placeholder="Carton Marking"
-            /><label><input type="checkbox" name="sealed" /> Sealed</label
-            ><input name="seal_no" placeholder="Seal No." /><button
+            /><label><input aria-label="Sealed" type="checkbox" name="sealed" /> Sealed</label
+            ><input aria-label="Seal No." name="seal_no" placeholder="Seal No." /><button
               class="btn full"
             >
               Create Carton
@@ -597,51 +594,51 @@
               type="hidden"
               name="action"
               value="production"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="bundle_id">
+            ><select aria-label="Bundle id" class="full" name="bundle_id">
               <option value="">Bundle</option>
               {% for b in bundles %}
               <option value="{{b.id}}">{{b.bundle_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="carton_id">
+            ><select aria-label="Carton id" class="full" name="carton_id">
               <option value="">Carton</option>
               {% for c in cartons %}
               <option value="{{c.id}}">{{c.carton_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Work date"
               type="date"
               name="work_date"
               value="{{today|date:'Y-m-d'}}"
-            /><select name="employee_id">
+            /><select aria-label="Employee id" name="employee_id">
               <option value="">Employee</option>
               {% for e in employees %}
               <option value="{{e.id}}">{{e.employee_id}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Target"
               type="number"
               name="target_qty"
               placeholder="Target"
-            /><input
+            /><input aria-label="Actual"
               type="number"
               name="actual_qty"
               placeholder="Actual"
-            /><input type="number" name="wip_qty" placeholder="WIP" /><input
+            /><input aria-label="WIP" type="number" name="wip_qty" placeholder="WIP" /><input aria-label="Minutes"
               type="number"
               name="process_minutes"
               placeholder="Minutes"
-            /><input type="number" name="npt_minutes" placeholder="NPT" />{% for n in cost_fields %}<input
+            /><input aria-label="NPT" type="number" name="npt_minutes" placeholder="NPT" />{% for n in cost_fields %}<input aria-label="{{n|title}}"
               type="number"
               step="0.01"
               name="{{n}}"
               placeholder="{{n|title}}"
             />{% endfor %}<label class="full"
-              ><input type="checkbox" name="manual_entry" /> Authorized Manual
+              ><input aria-label="Manual entry" type="checkbox" name="manual_entry" /> Authorized Manual
               Entry</label
-            ><select class="full" name="approval_id">
+            ><select aria-label="Approval id" class="full" name="approval_id">
               <option value="">Senior Approval if Manual</option>
               {% for a in approvals %}
               <option value="{{a.id}}">{{a.reference}}</option>
@@ -659,44 +656,44 @@
               type="hidden"
               name="action"
               value="qc"
-            /><select class="full" name="plan_id" required>
+            /><select aria-label="Plan id" class="full" name="plan_id" required>
               <option value="">Plan</option>
               {% for p in plans %}
               <option value="{{p.id}}">{{p.plan_no}}</option>
               {% endfor %}</select
-            ><select class="full" name="carton_id">
+            ><select aria-label="Carton id" class="full" name="carton_id">
               <option value="">Carton</option>
               {% for c in cartons %}
               <option value="{{c.id}}">{{c.carton_no}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Inspected"
               type="number"
               name="inspected_qty"
               placeholder="Inspected"
-            /><input type="number" name="pass_qty" placeholder="Pass" /><input
+            /><input aria-label="Pass" type="number" name="pass_qty" placeholder="Pass" /><input aria-label="Rework"
               type="number"
               name="rework_qty"
               placeholder="Rework"
-            /><input
+            /><input aria-label="Reject"
               type="number"
               name="reject_qty"
               placeholder="Reject"
-            /><select name="defect_type">
+            /><select aria-label="Defect type" name="defect_type">
               <option value="">Defect</option>
               {% for d in defect_types %}
               <option>{{d}}</option>
               {% endfor %}</select
-            ><input
+            ><input aria-label="Defect Qty"
               type="number"
               name="defect_qty"
               placeholder="Defect Qty"
-            /><select name="result">
+            /><select aria-label="Result" name="result">
               <option>PASS</option>
               <option>HOLD</option>
               <option>REWORK</option>
               <option>REJECT</option></select
-            ><textarea name="comments" placeholder="Comments"></textarea
-            ><input class="full" type="file" name="qc_photo" /><button
+            ><textarea aria-label="Comments" name="comments" placeholder="Comments"></textarea
+            ><input aria-label="Qc photo" class="full" type="file" name="qc_photo" /><button
               class="btn full"
             >
               Record QC
@@ -707,14 +704,14 @@
           <h2>TODAY'S PACKING PRODUCTION</h2>
           <table class="tbl">
             <tr>
-              <th>Plan</th>
-              <th>Bundle</th>
-              <th>Carton</th>
-              <th>Target</th>
-              <th>Actual</th>
-              <th>WIP</th>
-              <th>Minutes</th>
-              <th>Total Cost</th>
+              <th scope="col">Plan</th>
+              <th scope="col">Bundle</th>
+              <th scope="col">Carton</th>
+              <th scope="col">Target</th>
+              <th scope="col">Actual</th>
+              <th scope="col">WIP</th>
+              <th scope="col">Minutes</th>
+              <th scope="col">Total Cost</th>
             </tr>
             {% for x in production %}
             <tr>

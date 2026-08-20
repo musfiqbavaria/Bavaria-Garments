@@ -2,17 +2,17 @@
 <section class="wrap">
   <div class="pagehead">
     <div>
-      <h1>#53 Forms Master Dashboard</h1>
+      <h1>Forms Master</h1>
       <p>Central register of exactly 650 company forms.</p>
     </div>
     <div class="pill">{{ count }} FORMS</div>
   </div>
   <form class="filter">
-    <input
+    <input aria-label="Search form"
       name="q"
       value="{{ request.GET.q }}"
       placeholder="Search form"
-    /><select name="department">
+    /><select aria-label="Department" name="department">
       <option value="">All departments</option>
       {% for d in departments %}
       <option {% if request.GET.department == d %}selected{% endif %}>
@@ -31,12 +31,12 @@
     <table>
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Code</th>
-          <th>Form</th>
-          <th>Department</th>
-          <th>Category</th>
-          <th>Approval</th>
+          <th scope="col">ID</th>
+          <th scope="col">Code</th>
+          <th scope="col">Form</th>
+          <th scope="col">Department</th>
+          <th scope="col">Category</th>
+          <th scope="col">Approval</th>
         </tr>
       </thead>
       <tbody>

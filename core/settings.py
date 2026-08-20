@@ -46,10 +46,14 @@ SECRET_KEY=env('DJANGO_SECRET_KEY','SECRET_KEY',default='unsafe-dev')
 DEBUG=_flag('DJANGO_DEBUG','DEBUG')
 ALLOWED_HOSTS=_csv('DJANGO_ALLOWED_HOSTS','ALLOWED_HOSTS',default='localhost')
 CSRF_TRUSTED_ORIGINS=_csv('DJANGO_CSRF_TRUSTED_ORIGINS','CSRF_TRUSTED_ORIGINS')
-INSTALLED_APPS=['django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles','portal']
-MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','portal.middleware.TenancyMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
+INSTALLED_APPS=['django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles',
+ # Number and date formatting for the templates. Money and quantities were
+ # rendered raw, so a Decimal appeared as 1234.5000 and a five-figure count
+ # had no thousands separator. See SITE_AUDIT_FINDINGS.md B18.
+ 'django.contrib.humanize','portal']
+MIDDLEWARE=['django.middleware.security.SecurityMiddleware','whitenoise.middleware.WhiteNoiseMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware','django.middleware.locale.LocaleMiddleware','portal.middleware.TenancyMiddleware','portal.authorization.AuthorizationMiddleware','portal.middleware.AuditMiddleware']
 ROOT_URLCONF='core.urls'
-TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal']}}]
+TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages','portal.context_processors.global_portal','portal.navigation.navigation','django.template.context_processors.i18n']}}]
 WSGI_APPLICATION='core.wsgi.application'
 ASGI_APPLICATION='core.asgi.application'
 # --- database ---------------------------------------------------------------
@@ -201,6 +205,28 @@ LANGUAGE_CODE='en-gb'
 # to carry its own zone and the report models to be scoped to a factory; see
 # TECHNICAL_ASSESSMENT.md 5.5.
 TIME_ZONE=env('TIME_ZONE',default='Asia/Dhaka')
+
+# --- language ---------------------------------------------------------------
+# USE_I18N was already True but nothing else was in place: no LocaleMiddleware,
+# no LANGUAGES, no LOCALE_PATHS, no locale directory and not one {% trans %} in
+# 49 templates - so the setting was inert and every string was hardcoded
+# English. The machinery is now wired up and the shared chrome is marked for
+# translation; the body copy of the department pages still has to be marked and
+# translated, which is a content task. See SITE_AUDIT_FINDINGS.md B18.
+#
+# Bengali is here because the workforce and production are in Bangladesh and the
+# shop-floor pages - barcode scan control, self-service, the workstation
+# instruction sheets - are read by operators and helpers there.
+LANGUAGES=[
+    ('en', 'English'),
+    ('bn', 'বাংলা'),
+    ('ga', 'Gaeilge'),
+]
+LANGUAGE_CODE=env('DJANGO_LANGUAGE_CODE','LANGUAGE_CODE',default='en')
+LOCALE_PATHS=[BASE_DIR/'locale']
+
+# Group thousands in rendered numbers. A five-figure piece count read as 12500.
+USE_THOUSAND_SEPARATOR=True
 USE_I18N=True; USE_TZ=True
 STATIC_URL='/static/'; STATIC_ROOT=BASE_DIR/'staticfiles'; STATICFILES_DIRS=[BASE_DIR/'static']
 MEDIA_URL='/media/'; MEDIA_ROOT=BASE_DIR/'media'
@@ -216,6 +242,15 @@ CELERY_BEAT_SCHEDULE={
  'report-0800':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=8,minute=0)},
  'report-1300':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=13,minute=0)},
  'report-2000':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=20,minute=0)},
+ # The 16 department *AutoReport tables every dashboard reads. Nothing wrote
+ # them: ten management commands existed but were in no task and no beat entry,
+ # seven departments had no command at all, and the deploy/*.cron.example files
+ # invoked a venv path that does not exist on a Docker host. Those panels were
+ # permanently empty while a healthy beat container made it look scheduled.
+ # See SITE_AUDIT_FINDINGS.md A8 and portal/reporting.py.
+ 'department-reports-0800':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=8,minute=5),'args':('08:00',)},
+ 'department-reports-1300':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=13,minute=5),'args':('13:00',)},
+ 'department-reports-2000':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=20,minute=5),'args':('20:00',)},
  # Daily exchange rates, before the 08:00 reporting slot so consolidated
  # figures use the current day's rate. No-op unless EXCHANGE_RATE_API_URL is set.
  'exchange-rates-daily':{'task':'portal.tasks.refresh_exchange_rates','schedule':crontab(hour=6,minute=30)},
@@ -228,6 +263,21 @@ CELERY_BEAT_SCHEDULE={
 # Irish parent, so EUR is the base; BDT production costs and USD buyer values
 # convert into it for any figure that spans entities.
 BASE_CURRENCY=env('BASE_CURRENCY','DEFAULT_CURRENCY',default='EUR')
+
+# --- default country --------------------------------------------------------
+# Which Country node the command centre opens on for a user whose organisation
+# scope does not resolve to one. The landing page used to hardcode a
+# name__icontains='Bangladesh' lookup and fall back to every node in the estate
+# when it found nothing. Blank means "the first active Country node".
+# See SITE_AUDIT_FINDINGS.md B19.
+DEFAULT_COUNTRY=env('DEFAULT_COUNTRY',default='Bangladesh')
+
+# --- public contact details -------------------------------------------------
+# The careers page footer hardcoded a phone number and an email address in the
+# template. Both are configuration: a change of recruiter or a second country
+# should not mean editing markup. See SITE_AUDIT_FINDINGS.md B30.
+CAREERS_CONTACT_PHONE=env('CAREERS_CONTACT_PHONE',default='089 978 8187')
+CAREERS_CONTACT_EMAIL=env('CAREERS_CONTACT_EMAIL',default='urmos@rozalia.ie')
 
 # Daily rate feed. Deliberately empty by default so no outbound request is made
 # until it is configured: the endpoint is an external service and must be

@@ -1,0 +1,33 @@
+{% load static %}<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Something went wrong · Emerald Rozalia</title>
+    <link rel="icon" href="{% static 'img/logo.png' %}" />
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    {% comment %}
+    Deliberately standalone. Django renders 500.html with an empty context and
+    without context processors, so it must not reference the navigation, the
+    control strip or the signed-in user - the failure may be the database that
+    supplies them.
+    {% endcomment %}
+    <main id="main">
+      <section class="wrap">
+        <div class="page-head">
+          <div>
+            <small>500 · Server error</small>
+            <h1>Something went wrong at our end</h1>
+            <p>
+              The error has been logged. Nothing you submitted was saved, so it
+              is safe to try again.
+            </p>
+          </div>
+        </div>
+        <p><a class="btn" href="/dashboard/">Back to the dashboard</a></p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -11,12 +11,9 @@
     <a class="btn" href="{% url 'buyer_opportunity_export_csv' %}"
       >Download CSV</a
     >
-    <button class="btn" onclick="window.print()">Preview / Print</button>
+    <button class="btn" data-action="print">Preview / Print</button>
   </div>
 </div>
-{% for message in messages %}
-<div class="card"><b>{{ message }}</b></div>
-{% endfor %}
 <div class="kpis">
   <div class="kpi">
     <b>{{ active_count }}</b><span>Active Opportunities</span>
@@ -121,12 +118,12 @@
 <div class="card">
   <h2>Opportunity Pipeline</h2>
   <form method="get">
-    <input
+    <input aria-label="Search buyer / enquiry / opportunity / style"
       name="q"
       value="{{request.GET.q}}"
       placeholder="Search buyer / enquiry / opportunity / style"
     />
-    <select name="stage">
+    <select aria-label="Stage" name="stage">
       <option value="">All stages</option>
       {% for x in stages %}
       <option {% if request.GET.stage == x %}selected{% endif %}>
@@ -140,16 +137,16 @@
     <table>
       <thead>
         <tr>
-          <th>Enquiry / Opportunity</th>
-          <th>Buyer</th>
-          <th>Product</th>
-          <th>Qty</th>
-          <th>Value</th>
-          <th>Probability</th>
-          <th>Weighted</th>
-          <th>Delivery / Follow-up</th>
-          <th>Stage</th>
-          <th>Order</th>
+          <th scope="col">Enquiry / Opportunity</th>
+          <th scope="col">Buyer</th>
+          <th scope="col">Product</th>
+          <th scope="col">Qty</th>
+          <th scope="col">Value</th>
+          <th scope="col">Probability</th>
+          <th scope="col">Weighted</th>
+          <th scope="col">Delivery / Follow-up</th>
+          <th scope="col">Stage</th>
+          <th scope="col">Order</th>
         </tr>
       </thead>
       <tbody>
@@ -265,7 +262,7 @@
         name="action"
         value="activity"
       /><label
-        >Opportunity<select name="opportunity_id" required>
+        >Opportunity<select aria-label="Opportunity id" name="opportunity_id" required>
           {% for x in opportunities %}
           <option value="{{x.id}}">
             {{x.opportunity_no}} · {{x.buyer_company}}
@@ -273,7 +270,7 @@
           {% endfor %}
         </select></label
       ><label
-        >Type<select name="activity_type">
+        >Type<select aria-label="Activity type" name="activity_type">
           <option>CALL</option>
           <option>EMAIL</option>
           <option>WHATSAPP</option>
@@ -282,9 +279,9 @@
           <option>SAMPLE</option>
           <option>NOTE</option>
         </select></label
-      ><label>Subject<input name="subject" required /></label
-      ><label>Details<textarea name="details"></textarea></label
-      ><label>Next Follow-up<input type="date" name="next_follow_up" /></label
+      ><label>Subject<input aria-label="Subject" name="subject" required /></label
+      ><label>Details<textarea aria-label="Details" name="details"></textarea></label
+      ><label>Next Follow-up<input aria-label="Next follow up" type="date" name="next_follow_up" /></label
       ><button class="btn primary">Record Activity</button>
     </form>
   </div>
@@ -293,11 +290,11 @@
     <div class="table-wrap">
       <table>
         <tr>
-          <th>Date</th>
-          <th>Opportunity</th>
-          <th>Type</th>
-          <th>Subject</th>
-          <th>Next</th>
+          <th scope="col">Date</th>
+          <th scope="col">Opportunity</th>
+          <th scope="col">Type</th>
+          <th scope="col">Subject</th>
+          <th scope="col">Next</th>
         </tr>
         {% for a in activities %}
         <tr>
@@ -317,14 +314,14 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Quotation</th>
-        <th>Opportunity</th>
-        <th>Version</th>
-        <th>Qty</th>
-        <th>Unit Price</th>
-        <th>Total</th>
-        <th>Status</th>
-        <th>Valid Until</th>
+        <th scope="col">Quotation</th>
+        <th scope="col">Opportunity</th>
+        <th scope="col">Version</th>
+        <th scope="col">Qty</th>
+        <th scope="col">Unit Price</th>
+        <th scope="col">Total</th>
+        <th scope="col">Status</th>
+        <th scope="col">Valid Until</th>
       </tr>
       {% for q in quotations %}
       <tr>

@@ -17,7 +17,8 @@ admin keeps its own authentication and static/media are untouched.
 
 import logging
 
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
 
 from . import roles
 
@@ -88,6 +89,10 @@ ROUTE_POLICY = {
     # Helpers; every decision is validated and written to BarcodeScanEvent.
     'barcode_scan_control': AUTHENTICATED,
     'staff_self_service': AUTHENTICATED,
+    # Anyone may change their own password. The view only ever operates on
+    # request.user, so there is nothing to narrow by role.
+    'password_change': AUTHENTICATED,
+    'password_change_done': AUTHENTICATED,
     'api_staff_self_service': AUTHENTICATED,
     # Every user may raise an approval request; only senior roles may decide one.
     'api_approval_request': AUTHENTICATED,
@@ -177,9 +182,20 @@ ROUTE_POLICY = {
 }
 
 
+#: JSON endpoints whose path is not under /api/. Without this they get an HTML
+#: body with a JSON status code, which breaks a fetch client.
+#: See SITE_AUDIT_FINDINGS.md C40.
+_JSON_ROUTES = frozenset({'finance_overseas_preview'})
+
+
 def _wants_json(request):
     path = request.path or ''
-    return path.startswith('/api/') or 'application/json' in request.META.get('HTTP_ACCEPT', '')
+    if path.startswith('/api/'):
+        return True
+    if 'application/json' in request.META.get('HTTP_ACCEPT', ''):
+        return True
+    url_name = getattr(getattr(request, 'resolver_match', None), 'url_name', None)
+    return url_name in _JSON_ROUTES
 
 
 def _deny(request, reason):
@@ -190,7 +206,11 @@ def _deny(request, reason):
     if _wants_json(request):
         return JsonResponse({'ok': False, 'error': 'You are not authorised to use this endpoint.'},
                             status=403)
-    return HttpResponseForbidden('You are not authorised to view this page.')
+    # A styled page, not bare text. Every role that clicked a navbar link it
+    # lacked used to land on one line of unstyled text with no layout, no
+    # branding and no way back into the application.
+    # See SITE_AUDIT_FINDINGS.md B12, B13.
+    return render(request, '403.html', status=403)
 
 
 class AuthorizationMiddleware:
@@ -216,8 +236,16 @@ class AuthorizationMiddleware:
             return None
 
         if not request.user.is_authenticated:
-            # Let the view's own @login_required redirect to the login page, so
-            # an anonymous visitor gets a sign-in prompt rather than a 403.
+            if _wants_json(request):
+                # A fetch client asking for JSON must be told it is
+                # unauthenticated, not handed a 302 to an HTML login page - which
+                # is what @login_required does and what every /api/ endpoint used
+                # to return. See SITE_AUDIT_FINDINGS.md C40.
+                return JsonResponse(
+                    {'ok': False, 'error': 'Authentication is required.'},
+                    status=401)
+            # Otherwise let the view's own @login_required redirect to the login
+            # page, so a person gets a sign-in prompt rather than a 403.
             return None
 
         if policy is None:

@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block title %}That request could not be processed{% endblock %}
+{% block content %}
+<section class="wrap">
+  <div class="page-head">
+    <div>
+      <small>400 · Bad request</small>
+      <h1>That request could not be processed</h1>
+      <p>Something in the request was not valid. Please go back and try again.</p>
+    </div>
+  </div>
+  <p>
+    <a class="btn" href="{% url 'dashboard' %}">Back to the dashboard</a>
+    <a class="btn alt" href="{% url 'global_dashboard' %}">All modules</a>
+  </p>
+</section>
+{% endblock %}

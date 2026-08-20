@@ -8,4 +8,10 @@ from django.urls import path, include
 # FileAccessLog audit trail. Every file is delivered through
 # /files/<resource_type>/<id>/<view|preview|download|print>/ instead, and
 # nginx returns 404 for /media/. See TECHNICAL_ASSESSMENT.md 4.3.
-urlpatterns=[path('admin/',admin.site.urls),path('',include('portal.urls'))]
+urlpatterns=[
+    path('admin/',admin.site.urls),
+    # Django's own set_language view, so the choice is stored in the session and
+    # honoured by LocaleMiddleware on every later request.
+    path('i18n/',include('django.conf.urls.i18n')),
+    path('',include('portal.urls')),
+]

@@ -3,7 +3,7 @@
   <div class="pagehead">
     <div>
       <small>PROJECT 1 / ASSET & CAPACITY CONTROL</small>
-      <h1>#33 Asset & Machine Master</h1>
+      <h1>Asset &amp; Machine Master</h1>
       <p>
         Asset identity • machine capability • location & assignment •
         maintenance • downtime • utilization • valuation • lifecycle audit
@@ -11,12 +11,7 @@
     </div>
     <div class="pill">LIVE CONTROL</div>
   </div>
-  {% if messages %}{% for message in messages %}
-  <div class="notice {% if message.tags == 'error' %}danger{% endif %}">
-    <b>{{ message }}</b>
-  </div>
-  {% endfor %}{% endif %}
-  <div class="stats">
+    <div class="stats">
     <article>
       <small>Active Assets</small><strong>{{ active_count }}</strong>
     </article>
@@ -36,7 +31,7 @@
   </div>
   <div class="toolbar">
     <a class="btn" href="?">View</a
-    ><button onclick="window.print()">Preview / Print</button
+    ><button data-action="print">Preview / Print</button
     ><a class="btn" href="/asset-machine-master/export.csv">Download CSV</a
     ><a class="btn" href="/admin/portal/assetmachine/">Edit Master</a
     ><a class="btn" href="/admin/portal/assetmachine/">Remove / Admin</a>
@@ -46,18 +41,18 @@
     <section class="panel">
       <h2>Asset / Machine Register</h2>
       <form class="filter" method="get">
-        <input
+        <input aria-label="Asset code, name, serial or model"
           name="q"
           value="{{ request.GET.q }}"
           placeholder="Asset code, name, serial or model"
-        /><select name="asset_type">
+        /><select aria-label="Asset type" name="asset_type">
           <option value="">All types</option>
           {% for x in asset_types %}
           <option {% if request.GET.asset_type == x %}selected{% endif %}>
             {{ x }}
           </option>
           {% endfor %}</select
-        ><select name="status">
+        ><select aria-label="Status" name="status">
           <option value="">All statuses</option>
           {% for x in statuses %}
           <option {% if request.GET.status == x %}selected{% endif %}>
@@ -69,19 +64,19 @@
       <table>
         <thead>
           <tr>
-            <th>Asset / Barcode</th>
-            <th>Machine</th>
-            <th>Maker / Model / Serial</th>
-            <th>Department / Location</th>
-            <th>Assigned</th>
-            <th>Status</th>
-            <th>Condition</th>
-            <th>Capability</th>
-            <th>Speed</th>
-            <th>Efficiency</th>
-            <th>Effective Min</th>
-            <th>Value</th>
-            <th>Next Service</th>
+            <th scope="col">Asset / Barcode</th>
+            <th scope="col">Machine</th>
+            <th scope="col">Maker / Model / Serial</th>
+            <th scope="col">Department / Location</th>
+            <th scope="col">Assigned</th>
+            <th scope="col">Status</th>
+            <th scope="col">Condition</th>
+            <th scope="col">Capability</th>
+            <th scope="col">Speed</th>
+            <th scope="col">Efficiency</th>
+            <th scope="col">Effective Min</th>
+            <th scope="col">Value</th>
+            <th scope="col">Next Service</th>
           </tr>
         </thead>
         <tbody>
@@ -138,70 +133,70 @@
           type="hidden"
           name="action"
           value="create_asset"
-        /><label>Asset Code<input name="asset_code" required /></label
-        ><label>Barcode / QR<input name="barcode" required /></label
-        ><label>Name<input name="name" required /></label
+        /><label>Asset Code<input aria-label="Asset code" name="asset_code" required /></label
+        ><label>Barcode / QR<input aria-label="Barcode" name="barcode" required /></label
+        ><label>Name<input aria-label="Name" name="name" required /></label
         ><label
-          >Asset Type<select name="asset_type">
+          >Asset Type<select aria-label="Asset type" name="asset_type">
             {% for x in asset_types %}
             <option>{{ x }}</option>
             {% endfor %}
           </select></label
-        ><label>Category<input name="category" /></label
+        ><label>Category<input aria-label="Category" name="category" /></label
         ><label
-          >Machine Type<input
+          >Machine Type<input aria-label="Lockstitch / Overlock / Cutting..."
             name="machine_type"
             placeholder="Lockstitch / Overlock / Cutting..." /></label
-        ><label>Manufacturer<input name="manufacturer" /></label
-        ><label>Model<input name="model" /></label
-        ><label>Serial Number<input name="serial_number" /></label
-        ><label>Supplier<input name="supplier" /></label
+        ><label>Manufacturer<input aria-label="Manufacturer" name="manufacturer" /></label
+        ><label>Model<input aria-label="Model" name="model" /></label
+        ><label>Serial Number<input aria-label="Serial number" name="serial_number" /></label
+        ><label>Supplier<input aria-label="Supplier" name="supplier" /></label
         ><label
-          >Operation Capabilities<input
+          >Operation Capabilities<input aria-label="Sewing, Edge stitch, Top stitch"
             name="operation_capabilities"
             placeholder="Sewing, Edge stitch, Top stitch" /></label
         ><label
-          >Standard Speed<input
+          >Standard Speed<input aria-label="Standard speed"
             name="standard_speed"
             type="number"
             step="0.001" /></label
         ><label
-          >Speed Unit<input
+          >Speed Unit<input aria-label="stitches/min"
             name="speed_unit"
             placeholder="stitches/min" /></label
         ><label
-          >Available Minutes / Day<input
+          >Available Minutes / Day<input aria-label="Available minutes per day"
             name="available_minutes_per_day"
             type="number"
             value="480" /></label
         ><label
-          >Efficiency %<input
+          >Efficiency %<input aria-label="Efficiency percent"
             name="efficiency_percent"
             type="number"
             step="0.01"
             value="100" /></label
         ><label
-          >Power Rating<input
+          >Power Rating<input aria-label="Power rating"
             name="power_rating"
             type="number"
             step="0.001" /></label
-        ><label>Power Unit<input name="power_unit" value="KW" /></label
+        ><label>Power Unit<input aria-label="Power unit" name="power_unit" value="KW" /></label
         ><label
-          >Department<select name="department_id">
+          >Department<select aria-label="Department id" name="department_id">
             <option value="">--</option>
             {% for x in departments %}
             <option value="{{ x.id }}">{{ x.name }}</option>
             {% endfor %}
           </select></label
         ><label
-          >Location<select name="location_id">
+          >Location<select aria-label="Location id" name="location_id">
             <option value="">--</option>
             {% for x in locations %}
             <option value="{{ x.id }}">{{ x }}</option>
             {% endfor %}
           </select></label
         ><label
-          >Assigned Employee<select name="assigned_to_id">
+          >Assigned Employee<select aria-label="Assigned to id" name="assigned_to_id">
             <option value="">--</option>
             {% for x in employees %}
             <option value="{{ x.id }}">
@@ -209,36 +204,36 @@
             </option>
             {% endfor %}
           </select></label
-        ><label>Purchase Date<input name="purchase_date" type="date" /></label
+        ><label>Purchase Date<input aria-label="Purchase date" name="purchase_date" type="date" /></label
         ><label
-          >Purchase Cost<input
+          >Purchase Cost<input aria-label="Purchase cost"
             name="purchase_cost"
             type="number"
             step="0.01" /></label
         ><label
-          >Current Value<input
+          >Current Value<input aria-label="Current value"
             name="current_value"
             type="number"
             step="0.01" /></label
-        ><label>Currency<input name="currency" value="BDT" /></label
+        ><label>Currency<input aria-label="Currency" name="currency" value="BDT" /></label
         ><label
-          >Depreciation Rate %<input
+          >Depreciation Rate %<input aria-label="Depreciation rate"
             name="depreciation_rate"
             type="number"
             step="0.001" /></label
         ><label
-          >Warranty Expiry<input name="warranty_expiry" type="date" /></label
+          >Warranty Expiry<input aria-label="Warranty expiry" name="warranty_expiry" type="date" /></label
         ><label
-          >Maintenance Interval Days<input
+          >Maintenance Interval Days<input aria-label="Maintenance interval days"
             name="maintenance_interval_days"
             type="number"
             value="30" /></label
         ><label
-          >Next Maintenance<input
+          >Next Maintenance<input aria-label="Next maintenance date"
             name="next_maintenance_date"
             type="date" /></label
         ><label
-          >Condition<select name="condition">
+          >Condition<select aria-label="Condition" name="condition">
             {% for x in conditions %}
             <option>{{ x }}</option>
             {% endfor %}
@@ -254,16 +249,16 @@
       <table>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Asset</th>
-            <th>Type</th>
-            <th>Reference</th>
-            <th>Technician / Vendor</th>
-            <th>Status</th>
-            <th>Parts</th>
-            <th>Labour</th>
-            <th>Total Cost</th>
-            <th>Next Due</th>
+            <th scope="col">Date</th>
+            <th scope="col">Asset</th>
+            <th scope="col">Type</th>
+            <th scope="col">Reference</th>
+            <th scope="col">Technician / Vendor</th>
+            <th scope="col">Status</th>
+            <th scope="col">Parts</th>
+            <th scope="col">Labour</th>
+            <th scope="col">Total Cost</th>
+            <th scope="col">Next Due</th>
           </tr>
         </thead>
         <tbody>
@@ -300,7 +295,7 @@
           name="action"
           value="maintenance"
         /><label
-          >Asset<select name="asset_id" required>
+          >Asset<select aria-label="Asset id" name="asset_id" required>
             {% for a in assets %}
             <option value="{{ a.id }}">
               {{ a.asset_code }} · {{ a.name }}
@@ -308,40 +303,40 @@
             {% endfor %}
           </select></label
         ><label
-          >Type<select name="maintenance_type">
+          >Type<select aria-label="Maintenance type" name="maintenance_type">
             {% for x in maintenance_types %}
             <option>{{ x }}</option>
             {% endfor %}
           </select></label
-        ><label>Reference<input name="reference" required /></label
-        ><label>Scheduled Date<input name="scheduled_date" type="date" /></label
+        ><label>Reference<input aria-label="Reference" name="reference" required /></label
+        ><label>Scheduled Date<input aria-label="Scheduled date" name="scheduled_date" type="date" /></label
         ><label
-          >Status<select name="maintenance_status">
+          >Status<select aria-label="Maintenance status" name="maintenance_status">
             <option>PLANNED</option>
             <option>IN_PROGRESS</option>
             <option>COMPLETED</option>
             <option>CANCELLED</option>
           </select></label
-        ><label>Technician<input name="technician" /></label
-        ><label>Vendor<input name="vendor" /></label
-        ><label>Description<textarea name="description"></textarea></label
+        ><label>Technician<input aria-label="Technician" name="technician" /></label
+        ><label>Vendor<input aria-label="Vendor" name="vendor" /></label
+        ><label>Description<textarea aria-label="Description" name="description"></textarea></label
         ><label
-          >Parts Cost<input
+          >Parts Cost<input aria-label="Parts cost"
             name="parts_cost"
             type="number"
             step="0.01" /></label
         ><label
-          >Labour Cost<input
+          >Labour Cost<input aria-label="Labour cost"
             name="labour_cost"
             type="number"
             step="0.01" /></label
         ><label
-          >Other Cost<input
+          >Other Cost<input aria-label="Other cost"
             name="other_cost"
             type="number"
             step="0.01" /></label
-        ><label>Currency<input name="currency" value="BDT" /></label
-        ><label>Approval ID<input name="approval_id" /></label
+        ><label>Currency<input aria-label="Currency" name="currency" value="BDT" /></label
+        ><label>Approval ID<input aria-label="Approval id" name="approval_id" /></label
         ><button>Save Maintenance</button>
       </form>
       {% if due_assets %}
@@ -363,14 +358,14 @@
       <table>
         <thead>
           <tr>
-            <th>Started</th>
-            <th>Asset</th>
-            <th>Reason</th>
-            <th>Reference</th>
-            <th>Duration Min</th>
-            <th>Impact Qty</th>
-            <th>Status</th>
-            <th>Action</th>
+            <th scope="col">Started</th>
+            <th scope="col">Asset</th>
+            <th scope="col">Reason</th>
+            <th scope="col">Reference</th>
+            <th scope="col">Duration Min</th>
+            <th scope="col">Impact Qty</th>
+            <th scope="col">Status</th>
+            <th scope="col">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -417,7 +412,7 @@
           name="action"
           value="downtime"
         /><label
-          >Asset<select name="asset_id" required>
+          >Asset<select aria-label="Asset id" name="asset_id" required>
             {% for a in assets %}
             <option value="{{ a.id }}">
               {{ a.asset_code }} · {{ a.name }}
@@ -425,18 +420,18 @@
             {% endfor %}
           </select></label
         ><label
-          >Reason<select name="reason">
+          >Reason<select aria-label="Reason" name="reason">
             {% for x in downtime_reasons %}
             <option>{{ x }}</option>
             {% endfor %}
           </select></label
-        ><label>Reference<input name="reference" required /></label
+        ><label>Reference<input aria-label="Reference" name="reference" required /></label
         ><label
-          >Production Impact Qty<input
+          >Production Impact Qty<input aria-label="Production impact qty"
             name="production_impact_qty"
             type="number"
             step="0.001" /></label
-        ><label>Description<textarea name="description"></textarea></label
+        ><label>Description<textarea aria-label="Description" name="description"></textarea></label
         ><button>Start Downtime</button>
       </form>
     </aside>
@@ -463,7 +458,7 @@
           name="action"
           value="movement"
         /><label
-          >Asset<select name="asset_id" required>
+          >Asset<select aria-label="Asset id" name="asset_id" required>
             {% for a in assets %}
             <option value="{{ a.id }}">
               {{ a.asset_code }} · {{ a.name }}
@@ -471,7 +466,7 @@
             {% endfor %}
           </select></label
         ><label
-          >Movement<select name="movement_type">
+          >Movement<select aria-label="Movement type" name="movement_type">
             <option>ASSIGN</option>
             <option>TRANSFER</option>
             <option>RETURN</option>
@@ -480,19 +475,19 @@
             <option>DISPOSE</option>
           </select></label
         ><label
-          >Barcode / QR<input
+          >Barcode / QR<input aria-label="Defaults to asset barcode"
             name="barcode"
             placeholder="Defaults to asset barcode" /></label
-        ><label>Reference<input name="reference" required /></label
+        ><label>Reference<input aria-label="Reference" name="reference" required /></label
         ><label
-          >Destination<select name="destination_location_id">
+          >Destination<select aria-label="Destination location id" name="destination_location_id">
             <option value="">--</option>
             {% for x in locations %}
             <option value="{{ x.id }}">{{ x }}</option>
             {% endfor %}
           </select></label
         ><label
-          >Assigned Employee<select name="assigned_to_id">
+          >Assigned Employee<select aria-label="Assigned to id" name="assigned_to_id">
             <option value="">--</option>
             {% for x in employees %}
             <option value="{{ x.id }}">
@@ -501,10 +496,10 @@
             {% endfor %}
           </select></label
         ><label
-          >Approval ID<input
+          >Approval ID<input aria-label="Required for RETIRE / DISPOSE"
             name="approval_id"
             placeholder="Required for RETIRE / DISPOSE" /></label
-        ><label>Reason<textarea name="reason"></textarea></label
+        ><label>Reason<textarea aria-label="Reason" name="reason"></textarea></label
         ><button>Post Movement</button>
       </form>
     </aside>

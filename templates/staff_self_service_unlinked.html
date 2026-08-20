@@ -1,0 +1,23 @@
+{% extends 'base.html' %}{% block title %}Self-Service{% endblock %}
+{% block content %}
+<section class="wrap">
+  <div class="page-head">
+    <div>
+      <small>STAFF SELF-SERVICE</small>
+      <h1>Your account is not linked to an employee record yet</h1>
+      <p>
+        Self-Service shows your own attendance, payslips, applications and
+        documents, so it needs to know which employee you are.
+      </p>
+    </div>
+  </div>
+  <section class="panel">
+    <h2>What to do</h2>
+    <p class="hint">
+      Ask HR or IT to connect this login to your Employee ID. Once they have,
+      this page will show your own records - nobody else's.
+    </p>
+    <p><a class="btn" href="{% url 'dashboard' %}">Back to the dashboard</a></p>
+  </section>
+</section>
+{% endblock %}

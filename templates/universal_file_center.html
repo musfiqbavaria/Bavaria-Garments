@@ -8,7 +8,7 @@
     </p>
   </div>
   <div>
-    <button class="btn" onclick="window.print()">Print File Register</button>
+    <button class="btn" data-action="print">Print File Register</button>
   </div>
 </div>
 
@@ -17,13 +17,13 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Document</th>
-        <th>Category</th>
-        <th>Department</th>
-        <th>Reference</th>
-        <th>Version</th>
-        <th>Uploaded By</th>
-        <th>Access</th>
+        <th scope="col">Document</th>
+        <th scope="col">Category</th>
+        <th scope="col">Department</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Version</th>
+        <th scope="col">Uploaded By</th>
+        <th scope="col">Access</th>
       </tr>
       {% for d in documents %}
       <tr>
@@ -74,12 +74,12 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Date</th>
-        <th>Thread</th>
-        <th>File</th>
-        <th>Type / Size</th>
-        <th>Uploaded By</th>
-        <th>Access</th>
+        <th scope="col">Date</th>
+        <th scope="col">Thread</th>
+        <th scope="col">File</th>
+        <th scope="col">Type / Size</th>
+        <th scope="col">Uploaded By</th>
+        <th scope="col">Access</th>
       </tr>
       {% for a in attachments %}
       <tr>
@@ -129,11 +129,11 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Employee</th>
-        <th>Type</th>
-        <th>Document</th>
-        <th>Reference</th>
-        <th>Access</th>
+        <th scope="col">Employee</th>
+        <th scope="col">Type</th>
+        <th scope="col">Document</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Access</th>
       </tr>
       {% for d in staff_documents %}
       <tr>
@@ -180,10 +180,10 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Employee</th>
-        <th>Application</th>
-        <th>Type</th>
-        <th>Access</th>
+        <th scope="col">Employee</th>
+        <th scope="col">Application</th>
+        <th scope="col">Type</th>
+        <th scope="col">Access</th>
       </tr>
       {% for a in staff_applications %}
       <tr>
@@ -230,11 +230,11 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Order</th>
-        <th>Buyer</th>
-        <th>Proof of Delivery</th>
-        <th>Signature</th>
-        <th>Delivery Photo</th>
+        <th scope="col">Order</th>
+        <th scope="col">Buyer</th>
+        <th scope="col">Proof of Delivery</th>
+        <th scope="col">Signature</th>
+        <th scope="col">Delivery Photo</th>
       </tr>
       {% for d in delivery_files %}
       <tr>
@@ -306,12 +306,12 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Date / Time</th>
-        <th>User</th>
-        <th>Action</th>
-        <th>File</th>
-        <th>Reference</th>
-        <th>IP</th>
+        <th scope="col">Date / Time</th>
+        <th scope="col">User</th>
+        <th scope="col">Action</th>
+        <th scope="col">File</th>
+        <th scope="col">Reference</th>
+        <th scope="col">IP</th>
       </tr>
       {% for l in access_logs %}
       <tr>

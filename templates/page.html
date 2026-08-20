@@ -3,10 +3,20 @@
   <div class="pagehead">
     <div>
       <small>PROJECT 1 / {{ page.group|upper }}</small>
-      <h1>#{{ page.page_id }} {{ page.title }}</h1>
-      <p>Connected departmental/manager dashboard framework.</p>
+      <h1>{{ page.title }}</h1>
+      {% comment %}
+      This page is the generic placeholder for a registry entry that has no
+      module built yet. It used to carry a green "ACTIVE" pill and six buttons
+      that issued no request, which made an unbuilt module look like a working
+      one with no data in it. See SITE_AUDIT_FINDINGS.md A3.
+      {% endcomment %}
+      <p>
+        This module is on the Project 1 plan as page #{{ page.page_id }} and has
+        not been built yet. The figures below are the organisation-wide totals
+        shown on every page, not data for this module.
+      </p>
     </div>
-    <div class="pill">ACTIVE</div>
+    <div class="pill pill-planned">NOT BUILT YET</div>
   </div>
   <div class="stats">
     <article><small>Alerts</small><strong>{{ global_alerts }}</strong></article>
@@ -17,49 +27,57 @@
       <small>Present Staff</small><strong>{{ today_present_staff }}</strong>
     </article>
     <article>
-      <small>Today Staff Cost</small><strong>{{ today_staff_cost }}</strong>
+      <small>Today Staff Cost</small
+      ><strong>{{ today_staff_cost_display }}</strong>
     </article>
   </div>
   <div class="split">
     <section class="panel">
-      <h2>Operational Control</h2>
-      <div class="toolbar">
-        <button>View</button><button>Preview</button><button>Edit</button
-        ><button>Remove</button><button>Download</button><button>Print</button>
+      <h2>Recent master orders</h2>
+      <p class="hint">
+        Organisation-wide, most recently updated first. Not specific to this
+        module.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <caption class="visually-hidden">
+            Ten most recently updated master orders
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Master Order</th>
+              <th scope="col">Buyer</th>
+              <th scope="col">Product</th>
+              <th scope="col">Qty</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for o in orders %}
+            <tr>
+              <td>{{ o.master_order_id }}</td>
+              <td>{{ o.buyer }}</td>
+              <td>{{ o.product }}</td>
+              <td>{{ o.quantity }}</td>
+              <td><span class="status">{{ o.status }}</span></td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5">No order data yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Master Order</th>
-            <th>Buyer</th>
-            <th>Product</th>
-            <th>Qty</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for o in orders %}
-          <tr>
-            <td>{{ o.master_order_id }}</td>
-            <td>{{ o.buyer }}</td>
-            <td>{{ o.product }}</td>
-            <td>{{ o.quantity }}</td>
-            <td><span class="status">{{ o.status }}</span></td>
-          </tr>
-          {% empty %}
-          <tr>
-            <td colspan="5">No order data yet.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </section>
     <aside class="panel">
-      <h2>Alerts & Actions</h2>
+      <h2>Alerts &amp; Actions</h2>
       {% for a in alerts %}
       <div class="notice {% if a.level == 'RED' %}danger{% endif %}">
         <b>{{ a.title }}</b><small>{{ a.department }}</small>
       </div>
+      {% empty %}
+      <p class="hint">No open alerts.</p>
       {% endfor %}{% for a in actions %}
       <div class="notice">
         <b>{{ a.title }}</b><small>{{ a.department }} • {{ a.priority }}</small>

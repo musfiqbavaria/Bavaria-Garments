@@ -9,12 +9,9 @@
   </div>
   <div>
     <a class="btn" href="{% url 'free_capacity_export_csv' %}">Download CSV</a>
-    <button class="btn" onclick="window.print()">Preview / Print</button>
+    <button class="btn" data-action="print">Preview / Print</button>
   </div>
 </div>
-{% for message in messages %}
-<div class="card"><b>{{message}}</b></div>
-{% endfor %}
 <div class="kpis">
   <div class="kpi"><b>{{pending_count}}</b><span>Pending</span></div>
   <div class="kpi"><b>{{take_count}}</b><span>Take Quick Order</span></div>
@@ -161,7 +158,7 @@
 <div class="card">
   <h2>Capacity Opportunity Register</h2>
   <form method="get">
-    <input
+    <input aria-label="Search reference / buyer / opportunity / product"
       name="q"
       value="{{request.GET.q}}"
       placeholder="Search reference / buyer / opportunity / product"
@@ -171,19 +168,19 @@
   <div class="table-wrap">
     <table>
       <tr>
-        <th>Reference</th>
-        <th>Opportunity</th>
-        <th>Product</th>
-        <th>Required</th>
-        <th>Protected Free</th>
-        <th>Capacity Fit</th>
-        <th>Load</th>
-        <th>Readiness</th>
-        <th>Profit / Margin</th>
-        <th>Rush Risk</th>
-        <th>Recommendation</th>
-        <th>Decision</th>
-        <th>Gate</th>
+        <th scope="col">Reference</th>
+        <th scope="col">Opportunity</th>
+        <th scope="col">Product</th>
+        <th scope="col">Required</th>
+        <th scope="col">Protected Free</th>
+        <th scope="col">Capacity Fit</th>
+        <th scope="col">Load</th>
+        <th scope="col">Readiness</th>
+        <th scope="col">Profit / Margin</th>
+        <th scope="col">Rush Risk</th>
+        <th scope="col">Recommendation</th>
+        <th scope="col">Decision</th>
+        <th scope="col">Gate</th>
       </tr>
       {% for x in rows %}
       <tr>

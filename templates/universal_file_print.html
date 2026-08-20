@@ -1,4 +1,4 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -26,8 +26,8 @@
   <body>
     <div class="bar">
       <b>{{file_name}}</b> · {{reference}}
-      <button onclick="window.print()">PRINT</button>
+      <button data-action="print">PRINT</button>
     </div>
     <iframe src="{{preview_url}}"></iframe>
-  </body>
+  <script src="{% static 'js/app.js' %}"></script></body>
 </html>
