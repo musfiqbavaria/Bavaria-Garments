@@ -155,7 +155,10 @@ Now `nano .env` and set:
 ```ini
 DJANGO_DEBUG=0
 DJANGO_SECRET_KEY=<the 64-character value you just generated>
-DJANGO_ALLOWED_HOSTS=erp.yourdomain.com,YOUR_SERVER_IP
+# Keep localhost and 127.0.0.1: the container's own health check calls
+# http://127.0.0.1:8000/login/, and Django rejects any host not listed here.
+# Omit them and the web container is marked unhealthy and never starts.
+DJANGO_ALLOWED_HOSTS=erp.yourdomain.com,YOUR_SERVER_IP,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=http://erp.yourdomain.com
 
 # TLS comes in step 10. Leave 0 until then.
@@ -298,7 +301,7 @@ In `.env`:
 ```ini
 DJANGO_SECURE_SSL=1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://erp.yourdomain.com
-DJANGO_ALLOWED_HOSTS=erp.yourdomain.com
+DJANGO_ALLOWED_HOSTS=erp.yourdomain.com,localhost,127.0.0.1
 ```
 
 **Only now.** Setting `DJANGO_SECURE_SSL=1` before a TLS listener exists makes
@@ -527,6 +530,7 @@ Tells you which commit is live and whether everything is running.
 | Site unreachable right after enabling TLS | `DJANGO_SECURE_SSL=1` with nothing on 443. Set it back to 0, finish step 10, then re-enable. |
 | `models have changes with no matching migration` | Generate it locally, commit, push, pull, redeploy. |
 | Build killed / out of memory | Server too small. CX22 or larger. |
+| `dependency failed to start: container app-web-1 is unhealthy` | Usually `DJANGO_ALLOWED_HOSTS` is missing `127.0.0.1`, so Django rejects the container's own health check. Add `localhost,127.0.0.1` and `docker compose up -d`. Otherwise a placeholder `DJANGO_SECRET_KEY` with `DEBUG=0`. Check `docker compose logs --tail 40 web`. |
 | A container keeps restarting | `docker compose logs --tail 40 <service>` |
 
 Useful:
