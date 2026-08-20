@@ -42,5 +42,12 @@ urlpatterns=[path('account-master/',views.account_master,name='account_master'),
  path('free-capacity-opportunity/',views.free_capacity_opportunity,name='free_capacity_opportunity'),path('free-capacity-opportunity/export.csv',views.free_capacity_export_csv,name='free_capacity_export_csv'),path('api/free-capacity-opportunity/',views.api_free_capacity_opportunity,name='api_free_capacity_opportunity'),
  path('profit-feasibility-gate/',views.profit_feasibility_gate,name='profit_feasibility_gate'),path('profit-feasibility-gate/export.csv',views.profit_feasibility_export_csv,name='profit_feasibility_export_csv'),path('api/profit-feasibility-gate/',views.api_profit_feasibility_gate,name='api_profit_feasibility_gate'),
  path('communication-center/',views.communication_center,name='communication_center'),path('communication-center/export.csv',views.communication_center_export_csv,name='communication_center_export_csv'),path('api/communication-center/',views.api_communication_center,name='api_communication_center'),
+ # Self-service password change. There was no password route at all: the
+    # only way in was /admin/password_change/, which requires is_staff, so an
+    # Operator or Helper could not rotate their own credentials and every change
+    # had to go through whoever holds admin.
+    # See SITE_AUDIT_FINDINGS.md A10.
+    path('account/password/',views.password_change,name='password_change'),
+    path('account/password/done/',views.password_change_done,name='password_change_done'),
  path('p/<slug:slug>/',views.page_view,name='page'),
 ]

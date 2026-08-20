@@ -89,6 +89,10 @@ ROUTE_POLICY = {
     # Helpers; every decision is validated and written to BarcodeScanEvent.
     'barcode_scan_control': AUTHENTICATED,
     'staff_self_service': AUTHENTICATED,
+    # Anyone may change their own password. The view only ever operates on
+    # request.user, so there is nothing to narrow by role.
+    'password_change': AUTHENTICATED,
+    'password_change_done': AUTHENTICATED,
     'api_staff_self_service': AUTHENTICATED,
     # Every user may raise an approval request; only senior roles may decide one.
     'api_approval_request': AUTHENTICATED,

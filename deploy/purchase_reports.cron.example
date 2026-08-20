@@ -1,3 +1,0 @@
-0 8 * * * cd /path/to/project && /path/to/venv/bin/python manage.py run_purchase_auto_report --slot 08:00
-0 13 * * * cd /path/to/project && /path/to/venv/bin/python manage.py run_purchase_auto_report --slot 13:00
-0 20 * * * cd /path/to/project && /path/to/venv/bin/python manage.py run_purchase_auto_report --slot 20:00

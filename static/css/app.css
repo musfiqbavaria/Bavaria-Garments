@@ -425,3 +425,17 @@ button.primary,
     color: #000;
   }
 }
+
+/* Field-level validation errors. No form in the project could show an error
+   beside the field that caused it - only a page-level message, or nothing.
+   SITE_AUDIT_FINDINGS.md (forms group). */
+.field-error {
+  display: block;
+  color: var(--red);
+  font-weight: 700;
+}
+.form-grid label:has(.field-error) input,
+.form-grid label:has(.field-error) select,
+.form-grid label:has(.field-error) textarea {
+  border-color: var(--red);
+}

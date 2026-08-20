@@ -64,3 +64,28 @@ def purge_expired_audit_logs():
     deleted, _ = AuditLog.objects.filter(created_at__lt=cutoff).delete()
     logger.info('purged %s audit log row(s) older than %s days', deleted, days)
     return {'deleted': deleted, 'retention_days': days}
+
+
+@shared_task
+def generate_department_reports(slot):
+    """Write every department's scheduled report row for one daily slot.
+
+    The 16 *AutoReport tables the dashboards read were never written on a
+    schedule: ten management commands existed but were referenced by no task and
+    no beat entry, seven departments had no command at all, and the
+    deploy/*.cron.example files invoked a venv path that does not exist on a
+    Docker host. Those dashboard panels were therefore permanently empty while a
+    healthy beat container made it look scheduled.
+    See SITE_AUDIT_FINDINGS.md A8 and portal/reporting.py.
+    """
+    from .reporting import generate_all
+
+    written, failed = generate_all(slot)
+    if failed:
+        # Visible in the worker log and to any log shipper, rather than a silent
+        # partial run.
+        logger.error('department reports for %s: %d written, %d FAILED (%s)',
+                     slot, len(written), len(failed), ', '.join(failed))
+    else:
+        logger.info('department reports for %s: %d written', slot, len(written))
+    return {'slot': slot, 'written': written, 'failed': failed}

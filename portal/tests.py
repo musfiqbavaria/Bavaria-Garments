@@ -2457,3 +2457,193 @@ class AdminTenancyTests(TestCase):
         with scope_context(None):
             self.assertEqual(options.get_queryset(request).count(), 2,
                              'the break-glass account must not be scoped')
+
+
+class AutoReportScheduleTests(TestCase):
+    """The 16 department report tables must actually be written.
+
+    Nothing wrote them: ten management commands existed but were referenced by no
+    task and no beat entry, seven departments had no command at all, and the
+    deploy/*.cron.example files invoked a venv path that does not exist on a
+    Docker host. Those dashboard panels were permanently empty while a healthy
+    beat container made it look scheduled. See SITE_AUDIT_FINDINGS.md A8.
+    """
+
+    def test_the_registry_covers_every_auto_report_model(self):
+        from django.apps import apps
+        from portal.reporting import REPORTS
+        declared = {name for name, _payload in REPORTS}
+        actual = {m.__name__ for m in apps.get_app_config('portal').get_models()
+                  if m.__name__.endswith('AutoReport')}
+        missing = sorted(actual - declared)
+        self.assertEqual(
+            missing, [],
+            'these report tables are read by a dashboard but nothing generates '
+            f'them: {missing}')
+
+    def test_every_registry_entry_resolves(self):
+        from django.apps import apps
+        from portal import views
+        from portal.reporting import REPORTS
+        problems = []
+        for model_name, payload_name in REPORTS:
+            try:
+                apps.get_model('portal', model_name)
+            except LookupError:
+                problems.append(f'{model_name}: no such model')
+            if not hasattr(views, payload_name):
+                problems.append(f'{payload_name}: no such payload function')
+        self.assertEqual(problems, [], 'the report registry is out of step:\n'
+                                       + '\n'.join(problems))
+
+    def test_every_slot_is_scheduled_in_beat(self):
+        from django.conf import settings
+        from portal.reporting import SLOTS
+        scheduled = {
+            tuple(entry.get('args', ()))[0]
+            for entry in settings.CELERY_BEAT_SCHEDULE.values()
+            if entry['task'] == 'portal.tasks.generate_department_reports'
+            and entry.get('args')
+        }
+        self.assertEqual(
+            set(SLOTS), scheduled,
+            'a report slot exists that Celery beat never fires: '
+            f'{sorted(set(SLOTS) - scheduled)}')
+
+    def test_generating_a_slot_writes_every_department(self):
+        from django.core.management import call_command
+        from django.apps import apps
+        from portal.reporting import REPORTS, generate_all
+        call_command('seed_project1', verbosity=0)
+
+        written, failed = generate_all('08:00')
+        self.assertEqual(failed, [], f'report generation failed for: {failed}')
+        self.assertEqual(len(written), len(REPORTS))
+
+        # And the rows are really there.
+        for model_name, _payload in REPORTS:
+            with self.subTest(model=model_name):
+                model = apps.get_model('portal', model_name)
+                self.assertTrue(
+                    model.objects.filter(slot='08:00').exists(),
+                    f'{model_name} has no row after generation')
+
+    def test_regenerating_the_same_slot_does_not_duplicate(self):
+        from django.core.management import call_command
+        from portal.models import PackingAutoReport
+        from portal.reporting import generate_all
+        call_command('seed_project1', verbosity=0)
+        generate_all('13:00')
+        generate_all('13:00')
+        self.assertEqual(PackingAutoReport.objects.filter(slot='13:00').count(), 1,
+                         'a catch-up run duplicated the row instead of updating it')
+
+    def test_no_stale_cron_examples_remain(self):
+        """Following them alongside the beat service would run every report twice."""
+        from django.conf import settings
+        stale = sorted(p.name for p in (settings.BASE_DIR / 'deploy').glob('*.cron.example'))
+        self.assertEqual(
+            stale, [],
+            'these cron examples invoke a venv path that does not exist on a '
+            f'Docker host and duplicate the beat schedule: {stale}')
+
+
+class PasswordChangeTests(TestCase):
+    """Every user must be able to rotate their own password.
+
+    There were zero password routes. The only path was /admin/password_change/,
+    which requires is_staff - and roles.py documents that is_staff must not
+    confer business access. An Operator or Helper could not change their own
+    password and there was no reset flow. See SITE_AUDIT_FINDINGS.md A10.
+    """
+
+    def test_a_helper_can_open_the_password_page(self):
+        client = _client_for(_make_user('pwhelper', role='Helper'))
+        response = client.get('/account/password/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Change your password')
+
+    def test_a_helper_can_change_their_own_password(self):
+        user = _make_user('pwchanger', role='Helper')
+        client = _client_for(user)
+        response = client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        })
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('Kh4ki-Bundle-Ledger-77'))
+
+    def test_changing_the_password_does_not_sign_the_user_out(self):
+        """Without update_session_auth_hash the session dies on success."""
+        user = _make_user('pwstay', role='Operator')
+        client = _client_for(user)
+        client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        }, follow=True)
+        self.assertEqual(client.get('/dashboard/', follow=True).status_code, 200)
+        self.assertTrue(client.session.get('_auth_user_id'),
+                        'the user was signed out by changing their own password')
+
+    def test_a_weak_password_is_refused_with_the_reason_on_the_page(self):
+        client = _client_for(_make_user('pwweak', role='Staff'))
+        response = client.post('/account/password/', {
+            'old_password': 'pw-for-tests-1234',
+            'new_password1': 'password',
+            'new_password2': 'password',
+        })
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('field-error', body,
+                      'the reason is not shown beside the field that caused it')
+
+    def test_the_wrong_current_password_is_refused(self):
+        user = _make_user('pwwrong', role='Staff')
+        client = _client_for(user)
+        client.post('/account/password/', {
+            'old_password': 'not-the-current-password',
+            'new_password1': 'Kh4ki-Bundle-Ledger-77',
+            'new_password2': 'Kh4ki-Bundle-Ledger-77',
+        })
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('pw-for-tests-1234'),
+                        'the password changed without the current one')
+
+
+class ParameterValidationTests(TestCase):
+    """A bad path parameter must be refused, not silently reinterpreted."""
+
+    def test_an_unknown_barcode_instruction_mode_is_a_404(self):
+        """It silently rewrote any unknown mode to 'generation' and returned 200,
+        so an operator following a mistyped or stale workstation link was shown
+        the generation sheet instead of the scanning one - on a page whose whole
+        purpose is to be the printed procedure at a workstation.
+        See SITE_AUDIT_FINDINGS.md B28."""
+        client = _client_for(_make_user('barcodeop', role='Operator'))
+        self.assertEqual(client.get('/barcode-instructions/scan/').status_code, 200)
+        self.assertEqual(client.get('/barcode-instructions/generation/').status_code, 200)
+        self.assertEqual(
+            client.get('/barcode-instructions/scanning/').status_code, 404,
+            'an unknown mode still returns 200 with the wrong instructions')
+
+    def test_the_landing_page_does_not_hardcode_a_country(self):
+        """It filtered the organisation tree by name__icontains='Bangladesh' and
+        fell back to EVERY node when there was no such country, so a deployment
+        for another country showed the whole estate unfiltered.
+        See SITE_AUDIT_FINDINGS.md B19."""
+        from django.conf import settings
+        source = (settings.BASE_DIR / 'portal/views.py').read_text(encoding='utf-8')
+        start = source.index('def dashboard(request)')
+        end = source.index('\ndef ', start + 10)
+        # Comments explaining the old behaviour are not the old behaviour.
+        code = '\n'.join(line for line in source[start:end].splitlines()
+                         if not line.lstrip().startswith('#'))
+        self.assertNotIn(
+            "name__icontains='Bangladesh'", code,
+            'the landing page still hardcodes a country')
+        self.assertNotIn(
+            'OrganizationNode.objects.all()', code,
+            'the landing page still falls back to every node in the estate')

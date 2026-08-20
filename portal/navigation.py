@@ -76,6 +76,7 @@ NAV = [
     ('hr_recruitment_applications', 'Recruitment', 'People'),
 
     ('staff_self_service', 'Self-Service', 'Tools'),
+    ('password_change', 'Change Password', 'Tools'),
     ('forms_master', 'Forms Master', 'Tools'),
     ('barcode_master', 'Barcode', 'Tools'),
     ('barcode_scan_control', 'Scan Control', 'Tools'),

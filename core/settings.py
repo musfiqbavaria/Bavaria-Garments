@@ -216,6 +216,15 @@ CELERY_BEAT_SCHEDULE={
  'report-0800':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=8,minute=0)},
  'report-1300':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=13,minute=0)},
  'report-2000':{'task':'portal.tasks.scheduled_report_snapshot','schedule':crontab(hour=20,minute=0)},
+ # The 16 department *AutoReport tables every dashboard reads. Nothing wrote
+ # them: ten management commands existed but were in no task and no beat entry,
+ # seven departments had no command at all, and the deploy/*.cron.example files
+ # invoked a venv path that does not exist on a Docker host. Those panels were
+ # permanently empty while a healthy beat container made it look scheduled.
+ # See SITE_AUDIT_FINDINGS.md A8 and portal/reporting.py.
+ 'department-reports-0800':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=8,minute=5),'args':('08:00',)},
+ 'department-reports-1300':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=13,minute=5),'args':('13:00',)},
+ 'department-reports-2000':{'task':'portal.tasks.generate_department_reports','schedule':crontab(hour=20,minute=5),'args':('20:00',)},
  # Daily exchange rates, before the 08:00 reporting slot so consolidated
  # figures use the current day's rate. No-op unless EXCHANGE_RATE_API_URL is set.
  'exchange-rates-daily':{'task':'portal.tasks.refresh_exchange_rates','schedule':crontab(hour=6,minute=30)},
@@ -228,6 +237,21 @@ CELERY_BEAT_SCHEDULE={
 # Irish parent, so EUR is the base; BDT production costs and USD buyer values
 # convert into it for any figure that spans entities.
 BASE_CURRENCY=env('BASE_CURRENCY','DEFAULT_CURRENCY',default='EUR')
+
+# --- default country --------------------------------------------------------
+# Which Country node the command centre opens on for a user whose organisation
+# scope does not resolve to one. The landing page used to hardcode a
+# name__icontains='Bangladesh' lookup and fall back to every node in the estate
+# when it found nothing. Blank means "the first active Country node".
+# See SITE_AUDIT_FINDINGS.md B19.
+DEFAULT_COUNTRY=env('DEFAULT_COUNTRY',default='Bangladesh')
+
+# --- public contact details -------------------------------------------------
+# The careers page footer hardcoded a phone number and an email address in the
+# template. Both are configuration: a change of recruiter or a second country
+# should not mean editing markup. See SITE_AUDIT_FINDINGS.md B30.
+CAREERS_CONTACT_PHONE=env('CAREERS_CONTACT_PHONE',default='089 978 8187')
+CAREERS_CONTACT_EMAIL=env('CAREERS_CONTACT_EMAIL',default='urmos@rozalia.ie')
 
 # Daily rate feed. Deliberately empty by default so no outbound request is made
 # until it is configured: the endpoint is an external service and must be
