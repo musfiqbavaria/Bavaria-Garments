@@ -2270,3 +2270,190 @@ class RolePageRenderTests(TestCase):
         self.assertNotIn('>ACTIVE<', body,
                          'an unbuilt module still presents itself as ACTIVE')
         self.assertIn('NOT BUILT YET', body)
+
+
+class AdminConfigurationTests(TestCase):
+    """For most of the 179 models the admin is the only editing UI there is.
+
+    It was 33 bare register() calls with zero list_display, zero search_fields,
+    zero list_filter and zero date_hierarchy across every model, and eleven
+    models - the whole Iron module among them - were not registered at all, so
+    their data could not be reached anywhere.
+    See SITE_AUDIT_FINDINGS.md B15, B16, B17.
+    """
+
+    def _models(self):
+        from django.apps import apps
+        return list(apps.get_app_config('portal').get_models())
+
+    def test_every_model_is_reachable_in_the_admin(self):
+        from django.contrib import admin
+        unregistered = sorted(m.__name__ for m in self._models()
+                              if m not in admin.site._registry)
+        self.assertEqual(
+            unregistered, [],
+            'these models have no admin and no dedicated page, so their data '
+            f'cannot be created or corrected anywhere: {unregistered}')
+
+    def test_the_iron_module_is_registered(self):
+        """Every other department was; Iron was the one that was not."""
+        from django.contrib import admin
+        from portal import models as m
+        for model in [m.IronPlan, m.IronBundleScan, m.IronProductionEntry,
+                      m.IronQC, m.IronVariance, m.IronAutoReport]:
+            with self.subTest(model=model.__name__):
+                self.assertIn(model, admin.site._registry)
+
+    def test_the_standards_that_drive_every_efficiency_figure_are_editable(self):
+        """FactoryProcessStandard carries sam, smv and cost_per_minute, and
+        SewingBundleAssignment carries the per-operator per-machine figures. Both
+        were read by views and editable nowhere."""
+        from django.contrib import admin
+        from portal.models import FactoryProcessStandard, SewingBundleAssignment
+        self.assertIn(FactoryProcessStandard, admin.site._registry)
+        self.assertIn(SewingBundleAssignment, admin.site._registry)
+
+    def test_exchange_rates_can_be_maintained_by_finance(self):
+        """.env.example states rates are "maintained by Finance in admin", and
+        with no API URL configured that is the only way in. The model was not
+        registered, so there was none. See SITE_AUDIT_FINDINGS.md B15."""
+        from django.contrib import admin
+        from portal.models import ExchangeRate
+        self.assertIn(ExchangeRate, admin.site._registry)
+        options = admin.site._registry[ExchangeRate]
+        self.assertTrue(options.list_display)
+        self.assertIn('rate', options.list_display)
+
+    def test_every_changelist_is_usable(self):
+        from django.contrib import admin
+        problems = []
+        for model in self._models():
+            options = admin.site._registry[model]
+            if not options.list_display or list(options.list_display) == ['__str__']:
+                problems.append(f'{model.__name__}: no list_display')
+            if not options.search_fields:
+                problems.append(f'{model.__name__}: no search_fields')
+        self.assertEqual(
+            problems, [],
+            'a changelist with no columns is a list of "object (1)", and one with '
+            'no search box is unusable once the table has thousands of rows:\n'
+            + '\n'.join(problems))
+
+    def test_no_model_renders_as_object_repr(self):
+        """161 of 179 models had no __str__, so they appeared as
+        "ModelName object (1)" in every changelist and every FK dropdown."""
+        problems = []
+        for model in self._models():
+            instance = model()
+            instance.pk = 7
+            try:
+                label = str(instance)
+            except Exception as exc:                       # noqa: BLE001
+                # A model-specific __str__ that dereferences an unset FK. Real
+                # rows have it set; not a labelling defect.
+                if 'RelatedObjectDoesNotExist' in type(exc).__name__:
+                    continue
+                problems.append(f'{model.__name__}: {type(exc).__name__}')
+                continue
+            if 'object (' in label:
+                problems.append(f'{model.__name__}: {label}')
+        self.assertEqual(problems, [], 'models with no readable label:\n'
+                                       + '\n'.join(problems))
+
+    def test_the_audit_trail_stays_read_only(self):
+        """Registering every model must not have opened the audit tables."""
+        from django.contrib import admin
+        from portal.models import (ApprovalDecisionLog, AuditLog,
+                                   BarcodeScanEvent, FileAccessLog)
+        request = None
+        for model in [AuditLog, FileAccessLog, ApprovalDecisionLog, BarcodeScanEvent]:
+            with self.subTest(model=model.__name__):
+                options = admin.site._registry[model]
+                self.assertFalse(options.has_add_permission(request))
+                self.assertFalse(options.has_change_permission(request))
+                self.assertFalse(options.has_delete_permission(request))
+
+    def test_the_admin_is_branded(self):
+        from django.contrib import admin
+        self.assertIn('Emerald Rozalia', admin.site.site_header)
+        self.assertNotIn('Django', admin.site.site_header)
+
+    def test_no_wrong_plural_reaches_the_admin(self):
+        """Django pluralises by appending "s", which gives "BuyerOpportunitys".
+
+        Checked against the correction table rather than a suffix rule: "cutting
+        lays" and "attendance holidays" are correct English and a naive
+        endswith('ys') test flags them.
+        """
+        from portal.admin import _PLURALS
+        offenders = []
+        for model in self._models():
+            expected = _PLURALS.get(model.__name__)
+            if not expected:
+                continue
+            actual = str(model._meta.verbose_name_plural)
+            if actual != expected:
+                offenders.append(f'{model.__name__}: "{actual}" (want "{expected}")')
+        self.assertEqual(offenders, [], 'wrong plurals shown in the admin:\n'
+                                        + '\n'.join(offenders))
+
+
+class AdminTenancyTests(TestCase):
+    """The admin must not be a way around organisation scoping.
+
+    ModelAdmin.get_queryset uses _default_manager, and every scoped model pins
+    default_manager_name='all_objects' - deliberately, so related descriptors and
+    cascade deletes see every row. The consequence was that the admin was
+    entirely unscoped: any is_staff user saw every organisation's data, though
+    the same user is scoped everywhere else. See SITE_AUDIT_FINDINGS.md B16.
+    """
+
+    def setUp(self):
+        from portal.models import Alert, OrganizationNode, UserProfile
+        self.global_node = OrganizationNode.objects.create(
+            name='Global', node_type='Global')
+        self.bd = OrganizationNode.objects.create(
+            name='Bangladesh', node_type='Country', parent=self.global_node)
+        self.ie = OrganizationNode.objects.create(
+            name='Ireland', node_type='Country', parent=self.global_node)
+        Alert.all_objects.create(title='Dhaka line stopped', department='Sewing',
+                                 level='RED', scope=self.bd)
+        Alert.all_objects.create(title='Limerick order late', department='Sales',
+                                 level='RED', scope=self.ie)
+
+        self.bd_user = _make_user('bdadmin')
+        self.bd_user.is_staff = True
+        self.bd_user.save()
+        UserProfile.objects.update_or_create(
+            user=self.bd_user, defaults={'role': 'Unit Manager', 'scope': self.bd})
+
+    def test_a_scoped_admin_user_sees_only_their_own_site(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+        from portal.models import Alert
+        from portal.tenancy import scope_context
+
+        options = admin.site._registry[Alert]
+        request = RequestFactory().get('/admin/portal/alert/')
+        request.user = self.bd_user
+
+        with scope_context(self.bd):
+            titles = sorted(str(a) for a in options.get_queryset(request))
+        self.assertEqual(
+            titles, ['Dhaka line stopped'],
+            'the admin changelist showed another organisation\'s records to a '
+            f'scoped is_staff user: {titles}')
+
+    def test_a_superuser_still_sees_everything(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+        from portal.models import Alert
+        from portal.tenancy import scope_context
+
+        root = _make_user('rootadmin', superuser=True)
+        options = admin.site._registry[Alert]
+        request = RequestFactory().get('/admin/portal/alert/')
+        request.user = root
+        with scope_context(None):
+            self.assertEqual(options.get_queryset(request).count(), 2,
+                             'the break-glass account must not be scoped')
