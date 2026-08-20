@@ -40,9 +40,9 @@ backups/
 
 # Approved design references: 82 MB of PNGs used as visual targets during
 # development. They are in version control but have no place in the runtime
-# image. static/reference/ is excluded for the same reason - nothing serves it.
+# image. static/reference/ used to be excluded here too; those three files were
+# referenced by no template, view or stylesheet and have been deleted.
 references/
-static/reference/
 
 # Documentation
 *.md

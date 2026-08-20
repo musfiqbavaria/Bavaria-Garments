@@ -439,3 +439,31 @@ button.primary,
 .form-grid label:has(.field-error) textarea {
   border-color: var(--red);
 }
+
+/* Language switcher in the navigation. */
+.nav-language {
+  margin: 0;
+}
+.nav-language select {
+  background: #07140f;
+  color: var(--text);
+  border: 1px solid #2b4f41;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* Login page: the real mark and bound labels. The page drew a CSS box lettered
+   "ER" and used placeholders in place of labels. */
+.loginlogo {
+  display: block;
+  width: min(260px, 70%);
+  height: auto;
+  margin: 0 auto 6px;
+}
+.loginbox label {
+  display: block;
+  margin: 10px 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+}

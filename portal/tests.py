@@ -2647,3 +2647,151 @@ class ParameterValidationTests(TestCase):
         self.assertNotIn(
             'OrganizationNode.objects.all()', code,
             'the landing page still falls back to every node in the estate')
+
+
+class LocalisationTests(TestCase):
+    """USE_I18N was True and nothing else was in place.
+
+    No LocaleMiddleware, no LANGUAGES, no LOCALE_PATHS, no locale directory and
+    not one {% trans %} in 49 templates - so the setting was inert and every
+    string was hardcoded English, in a system the organisation requires to serve
+    multiple languages. See SITE_AUDIT_FINDINGS.md B18.
+    """
+
+    def test_the_translation_machinery_is_wired_up(self):
+        from django.conf import settings
+        self.assertTrue(settings.USE_I18N)
+        self.assertIn('django.middleware.locale.LocaleMiddleware', settings.MIDDLEWARE)
+        self.assertTrue(getattr(settings, 'LANGUAGES', None),
+                        'no LANGUAGES, so there is nothing to switch between')
+        self.assertTrue(getattr(settings, 'LOCALE_PATHS', None),
+                        'no LOCALE_PATHS, so a catalogue would never be found')
+
+    def test_locale_middleware_runs_before_anything_renders(self):
+        """After SessionMiddleware, and before the tenancy and audit middleware
+        that touch the database, or the active language is not yet set."""
+        from django.conf import settings
+        order = settings.MIDDLEWARE
+        self.assertLess(
+            order.index('django.contrib.sessions.middleware.SessionMiddleware'),
+            order.index('django.middleware.locale.LocaleMiddleware'),
+            'LocaleMiddleware cannot read a language from the session if it runs '
+            'before SessionMiddleware')
+
+    def test_the_language_can_actually_be_switched(self):
+        """End to end through Django's set_language view, not just settings."""
+        user = _make_user('lang1', role='CEO')
+        client = _client_for(user)
+        response = client.post('/i18n/setlang/', {'language': 'bn', 'next': '/dashboard/'})
+        self.assertIn(response.status_code, (302, 200))
+        from django.conf import settings
+        self.assertEqual(client.session.get(settings.LANGUAGE_COOKIE_NAME)
+                         or client.cookies.get(settings.LANGUAGE_COOKIE_NAME).value,
+                         'bn')
+
+    def test_the_layout_declares_the_active_language(self):
+        client = _client_for(_make_user('lang2', role='CEO'))
+        body = client.get('/dashboard/', follow=True).content.decode()
+        self.assertRegex(body, r'<html[^>]*\slang="[a-z]{2}',
+                         'the page declares no language to a screen reader')
+
+    def test_the_shared_chrome_is_marked_for_translation(self):
+        from django.conf import settings
+        base = (settings.BASE_DIR / 'templates/base.html').read_text(encoding='utf-8')
+        self.assertIn('{% load static i18n %}', base)
+        for phrase in ['Skip to content', 'Log out', 'Alerts', 'Staff Cost']:
+            with self.subTest(phrase=phrase):
+                self.assertIn(f'{{% trans "{phrase}" %}}', base,
+                              f'"{phrase}" in the shared chrome is not translatable')
+
+    def test_numbers_are_grouped(self):
+        """A five-figure piece count read as 12500, and a raw Decimal as
+        1234.5000."""
+        from django.conf import settings
+        self.assertTrue(getattr(settings, 'USE_THOUSAND_SEPARATOR', False))
+        self.assertIn('django.contrib.humanize', settings.INSTALLED_APPS,
+                      'humanize is not installed, so |intcomma is unavailable to '
+                      'the templates')
+
+    def test_the_locale_directory_states_what_is_outstanding(self):
+        """The body copy of the 49 templates is still English. That has to be
+        recorded, not left for someone to discover."""
+        from django.conf import settings
+        readme = settings.BASE_DIR / 'locale' / 'README.md'
+        self.assertTrue(readme.is_file(), 'locale/ has no README')
+        text = readme.read_text(encoding='utf-8')
+        self.assertIn('hardcoded English', text)
+
+
+class ApiContractTests(TestCase):
+    """A JSON endpoint must answer like one.
+
+    authorization.py deferred an unauthenticated request to @login_required,
+    which redirects - so every /api/ endpoint answered a fetch client with a 302
+    to an HTML login page instead of a 401. And _wants_json keyed off the /api/
+    path prefix, so finance_overseas_preview, which returns JSON from
+    /api/finance/... but was reachable under its own name, could hand back an
+    HTML body with a JSON status. See SITE_AUDIT_FINDINGS.md C40.
+    """
+
+    def test_an_unauthenticated_api_request_gets_401_not_a_redirect(self):
+        response = Client().get('/api/summary/')
+        self.assertEqual(
+            response.status_code, 401,
+            'a fetch client got a redirect to an HTML login page instead of 401')
+        self.assertEqual(response['Content-Type'].split(';')[0], 'application/json')
+        self.assertFalse(response.json()['ok'])
+
+    def test_an_unauthenticated_page_request_still_redirects_to_login(self):
+        """A person must get a sign-in prompt, not a 401."""
+        response = Client().get('/ceo-dashboard/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/login/', response['Location'])
+
+    def test_a_refused_api_request_is_json_not_html(self):
+        from portal import roles
+        client = _client_for(_make_user('apihelper', role=roles.HELPER))
+        response = client.get('/api/ceo-dashboard/')
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response['Content-Type'].split(';')[0], 'application/json')
+
+    def test_an_accept_json_header_is_honoured_off_the_api_prefix(self):
+        response = Client().get('/ceo-dashboard/', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 401)
+
+
+class DeadWeightTests(TestCase):
+    """Files that nothing references should not be shipped or stored."""
+
+    def test_no_unreferenced_reference_screenshots_remain_in_static(self):
+        from django.conf import settings
+        stale = settings.BASE_DIR / 'static' / 'reference'
+        self.assertFalse(
+            stale.exists(),
+            'static/reference/ held three PNGs referenced by no template, view '
+            'or stylesheet, and excluded from the Docker image - so they were '
+            'stored but unusable')
+
+    def test_every_static_image_is_referenced_somewhere(self):
+        import re
+        from django.conf import settings
+        static_root = settings.BASE_DIR / 'static'
+        haystack = []
+        for path in list((settings.BASE_DIR / 'templates').rglob('*.html')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in list((static_root / 'css').glob('*.css')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in list((static_root / 'js').glob('*.js')):
+            haystack.append(path.read_text(encoding='utf-8'))
+        for path in (settings.BASE_DIR / 'portal').glob('*.py'):
+            haystack.append(path.read_text(encoding='utf-8'))
+        blob = '\n'.join(haystack)
+
+        orphans = []
+        for image in sorted((static_root / 'img').rglob('*.png')):
+            if image.name not in blob:
+                orphans.append(str(image.relative_to(static_root)))
+        self.assertEqual(
+            orphans, [],
+            'these images are shipped in the Docker image and referenced by '
+            f'nothing: {orphans}')

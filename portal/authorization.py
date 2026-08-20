@@ -182,9 +182,20 @@ ROUTE_POLICY = {
 }
 
 
+#: JSON endpoints whose path is not under /api/. Without this they get an HTML
+#: body with a JSON status code, which breaks a fetch client.
+#: See SITE_AUDIT_FINDINGS.md C40.
+_JSON_ROUTES = frozenset({'finance_overseas_preview'})
+
+
 def _wants_json(request):
     path = request.path or ''
-    return path.startswith('/api/') or 'application/json' in request.META.get('HTTP_ACCEPT', '')
+    if path.startswith('/api/'):
+        return True
+    if 'application/json' in request.META.get('HTTP_ACCEPT', ''):
+        return True
+    url_name = getattr(getattr(request, 'resolver_match', None), 'url_name', None)
+    return url_name in _JSON_ROUTES
 
 
 def _deny(request, reason):
@@ -225,8 +236,16 @@ class AuthorizationMiddleware:
             return None
 
         if not request.user.is_authenticated:
-            # Let the view's own @login_required redirect to the login page, so
-            # an anonymous visitor gets a sign-in prompt rather than a 403.
+            if _wants_json(request):
+                # A fetch client asking for JSON must be told it is
+                # unauthenticated, not handed a 302 to an HTML login page - which
+                # is what @login_required does and what every /api/ endpoint used
+                # to return. See SITE_AUDIT_FINDINGS.md C40.
+                return JsonResponse(
+                    {'ok': False, 'error': 'Authentication is required.'},
+                    status=401)
+            # Otherwise let the view's own @login_required redirect to the login
+            # page, so a person gets a sign-in prompt rather than a 403.
             return None
 
         if policy is None:

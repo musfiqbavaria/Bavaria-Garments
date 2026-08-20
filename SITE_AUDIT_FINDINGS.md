@@ -3,9 +3,28 @@
 **Scope:** every URL (120 named routes), every page (49 templates), every stylesheet (10),
 both JS files, the admin, the Celery schedule, the nginx layer and the test suite.
 
-**Status:** findings only. Nothing in this document has been fixed. Each entry was verified
-directly against the code — file and line are cited so any entry can be re-checked
-independently before work is authorised.
+**Status:** remediated on branch `fix/site-audit`, except where marked
+**OUT OF SCOPE** or **PARTIAL** below. The line references describe the code as it was
+when the finding was raised (commit `c7f741e`); each entry now also records what was done.
+The test suite grew from 124 to 185 tests, and every fix has a gate that fails if it
+regresses.
+
+**Two corrections to this register, found while fixing it — see the entries for detail:**
+
+- **A4 overstated the problem.** 26 dashboards *did* render messages, with a bare
+  `{% for message in messages %}` that this audit's grep for `{% if messages %}` missed.
+  So 30 templates rendered them, not 4, and the calls were visible. The real defect was
+  narrower: they rendered as a generic `.card` with no severity, so a failed save looked
+  identical to a successful one.
+- **B21 was wrong.** `RouteSmokeTests` already requested every non-parameterised route and
+  all 95 registry pages — it discovers routes by regex at runtime rather than naming them,
+  which is why grepping for URL strings found only six. The real gap was that it asserted
+  only `status < 500`, so a 404 passed, and ran solely as a superuser, so no role-gated
+  path was exercised. That is precisely why A1 and A6 shipped.
+
+Two further claims were dropped before publication as false positives: an "encoding
+corruption" that was the console mangling a valid `•`, and `portal_visual` as dead code —
+it is the shared renderer for seven routes.
 
 **Method:** machine-checkable integrity first (route/template/static/CSRF resolution), then
 twelve targeted audit dimensions, then re-verification of every claim against the source.

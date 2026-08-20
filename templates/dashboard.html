@@ -16,6 +16,14 @@
     <article><small>Delivery Target</small><strong>≤15d</strong></article>
   </div>
   <h2>All Modules</h2>
+  {% comment %}
+  "Dashboard" and "All Modules" sat adjacent in the navbar with nothing to
+  distinguish them. See SITE_AUDIT_FINDINGS.md C34.
+  {% endcomment %}
+  <p class="hint">
+    Every module on the Project 1 plan. The ones marked "not built yet" are
+    planned and have no page of their own; the rest open their department.
+  </p>
   <div class="grid">
     {% for p in pages %}<a
       class="card"

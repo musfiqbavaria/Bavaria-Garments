@@ -1,25 +1,50 @@
-{% load static %}<!doctype html>
-<html>
+{% load static i18n %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE|default:'en' }}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="{% static 'img/logo.png' %}" />
     <link rel="stylesheet" href="{% static 'css/app.css' %}" />
-    <title>Login — Emerald Rozalia</title>
+    <title>{% trans "Sign in" %} — Emerald Rozalia</title>
   </head>
   <body class="loginbody">
     <form method="post" class="loginbox">
       {% csrf_token %}
-      <div class="erlogo">ER</div>
-      <h1>Emerald Rozalia</h1>
-      <p>Unified Project 1 Platform</p>
+      {% comment %}
+      The real mark, not a CSS box lettered "ER". logo-full.png was added for the
+      landing page in 987b61e and orphaned by a later revert, so it shipped in
+      the image referenced by nothing - see SITE_AUDIT_FINDINGS.md C41.
+      {% endcomment %}
+      <img
+        class="loginlogo"
+        src="{% static 'img/logo-full.png' %}"
+        alt="Emerald Rozalia Limited"
+      />
+      <p>{% trans "Unified Project 1 Platform" %}</p>
       {% if error %}
-      <div class="error">{{ error }}</div>
-      {% endif %}<input name="username" placeholder="Username" required /><input
+      {% comment %}
+      Deliberately does not say whether the username exists.
+      {% endcomment %}
+      <div class="error" role="alert">{{ error }}</div>
+      {% endif %}
+      <label for="username">{% trans "Username" %}</label>
+      <input
+        id="username"
+        name="username"
+        autocomplete="username"
+        autocapitalize="none"
+        spellcheck="false"
+        required
+      />
+      <label for="password">{% trans "Password" %}</label>
+      <input
+        id="password"
         name="password"
         type="password"
-        placeholder="Password"
+        autocomplete="current-password"
         required
-      /><button>Secure Login</button>
+      />
+      <button type="submit">{% trans "Sign in" %}</button>
     </form>
   </body>
 </html>

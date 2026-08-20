@@ -1,4 +1,4 @@
-{% load static %} <!doctype html>
+{% load static i18n %} <!doctype html>
 <html lang="{{ LANGUAGE_CODE|default:'en' }}">
   <head>
     <meta charset="utf-8" />
@@ -9,7 +9,7 @@
     {% block extra_css %}{% endblock %}
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main">{% trans "Skip to content" %}</a>
     {% if user.is_authenticated %}
     <header class="topbar">
       <a class="brand" href="{% url 'dashboard' %}"
@@ -28,7 +28,7 @@
         aria-expanded="false"
         aria-controls="primary-nav"
       >
-        <span class="visually-hidden">Menu</span>☰
+        <span class="visually-hidden">{% trans "Menu" %}</span>☰
       </button>
       <nav id="primary-nav" aria-label="Primary">
         {% for item in nav_top %}<a
@@ -48,10 +48,25 @@
           </div>
         </details>
         {% endfor %}
-        {% if nav_can_admin %}<a href="/admin/">Admin</a>{% endif %}
+        {% if nav_can_admin %}<a href="/admin/">{% trans "Admin" %}</a>{% endif %}
+        {% get_current_language as CURRENT_LANGUAGE %}
+        {% get_available_languages as AVAILABLE_LANGUAGES %}
+        <form class="nav-language" method="post" action="{% url 'set_language' %}">
+          {% csrf_token %}
+          <label class="visually-hidden" for="language-select"
+            >{% trans "Language" %}</label
+          >
+          <select id="language-select" name="language" data-action="submit-on-change">
+            {% for code, label in AVAILABLE_LANGUAGES %}
+            <option value="{{ code }}" {% if code == CURRENT_LANGUAGE %}selected{% endif %}>
+              {{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </form>
         <form class="nav-logout" method="post" action="{% url 'logout' %}">
           {% csrf_token %}
-          <button type="submit">Log out</button>
+          <button type="submit">{% trans "Log out" %}</button>
         </form>
       </nav>
     </header>
@@ -64,16 +79,16 @@
       See SITE_AUDIT_FINDINGS.md B27.
       {% endcomment %}
       <span
-        >⚠ <span class="visually-hidden">Open </span>Alerts
+        >⚠ <span class="visually-hidden">Open </span>{% trans "Alerts" %}
         <b>{{ global_alerts }}</b></span
       ><span
-        >✓ Action Required <b>{{ global_actions }}</b></span
+        >✓ {% trans "Action Required" %} <b>{{ global_actions }}</b></span
       ><span class="red"
-        >● Red Alert <b>{{ global_red_alerts }}</b></span
+        >● {% trans "Red Alert" %} <b>{{ global_red_alerts }}</b></span
       ><span
-        >Present <b>{{ today_present_staff }}</b></span
+        >{% trans "Present" %} <b>{{ today_present_staff }}</b></span
       ><span
-        >Staff Cost
+        >{% trans "Staff Cost" %}
         <b
           {% if today_staff_cost_partial %}
           title="Some sites' amounts could not be converted into {{ today_staff_cost_currency }} because no current exchange rate is available. The total covers the rest."
@@ -81,16 +96,18 @@
           >{{ today_staff_cost_display }}</b
         ></span
       ><span class="asof"
-        >as at {{ control_strip_date|date:"Y-m-d" }}</span
+        >{% trans "as at" %} {{ control_strip_date|date:"Y-m-d" }}</span
       >
     </div>
     {% endif %}
     {% if messages %}
     {% comment %}
-    151 messages.* calls are made across 33 views and there was no block to
-    render them, so 139 of them produced nothing at all - an operator saving a
-    production entry, recording QC or issuing material got no confirmation and,
-    on the failure paths, no error either. See SITE_AUDIT_FINDINGS.md A4.
+    One place for the 151 messages.* calls the 33 handlers make. 26 dashboards
+    each rendered their own bare {% templatetag openblock %} for message in
+    messages {% templatetag closeblock %} into a generic .card, so a failed save
+    looked exactly like a successful one, and the four templates without a loop
+    showed nothing at all. Consolidated here, where the severity is visible.
+    See SITE_AUDIT_FINDINGS.md A4.
     {% endcomment %}
     <div class="messages" role="status" aria-live="polite">
       {% for message in messages %}

@@ -25,6 +25,7 @@ reads the authorisation table rather than a copy of it, the two cannot drift.
 """
 
 from django.urls import NoReverseMatch, reverse
+from django.utils.translation import gettext_lazy as _
 
 from .authorization import AUTHENTICATED, PUBLIC, ROUTE_POLICY
 from .roles import has_any_role
@@ -32,56 +33,56 @@ from .roles import has_any_role
 #: (url name, label, group). Group orders the menu; None means top level.
 #: Every entry must name a route in ROUTE_POLICY - NavigationTests enforces it.
 NAV = [
-    ('dashboard', 'Dashboard', None),
-    ('global_dashboard', 'All Modules', None),
+    ('dashboard', _('Dashboard'), None),
+    ('global_dashboard', _('All Modules'), None),
 
-    ('report_master', 'Report Master', 'Reporting'),
-    ('ceo_dashboard', 'CEO Report', 'Reporting'),
-    ('account_master', 'Account Master', 'Reporting'),
+    ('report_master', _('Report Master'), _('Reporting')),
+    ('ceo_dashboard', _('CEO Report'), _('Reporting')),
+    ('account_master', _('Account Master'), _('Reporting')),
 
-    ('profit_before_spend', 'Profit Before Spend', 'Finance'),
-    ('profit_feasibility_gate', 'Feasibility Gate', 'Finance'),
-    ('free_capacity_opportunity', 'Free Capacity', 'Finance'),
+    ('profit_before_spend', _('Profit Before Spend'), _('Finance')),
+    ('profit_feasibility_gate', _('Feasibility Gate'), _('Finance')),
+    ('free_capacity_opportunity', _('Free Capacity'), _('Finance')),
 
-    ('buyer_opportunity', 'Buyer Opportunity', 'Commercial'),
-    ('buyer_delivery_sla', 'Delivery SLA', 'Commercial'),
+    ('buyer_opportunity', _('Buyer Opportunity'), _('Commercial')),
+    ('buyer_delivery_sla', _('Delivery SLA'), _('Commercial')),
 
-    ('sewing_master', 'Sewing', 'Production'),
-    ('cutting_dashboard', 'Cutting', 'Production'),
-    ('embroidery_dashboard', 'Embroidery', 'Production'),
-    ('label_dashboard', 'Label', 'Production'),
-    ('hand_iron_dashboard', 'Hand Iron', 'Production'),
-    ('iron_dashboard', 'Industrial Iron', 'Production'),
-    ('poly_dashboard', 'Poly', 'Production'),
-    ('finishing_dashboard', 'Finishing', 'Production'),
-    ('packing_dashboard', 'Packing', 'Production'),
-    ('factory_resource_core', 'Factory Resources', 'Production'),
-    ('bundle_traceability_finder', 'Bundle Traceability', 'Production'),
+    ('sewing_master', _('Sewing'), _('Production')),
+    ('cutting_dashboard', _('Cutting'), _('Production')),
+    ('embroidery_dashboard', _('Embroidery'), _('Production')),
+    ('label_dashboard', _('Label'), _('Production')),
+    ('hand_iron_dashboard', _('Hand Iron'), _('Production')),
+    ('iron_dashboard', _('Industrial Iron'), _('Production')),
+    ('poly_dashboard', _('Poly'), _('Production')),
+    ('finishing_dashboard', _('Finishing'), _('Production')),
+    ('packing_dashboard', _('Packing'), _('Production')),
+    ('factory_resource_core', _('Factory Resources'), _('Production')),
+    ('bundle_traceability_finder', _('Bundle Traceability'), _('Production')),
 
-    ('qc_dashboard', 'In-line QC', 'Quality'),
-    ('final_qc_dashboard', 'Final QC', 'Quality'),
+    ('qc_dashboard', _('In-line QC'), _('Quality')),
+    ('final_qc_dashboard', _('Final QC'), _('Quality')),
 
-    ('shipping_dashboard', 'Shipping', 'Logistics'),
+    ('shipping_dashboard', _('Shipping'), _('Logistics')),
 
-    ('supplier_dashboard', 'Supplier', 'Supply chain'),
-    ('sourcing_dashboard', 'Sourcing', 'Supply chain'),
-    ('procurement_dashboard', 'Procurement', 'Supply chain'),
-    ('purchases_dashboard', 'Purchases', 'Supply chain'),
+    ('supplier_dashboard', _('Supplier'), _('Supply chain')),
+    ('sourcing_dashboard', _('Sourcing'), _('Supply chain')),
+    ('procurement_dashboard', _('Procurement'), _('Supply chain')),
+    ('purchases_dashboard', _('Purchases'), _('Supply chain')),
 
-    ('stock_material_master', 'Stock & Material', 'Stock'),
-    ('asset_machine_master', 'Asset & Machine', 'Stock'),
+    ('stock_material_master', _('Stock & Material'), _('Stock')),
+    ('asset_machine_master', _('Asset & Machine'), _('Stock')),
 
-    ('hr_dashboard', 'HR', 'People'),
-    ('attendance_dashboard', 'Attendance', 'People'),
-    ('hr_recruitment_applications', 'Recruitment', 'People'),
+    ('hr_dashboard', _('HR'), _('People')),
+    ('attendance_dashboard', _('Attendance'), _('People')),
+    ('hr_recruitment_applications', _('Recruitment'), _('People')),
 
-    ('staff_self_service', 'Self-Service', 'Tools'),
-    ('password_change', 'Change Password', 'Tools'),
-    ('forms_master', 'Forms Master', 'Tools'),
-    ('barcode_master', 'Barcode', 'Tools'),
-    ('barcode_scan_control', 'Scan Control', 'Tools'),
-    ('communication_center', 'Communication', 'Tools'),
-    ('universal_file_center', 'File Center', 'Tools'),
+    ('staff_self_service', _('Self-Service'), _('Tools')),
+    ('password_change', _('Change Password'), _('Tools')),
+    ('forms_master', _('Forms Master'), _('Tools')),
+    ('barcode_master', _('Barcode'), _('Tools')),
+    ('barcode_scan_control', _('Scan Control'), _('Tools')),
+    ('communication_center', _('Communication'), _('Tools')),
+    ('universal_file_center', _('File Center'), _('Tools')),
 ]
 
 
@@ -120,7 +121,12 @@ def navigation(request):
         if group is None:
             top.append(item)
         else:
-            groups.setdefault(group, []).append(item)
+            # Keyed on the resolved title, not the lazy proxy: two _('Reporting')
+            # calls are distinct objects, so using them as dict keys would split
+            # one menu into several. LocaleMiddleware has already set the active
+            # language by the time a context processor runs, so resolving here is
+            # correct.
+            groups.setdefault(str(group), []).append(item)
 
     return {
         'nav_top': top,
